@@ -100,6 +100,92 @@ Still needed for exact numbers: rulebook pages 14 to 18 and 20 (how many cards a
 looks at, which four zones a Druid uses, how a Chanter chooses, how many cards a Reaver
 banishes, and the Jester claim text).
 
+## Rulebook, pages 2–19 (confirmed, transcribed from the owner's photos)
+
+**Party (p.5).** 42 party cards: the 40 members of the Golden Blade Syndicate (four
+classes, each with characters numbered 2 to 10 plus one animal companion) and 2
+Jesters. Cards added or removed by missions stay that way. Temporary cards (such as
+Jesters) are added to the reserve for one attempt only and reset afterwards.
+
+**Setting up a mission (p.7).** The enemy stat card lists the mission's enemies grouped
+by strength. Shuffle the strongest group face down, then each weaker group face down on
+top; turn the top card face up. Reserve = party + Jesters by player count (1/0, 2/0,
+3/1, 4/2; hand limits 8/7/6/5); it is face down, may be counted but never looked at.
+Draw to the hand limit. The starting player is whoever plays the first card.
+**Gøran's Beasts** (rulebook box): for each attempt you may choose one of Gøran's Beasts
+and include it in your reserve; after each attempt you may swap it for one of the other
+three.
+
+**Play area (p.8–9).** Relics stay in play once gained. The banished pile is face up and
+may be inspected at any time (unused in mission 1). The mission zone is unused in
+missions 1 and 2. The discard pile is face up and may be inspected.
+
+**Cards (p.10–11).** Strength is both the damage and the power of the class ability.
+Enemies are immune to the class abilities of cards whose class matches their icon. A
+defeated enemy that reaches your hand plays like any card (its strength, its class
+ability); its health is meaningless. Enemy cards never join the party.
+
+**Turn (p.14).** Start-of-turn effects from the mission rules resolve before playing
+cards; at the start of a mission they resolve before deciding who goes first. Ways to
+form an attack: basic (any single card); kinfolk (any number of cards of the same
+strength, total at most 10); animal (an animal companion, strength 1, with any one other
+card); beast (a beast with any one other card; the beast's strength equals that card's
+strength during this step and is 0 at all other times). All class abilities are
+mandatory. Yielding: go straight to step 4a; not allowed if every other player yielded
+on their previous turn; if you can neither yield nor play, the mission is lost.
+
+**Special card effects (p.15).** Evergreen: cleric, bard, warrior and paladin at once,
+ignoring immunity to those four. Restoration: when a restored card enters play, put the
+top card of the banished pile under the reserve; its own abilities ignore immunity;
+other cards in the attack do not. Corruption: when a corrupted card enters play, put the
+top card of the reserve on the banished pile; its own abilities ignore immunity; other
+cards in the attack do not.
+
+**Step 2, cast spells (p.16), in rulebook order.**
+* Mage: secretly look at cards from the top of the reserve equal to the attack
+  strength; discard any Jesters or corrupted cards among them; choose one of the rest
+  and add it to the attack (tucked underneath); put the others in the discard pile in
+  any order. If the chosen card is a mage, repeat using that mage's own strength. All
+  chosen cards join the attack; the other classes then resolve with the new attack
+  strength. In the enemy-defeated step an attack that used a mage is banished instead
+  of discarded.
+* Druid: players set their hands aside; shuffle the discard pile and deal it out
+  clockwise starting with the druid's player; each player picks 4 of their dealt cards
+  and moves one each to the banished pile, their hand (ignoring the limit), the top of
+  the reserve and the bottom of the reserve; everything else goes back to the discard
+  pile, which is shuffled. The druid's strength is not used.
+* Cleric: shuffle the discard pile, count out cards equal to the attack strength face
+  down under the reserve, return the rest face up.
+* Bard: the current player draws, then the others clockwise, one card at a time, until
+  cards drawn equal the attack strength; players at the limit are skipped; no penalty
+  for an empty reserve.
+* Chanter: declare any number; starting with the current player and going clockwise,
+  each player draws that many cards ignoring the hand limit, then discards down to the
+  limit.
+
+**Step 3, deal damage (p.17).** Attack damage starts equal to the attack strength.
+Reaver: choose any number (at least one), reveal that many cards from the top of the
+reserve, choose one and add its strength to the attack damage (no class powers), banish
+all revealed cards in any order, then double the attack damage. Warrior: double the
+attack damage (once per attack, however many warriors). A reaver and a warrior together
+quadruple. Health at 0 or less: defeated.
+
+**Step 4a, suffer damage (p.18).** The enemy strikes for its strength. Discard cards one
+at a time with combined strength at least equal to the damage; you may not keep
+discarding once the damage is satisfied. Animal companions count 1, Jesters 0. An empty
+hand is fine. Feign death: you may always discard a full hand (you must be at the hand
+limit) to satisfy any damage. Paladin: at the start of step 4a reduce the enemy's
+strength by the attack strength; cumulative for all paladins played against this
+enemy; lasts until it is defeated. Guardian: players suffer no damage this turn, from
+enemy attacks or mission effects; it also applies in step 4b. End-of-turn effects
+resolve, then the next player clockwise starts.
+
+**Step 4b, enemy defeated (p.19).** The current player makes any decisions. 1. Follow
+the mission's enemy-defeated steps, including where the enemy goes. 2. Gather all cards
+played against the enemy and put them on top of the discard pile in any order you wish.
+3. Turn the next enemy face up. Exact damage: the mission rules say what happens.
+End-of-turn effects are skipped and the same player starts another turn.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
