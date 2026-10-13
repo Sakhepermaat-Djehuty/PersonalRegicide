@@ -1110,9 +1110,11 @@ class MercenaryScreen(Screen):
 
 
 class ChoiceScreen(Screen):
-    """Resolve a pending reward choice: pick one party card from the allowed options."""
+    """Resolve a pending reward choice: pick one party card (corruption) or assign one
+    class sticker to each revealed card (mission 2's class stickers)."""
 
-    chosen = None
+    chosen = None       # choice_corrupt: the picked card id
+    assign = None       # choice_classes: {card id: class}
 
     def layout(self) -> None:
         if not hasattr(self, "app"):
@@ -1133,6 +1135,18 @@ class ChoiceScreen(Screen):
             return
         self.add_subview(make_label(step.get("label", ""), (m, y, w - 2 * m, 44), 15, True, T.ACCENT, lines=2))
         y += 48
+        self.confirm_btn = make_button("Confirm", lambda s: self._confirm(), (m, h - T.BOTTOM_INSET - 50, w - 2 * m, 46))
+        if step["kind"] == "choice_classes":
+            self._layout_classes(step, y)
+        else:
+            self._layout_pick(step, y)
+        self.add_subview(self.confirm_btn)
+
+    # -- pick one card ------------------------------------------------------
+    def _layout_pick(self, step: dict, y: float) -> None:
+        camp = self.app.campaign
+        w, h = self.width, self.height
+        m = T.MARGIN
         hint = {"choice_corrupt": "Tap the character who takes the corruption. Corrupted cards banish the top "
                                   "card of the reserve when played and their own class ignores immunity."}.get(step["kind"], "")
         if hint:
@@ -1140,7 +1154,6 @@ class ChoiceScreen(Screen):
             y += 60
         options = list(step.get("options") or [])
         from .widgets import CardView
-        self.confirm_btn = make_button("Confirm", lambda s: self._confirm(), (m, h - T.BOTTOM_INSET - 50, w - 2 * m, 46))
         set_enabled(self.confirm_btn, self.chosen in options)
         sv = ui.ScrollView(frame=(m, y, w - 2 * m, h - y - T.BOTTOM_INSET - 60))
         cols = 5
@@ -1162,7 +1175,6 @@ class ChoiceScreen(Screen):
         rows = (len(options) + cols - 1) // cols
         sv.content_size = (w - 2 * m, rows * (ch + gap) + 20)
         self.add_subview(sv)
-        self.add_subview(self.confirm_btn)
         if not options:
             self.add_subview(make_label("No character qualifies; confirm to skip.", (m, y, w - 2 * m, 30), 13, False, T.MUTED))
             set_enabled(self.confirm_btn, True)
@@ -1174,6 +1186,53 @@ class ChoiceScreen(Screen):
             v.set_needs_display()
         set_enabled(self.confirm_btn, True)
 
+    # -- assign one class sticker per card ----------------------------------
+    def _layout_classes(self, step: dict, y: float) -> None:
+        camp = self.app.campaign
+        w, h = self.width, self.height
+        m = T.MARGIN
+        cards = [str(c) for c in step.get("cards", [])]
+        classes = [str(c) for c in step.get("classes", [])]
+        if self.assign is None:
+            self.assign = {}
+        self.add_subview(make_label("Give each revealed card one sticker. Each class is used once and a card "
+                                    "never gets a class it already has.", (m, y, w - 2 * m, 40), 12, False, T.MUTED, lines=2))
+        y += 46
+        from .widgets import CardView
+        row_h = 92
+        cw = row_h / 1.42
+        bw = (w - 2 * m - cw - 8 - 6 * (len(classes) - 1)) / max(1, len(classes))
+        used = {v: k for k, v in self.assign.items()}
+        for cid in cards:
+            d = P.find(camp.party, cid)
+            if d is None:
+                continue
+            v = CardView(P.to_card(d))
+            v.small = True
+            v.touch_enabled = False
+            v.frame = (m, y, cw, row_h)
+            self.add_subview(v)
+            x = m + cw + 8
+            for s in classes:
+                picked = self.assign.get(cid) == s
+                b = make_button(CLASS_NAME[s], (lambda c, k: lambda btn: self._set_class(c, k))(cid, s),
+                                (x, y + (row_h - 40) / 2, bw, 40), picked, 12)
+                blocked = s in d.get("suits", []) or (s in used and used[s] != cid)
+                set_enabled(b, not blocked)
+                self.add_subview(b)
+                x += bw + 6
+            y += row_h + 10
+        complete = len(cards) > 0 and all(c in self.assign for c in cards)
+        set_enabled(self.confirm_btn, complete or not cards)
+
+    def _set_class(self, cid: str, s: str) -> None:
+        if self.assign.get(cid) == s:
+            del self.assign[cid]
+        else:
+            self.assign[cid] = s
+        self.layout()
+
+    # -- confirm ---------------------------------------------------------------
     def _confirm(self) -> None:
         camp = self.app.campaign
         step = camp.pending_choice()
@@ -1181,7 +1240,13 @@ class ChoiceScreen(Screen):
             self.app.show(CampaignScreen(self.app))
             return
         try:
-            if step.get("options"):
+            if step["kind"] == "choice_classes":
+                if step.get("cards"):
+                    camp.resolve_choice(dict(self.assign or {}))
+                else:
+                    camp.pending.pop(0)
+                    camp.log.append("%s: no card qualified." % step.get("label", "reward"))
+            elif step.get("options"):
                 camp.resolve_choice(self.chosen)
             else:
                 camp.pending.pop(0)

@@ -36,7 +36,7 @@ def _hydra_castle(rng: random.Random) -> List[dict]:
     hydras = []
     for i, (a, b) in enumerate(itertools.combinations(BASIC_SUITS, 2)):
         hydras.append({"id": "HY%d" % (i + 1), "rank": "J", "suits": [a, b], "value": 10,
-                       "name": "Hydra", "attack": 10, "health": 20, "flags": []})
+                       "name": "Hydra Head", "attack": 10, "health": 20, "flags": []})
     rng.shuffle(hydras)
     return hydras
 
@@ -52,13 +52,15 @@ MISSIONS: List[Dict[str, Any]] = [
                         "your party. Acquire the Kinfolk Flute.",
     },
     {
-        "number": 2, "title": "Shadow and Mist", "fan_title": "The Hydra Assault", "location": "Umbera cavern",
-        "rules_id": "legacy_m2", "playable": True, "verified": False,
-        "summary": "Six Hydras (10/20), each with two classes and immune to both. An imperfect kill sends "
-                   "the Hydra to the bottom of the enemy deck at full health; only exact damage banishes it. "
-                   "The High Arcana (25) fights with you; corrupted cards banish the top reserve card when played.",
-        "rewards_text": "One random 3, 5, 7 and 9 each gain a second class. Another party member is corrupted. "
-                        "The High Arcana leaves.",
+        "number": 2, "title": "Shadow and Mist", "fan_title": "The Hydra Assault", "location": "Umbra Cavern",
+        "rules_id": "legacy_m2", "playable": True, "verified": True,
+        "summary": "Six Hydra Heads (10/20), each with two classes and immune to both. Exact damage banishes "
+                   "a head; otherwise it goes face down to the bottom of the enemy deck and must be fought "
+                   "again. The High Arcana (25) fights with you; a corrupted card banishes the top reserve "
+                   "card as soon as it is played.",
+        "rewards_text": "Open pack C and corrupt another character in your party. The first 3, 5, 7 and 9 "
+                        "revealed from the shuffled party each get one class sticker, one of each class, "
+                        "never a class the card already has.",
     },
     {"number": 3, "title": "Lessons in Flames", "fan_title": "The Mage Tower", "location": "Magic Academy",
      "rules_id": "legacy_m3", "playable": False, "verified": False,
@@ -147,14 +149,37 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         steps.append({"kind": "add_card", "card": HIGH_ARCANA, "label": "The High Arcana (25, Elf Mage) joins the party"})
         steps.append({"kind": "relic", "relic": "flute", "label": "Relic: Kinfolk Flute"})
     elif number == 2:
-        steps.append({"kind": "m2_suits", "label": "A 3, 5, 7 and 9 each gain a second class"})
-        steps.append(_corrupt_choice(camp, "Corrupt a character in your party"))
-        steps.append({"kind": "remove_card", "card_id": HIGH_ARCANA["id"], "label": "The High Arcana leaves"})
+        # Reward cards (confirmed): "Open pack C and corrupt another character in your party";
+        # class stickers for the first 3, 5, 7 and 9 revealed from the shuffled party. No
+        # mission 2 card removes the High Arcana; mission 3's cards will say when he leaves.
+        steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
+        steps.append(_class_sticker_choice(camp, rng))
     return steps
 
 
 HIGH_ARCANA: Dict[str, Any] = {"id": "ARC25", "rank": "25", "suits": [], "value": 25, "name": "High Arcana",
                                "subtitle": "Elf Mage", "flags": []}
+
+
+def _class_sticker_choice(camp, rng: random.Random) -> Step:
+    """Mission 2 reward card: shuffle the party, reveal from the top and set aside the first
+    3, 5, 7 and 9 found; give each one class sticker so that each class is used once and
+    no card gets a class it already has. The player assigns the stickers."""
+    cards: List[str] = []
+    for _ in range(50):
+        cards = []
+        for rank in ("3", "5", "7", "9"):
+            pool = sorted(str(c["id"]) for c in camp.party if c["rank"] == rank)
+            if pool:
+                cards.append(rng.choice(pool))
+        # Four stickers, one per class, cannot all be placed when every revealed card
+        # already has the same single class (the card forbids a card's own class). The
+        # physical game would have to reshuffle; so does the app.
+        own = {tuple(P.find(camp.party, cid).get("suits", [])) for cid in cards}
+        if len(cards) < 4 or len(own) > 1 or len(next(iter(own))) != 1:
+            break
+    return {"kind": "choice_classes", "label": "Class stickers: the first 3, 5, 7 and 9 revealed each gain a class",
+            "cards": cards, "classes": list(BASIC_SUITS)}
 
 
 def _corrupt_choice(camp, label: str) -> Step:
@@ -193,34 +218,27 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
     if kind == "remove_card":
         c = P.remove_card(camp.party, step["card_id"])
         return "%s leaves the party." % ((c or {}).get("name") or step["card_id"])
-    if kind == "m2_suits":
-        chosen: List[str] = []
-        for _ in range(30):
-            picks = []
-            ok = True
-            for rank in ("3", "5", "7", "9"):
-                pool = [c for c in camp.party if c["rank"] == rank and not c.get("name")
-                        and len(c.get("suits", [])) == 1 and c["suits"][0] in BASIC_SUITS]
-                if not pool:
-                    ok = False
-                    break
-                picks.append(rng.choice(sorted(pool, key=lambda c: c["id"])))
-            if not ok:
-                break
-            if len(set(p["suits"][0] for p in picks)) > 1:
-                chosen = [str(p["id"]) for p in picks]
-                break
-        if not chosen:
-            return "No eligible cards for the class stickers."
-        new_suits = list(BASIC_SUITS)
+    if kind == "choice_classes":
+        cards = [str(x) for x in step.get("cards", [])]
+        classes = [str(x) for x in step.get("classes", [])]
+        if not cards:
+            return "No card qualifies for the class stickers."
+        if not isinstance(option, dict):
+            raise ValueError("assign one class to each card")
+        assign = {str(k): str(v) for k, v in option.items()}
+        if sorted(assign) != sorted(cards):
+            raise ValueError("every revealed card needs exactly one sticker")
+        if len(set(assign.values())) != len(assign) or any(v not in classes for v in assign.values()):
+            raise ValueError("each class sticker may be used once")
+        for cid, s in assign.items():
+            card = P.find(camp.party, cid)
+            if card is None:
+                raise ValueError("%s is not in the party" % cid)
+            if s in card.get("suits", []):
+                raise ValueError("%s already has the %s class" % (cid, CLASS_NAME[s]))
         lines = []
-        # each basic class used exactly once, never one the card already has
-        for _ in range(100):
-            rng.shuffle(new_suits)
-            if all(s not in P.find(camp.party, cid)["suits"] for cid, s in zip(chosen, new_suits)):
-                break
-        for cid, s in zip(chosen, new_suits):
-            P.add_suit(camp.party, cid, s)
-            lines.append("%s gains %s" % (cid, SUIT_NAME[s]))
-        return "Class stickers: " + ", ".join(lines) + " (unverified: the real cards are named on the reward cards)."
+        for cid in cards:
+            P.add_suit(camp.party, cid, assign[cid])
+            lines.append("%s gains %s" % (P.to_card(P.find(camp.party, cid)).label(), CLASS_NAME[assign[cid]]))
+        return "Class stickers: " + ", ".join(lines) + "."
     raise ValueError("unknown reward step %r" % kind)

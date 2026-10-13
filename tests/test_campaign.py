@@ -34,10 +34,23 @@ def test_campaign_mission1_is_base_regicide_with_legacy_extras():
     assert c.attempts_on(1) == 1
 
 
+def first_valid_assignment(c: CampaignState, step: dict) -> dict:
+    """A legal sticker assignment for a choice_classes step (first permutation that fits)."""
+    import itertools
+    cards, classes = step["cards"], step["classes"]
+    for perm in itertools.permutations(classes, len(cards)):
+        if all(s not in P.find(c.party, cid)["suits"] for cid, s in zip(cards, perm)):
+            return dict(zip(cards, perm))
+    raise AssertionError("no legal assignment")
+
+
 def resolve_choices(c: CampaignState) -> None:
     """Resolve pending reward choices like a player who always takes the first option."""
     while c.pending:
         step = c.pending_choice()
+        if step["kind"] == "choice_classes":
+            c.resolve_choice(first_valid_assignment(c, step))
+            continue
         assert step["options"], step
         c.resolve_choice(step["options"][0])
 
@@ -83,7 +96,7 @@ def test_mission2_hydras_recycle_on_imperfect_kill_and_banish_on_exact():
     resolve_choices(c)
     g = c.start_attempt(seed=4)
     assert g.config.rules_id == "legacy_m2"
-    assert g.enemy.name == "Hydra" and len(g.enemy.suits) == 2 and g.enemy.max_hp == 20
+    assert g.enemy.name == "Hydra Head" and len(g.enemy.suits) == 2 and g.enemy.max_hp == 20
     assert len(g.castle) == 5
     assert "ARC25" in g.tavern or "ARC25" in g.players[0].hand
     # imperfect kill -> bottom of the castle at full health
@@ -354,3 +367,69 @@ def test_mercenary_costs_follow_fan_shop():
     assert by_id("merc_12H")["cost"] == 1 and by_id("merc_25H")["cost"] == 1
     assert by_id("merc_19_1")["cost"] == 3 and by_id("merc_ace_1")["cost"] == 3
     assert by_id("merc_jester_1")["cost"] == 5
+
+
+def win_exactly(g: Game) -> None:
+    """Rig the attempt so the next play wins with exact damage (mission 2 needs it)."""
+    g.castle = []
+    assert g.enemy is not None
+    for cid in list(g.active_player.hand):
+        info = g.preview_play([cid])
+        if info.get("ok") and info.get("damage", 0) > 0:
+            g.enemy.hp = info["damage"]
+            g.enemy.max_hp = info["damage"]
+            g.play([cid])
+            assert g.phase == PHASE_WON, g.phase
+            return
+    raise AssertionError("no card can deal damage")
+
+
+def test_mission2_rewards_are_corruption_choice_and_class_sticker_assignment():
+    c = CampaignState.new(1, ["Solo"], seed=21)
+    g = c.start_attempt(seed=21)
+    win_quickly(g)
+    c.finish_attempt(g)
+    resolve_choices(c)
+    assert c.mission == 2 and P.find(c.party, "ARC25") is not None
+    g = c.start_attempt(seed=22)
+    heads = [g.cards[x] for x in [g.enemy.card_id] + g.castle]
+    assert len(heads) == 6 and all(h.name == "Hydra Head" and len(h.suits) == 2 for h in heads)
+    assert len({tuple(sorted(h.suits)) for h in heads}) == 6  # every pair of classes once
+    win_exactly(g)
+    res = c.finish_attempt(g)
+    assert res["won"] and c.mission == 3
+    # no mission 2 card removes the High Arcana
+    assert P.find(c.party, "ARC25") is not None
+    kinds = [s["kind"] for s in c.pending]
+    assert kinds == ["choice_corrupt", "choice_classes"]
+    # second corruption: a different strength than the first
+    first = c.corrupted[0]
+    opts = c.pending_choice()["options"]
+    assert first not in opts and all(P.find(c.party, o)["rank"] != P.find(c.party, first)["rank"] for o in opts)
+    c.resolve_choice(opts[0])
+    step = c.pending_choice()
+    cards = step["cards"]
+    assert [P.find(c.party, x)["rank"] for x in cards] == ["3", "5", "7", "9"]
+    assert step["classes"] == ["H", "D", "C", "S"]
+    # the player assigns: one sticker each, each class once, never the card's own class
+    own = {cid: P.find(c.party, cid)["suits"][0] for cid in cards}
+    bad = {cid: own[cid] for cid in cards}
+    with pytest.raises(ValueError):
+        c.resolve_choice(bad)
+    with pytest.raises(ValueError):
+        c.resolve_choice({cards[0]: "H"})  # incomplete
+    good = first_valid_assignment(c, step)
+    with pytest.raises(ValueError):
+        dup = dict(good)
+        dup[cards[1]] = good[cards[0]]
+        c.resolve_choice(dup)  # a class used twice
+    with pytest.raises(ValueError):
+        c.resolve_choice("3H")  # not a mapping
+    line = c.resolve_choice(good)
+    assert line.startswith("Class stickers") and not c.pending
+    for cid, s in good.items():
+        suits = P.find(c.party, cid)["suits"]
+        assert len(suits) == 2 and s in suits and s != own[cid]
+    # a two-class card carries both classes into the next attempt
+    d = CampaignState.from_dict(c.to_dict())
+    assert P.find(d.party, cards[0])["suits"] == P.find(c.party, cards[0])["suits"]

@@ -16,7 +16,7 @@ import fakeui  # noqa: E402
 fakeui.install()
 import ui  # noqa: E402
 
-from app.screens import App, GameScreen, MenuScreen, NewGameScreen, RulesScreen, SettingsScreen  # noqa: E402
+from app.screens import App, ChoiceScreen, GameScreen, MenuScreen, NewGameScreen, RulesScreen, SettingsScreen  # noqa: E402
 from regicide.bots import greedy_policy, min_waste_discard  # noqa: E402
 from regicide.engine import PHASE_PLAY, PHASE_SUFFER  # noqa: E402
 from regicide.rules import GameConfig  # noqa: E402
@@ -142,6 +142,25 @@ def main(argv):
         shot(app, "45c_reward_chosen")
         ui.tap(app, *ui.root_point(app, ui.button(app, "Confirm")))
         shot(app, "45d_campaign_after_choice")
+    # mission 2's class sticker assignment, reached through the engine
+    camp = app.campaign
+    g2 = camp.start_attempt(seed=32)
+    g2.castle = []
+    for cid in list(g2.active_player.hand):
+        info = g2.preview_play([cid])
+        if info.get("ok") and info.get("damage", 0) > 0:
+            g2.enemy.hp = g2.enemy.max_hp = info["damage"]
+            g2.play([cid])
+            break
+    if g2.phase == "won":
+        camp.finish_attempt(g2)
+        camp.resolve_choice(camp.pending_choice()["options"][0])
+        app.show(ChoiceScreen(app))
+        shot(app, "45e_class_stickers")
+        camp.pending = []
+        camp.mission = 2
+        camp.completed = [1]
+        app.save_campaign()
     app.start_attempt()
     gs = app.current
     g = app.game

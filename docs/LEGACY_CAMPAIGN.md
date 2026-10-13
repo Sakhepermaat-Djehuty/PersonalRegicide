@@ -311,16 +311,62 @@ private lore overlay described in regicide/campaign/lore.py.
    character; the rules of pack C (which characters qualify) are still to be read.
 2. "Add the High Arcana to your party." The High Arcana: strength 25, subtitle "Elf
    Mage", no class icon on the card (so no class ability; to be confirmed).
-3. "Acquire the new relic." Kinfolk Flute, relic. Side photographed (the two-or-more
-   players side): "After you form an attack (before proceeding to Step 2), other players
-   may add cards from their hand to the attack, as long as the added cards form a valid
-   Kinfolk Attack. Animal Companions may not be added this way as they cannot be a part
-   of Kinfolk Attacks." The solo side is still to be photographed.
+3. "Acquire the new relic." Kinfolk Flute, relic, two sides. *Two or more players:*
+   "After you form an attack (before proceeding to Step 2), other players may add cards
+   from their hand to the attack, as long as the added cards form a valid Kinfolk Attack.
+   Animal Companions may not be added this way as they cannot be a part of Kinfolk
+   Attacks." *Solo relic:* "Once per turn at any time you may put a 2, 3, 4 or 5 from
+   hand here as long as there are no other cards of a different strength already here.
+   While forming a Kinfolk Attack you may play cards from here as though they were from
+   your hand."
 
 **Engine status:** mission 1 is marked verified. The corruption is a player choice in the
-app (candidates still follow the fan constraints until pack C is read). The flute's
-multiplayer side is recorded but not implemented yet; the fan "store a 2–5 on the flute"
-mechanic is kept for solo play only, pending the solo side of the card.
+app (candidates still follow the fan constraints until pack C is read). The solo flute
+is implemented as the card says (store once per turn, same strength only, flute cards
+join kinfolk attacks only); the multiplayer side is being implemented.
+
+## Mission 2, Shadow and Mist (confirmed, transcribed from the owner's photos)
+
+**Location card:** Umbra Cavern (cave art and a QR code; map piece on the back with a
+dotted route from the north ending at a cave marked with a cross).
+
+**Enemy stats card:** Hydra Heads 10 / 20, six of them, one for every pair of the four
+classes (cleric+bard, cleric+warrior, paladin+cleric, warrior+bard, paladin+bard,
+paladin+warrior). The example head is Gilgulp, "Hydra Head", strength 10, health 20,
+immune to both warriors and clerics.
+
+**Mission rules card.** Each enemy has two classes, so it is immune to the abilities of
+two classes. *Enemy defeated:* if the enemy was dealt exact damage, banish it (put it in
+the banished pile); if not, put it face down on the bottom of the enemy deck. You will
+have to fight that enemy again later. Only exact kills will allow you to complete this
+mission. *Rules continued, remember:* when you play a corrupted card (or if someone adds
+one to your attack with the Kinfolk Flute), immediately put the top card of the reserve
+deck into the banished pile.
+
+**Rules summary card:** Enemy defeated: place enemy on the bottom of the enemy deck.
+Exact kill (skull icon): banish enemy instead.
+
+**Story cards:** an intro (a collapsed bridge, the Arcana's path through the Umbra
+Caverns, six reptilian heads) and an outcome (Esme of the Eternal Vine, on to the
+Academy); texts in the private lore overlay only.
+
+**Reward cards, in order:**
+1. "Open pack C and corrupt another character in your party." Player's choice again.
+2. Class stickers: "Shuffle your party and place upside down. Reveal cards from the top
+   and set aside the first Halfling (3), Avion (5), Elf (7) and Drakonid (9) you find.
+   Take those four cards and apply the class stickers (on the cards not sleeves) so that
+   each card has one sticker. You may not put a class sticker on a card that already has
+   that class. Add the new sticker directly below the card's existing class icon." The
+   card carries four stickers, one per class. (The races go by strength: 3s are
+   halflings, 5s avions, 7s elves, 9s drakonids.)
+
+No mission 2 card removes the High Arcana; the fan transcription had him leaving after
+this mission. The app keeps him until a later card says otherwise.
+
+**Engine status:** mission 2 is marked verified. The sticker reward reveals one random
+3, 5, 7 and 9 from the party and the player assigns the four class stickers on a reward
+screen (each class once, never a card's own class). If all four revealed cards share the
+same single class no assignment is possible, so the app reshuffles and reveals again.
 
 ## Permanent mechanics (as transcribed)
 
@@ -331,10 +377,12 @@ mechanic is kept for solo play only, pending the solo side of the card.
   some missions).
 * **Mission zone**: a mission-specific area on the playmat that several missions fill.
 * **Relics** (persist between missions):
-  * Kinfolk Flute (after M1): **confirmed (2+ players side):** after the active player
-    forms an attack, before step 2, other players may add cards from hand that form a
-    valid kinfolk attack with it; no animal companions. Solo side: VERIFY (the fan
-    engine stores one 2–5 per turn on the flute to play in a later kinfolk attack).
+  * Kinfolk Flute (after M1): **confirmed, both sides.** 2+ players: after the active
+    player forms an attack, before step 2, other players may add cards from hand that
+    form a valid kinfolk attack with it; no animal companions. Solo: once per turn at
+    any time put a 2, 3, 4 or 5 from hand on the flute if no card of a different
+    strength is already there; while forming a kinfolk attack, flute cards may be played
+    as though from hand.
   * Scarlet Whistle (after M4): play an Ace or Beast together with the top card of the
     discard pile as a pair. VERIFY.
   * Azure Emblem (after M6): after a Mage pick, keep one of the other revealed cards on
@@ -359,7 +407,7 @@ mechanic is kept for solo play only, pending the solo side of the card.
 * **Beasts**: value 0 alone; paired with another card they copy its value. From M5 you
   pick one Beast of a basic suit to add to the deck for the mission (M11 excluded). A
   permanent ★ Beast joins after M9.
-* **Special party members**: the High Arcana (25, "Elf Mage", no class icon; confirmed; joins after M1, leaves after M2 per the fan transcription), Goran (8, gains a suit
+* **Special party members**: the High Arcana (25, "Elf Mage", no class, confirmed by the owner; joins after M1; the fan transcription has him leaving after M2 but no M2 card does it), Goran (8, gains a suit
   after each of M5–M8, ignores immunity after M9, removed after M10), Myla (7; joins
   after M5, leaves at M6, is the boss of M9), Esme (the 6♣; removed for M11, returns with
   all four suits).
@@ -393,11 +441,12 @@ Numbers are attack / health.
    of your choice (qualifying characters per pack C, still to be read; the fan
    constraints are value 2–9, never repeating a rank, never the same suit more than
    twice), add the High Arcana (25, no class icon), acquire the Kinfolk Flute.
-2. **Shadow and Mist** (fan name: The Hydra Assault; location Umbera cavern) — 6 Hydras 10/20, each with a distinct pair of basic suits
-   (immune to both). Imperfect kill: the Hydra goes to the bottom of the enemy deck.
-   Perfect kill: banished. Reward: pick one random 3, 5, 7 and 9 and give each a second
-   basic suit (every suit used once; not a suit the card has); corrupt another card;
-   the High Arcana leaves.
+2. **Shadow and Mist** (Umbra Cavern; fan name: The Hydra Assault) — **confirmed:** 6
+   Hydra Heads 10/20, each with a distinct pair of classes (immune to both). Imperfect
+   kill: face down to the bottom of the enemy deck. Exact kill: banished. Rewards: open
+   pack C and corrupt another character (player's choice); reveal the first 3, 5, 7 and 9
+   from the shuffled party and give each one class sticker (each class once, never the
+   card's own class; the player assigns). No card removes the High Arcana here.
 3. **Lessons in Flames** (fan name: The Mage Tower; Magic Academy) — 4 Mages 10/30, 2 Wizards 15/45, 1 Grand Wizard 20/60, all ★.
    End of each turn (not on a kill): top tavern card to the mission zone. Enemies are
    immune to every suit present in the mission zone (shields are recalculated when ♠
