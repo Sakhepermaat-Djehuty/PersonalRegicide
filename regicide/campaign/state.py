@@ -32,7 +32,8 @@ class CampaignState:
         self.losses: Dict[str, int] = {}     # mission -> losses
         self.coins = 0
         self.m_box_opened = False
-        self.mercenaries: List[str] = []     # hired for the current mission
+        self.mercenaries: List[str] = []     # hired for the current mission (kept across failed attempts)
+        self.swaps_allowed = False           # same-cost swaps are allowed after a failure, until the next attempt
         self.pending: List[dict] = []        # reward steps awaiting a choice
         self.log: List[str] = []
         self.lore_seen: List[str] = []       # lore entry ids revealed in this campaign
@@ -52,6 +53,7 @@ class CampaignState:
             "mission": self.mission, "completed": list(self.completed),
             "attempts": dict(self.attempts), "losses": dict(self.losses), "coins": self.coins,
             "m_box_opened": self.m_box_opened, "mercenaries": list(self.mercenaries),
+            "swaps_allowed": self.swaps_allowed,
             "pending": [dict(s) for s in self.pending], "log": list(self.log),
             "reveal_all": self.reveal_all, "seed": self.seed, "rng_calls": self.rng_calls,
             "finished": self.finished,
@@ -119,6 +121,7 @@ class CampaignState:
         cfg = GameConfig(players=self.players, names=tuple(self.names), rules_id=M.mission(number)["rules_id"],
                          extra=extra)
         self.attempts[str(number)] = self.attempts_on(number) + 1
+        self.swaps_allowed = False
         self.touch()
         self.reveal_lore("m%d_intro" % number)
         g = Game.new(cfg, seed=seed if seed is not None else rng.randrange(2 ** 31))
@@ -131,11 +134,12 @@ class CampaignState:
             raise RuntimeError("attempt is for mission %d but the campaign is at %d" % (number, self.mission))
         name = M.mission(number)["title"]
         self.touch()
-        # Mercenaries are hired for one attempt only (official: never kept).
-        if self.mercenaries:
-            self.log.append("The mercenaries go back to their lives.")
-            self.mercenaries = []
         if game.result != "loss":
+            # Rulebook p.25 (sticker): on success all mercenaries return to the mercenary
+            # box and the next mission starts with none. Unspent coins go with them.
+            if self.mercenaries:
+                self.log.append("The mercenaries go back to their lives.")
+                self.mercenaries = []
             self.completed.append(number)
             self.log.append("Mission %d (%s) completed on attempt %d." % (number, name, self.attempts_on(number)))
             self.reveal_lore("m%d_outcome" % number)
@@ -157,18 +161,27 @@ class CampaignState:
                 self.mission = number + 1
             return {"won": True, "rewards": applied, "pending": list(self.pending)}
         self.losses[str(number)] = self.losses_on(number) + 1
-        # Official: coins for an attempt equal the number of times the mission has been
-        # failed so far; nothing carries over.
-        self.coins = self.losses_on(number)
-        self.log.append("Mission %d (%s) lost (attempt %d). %d coin%s to spend on the next attempt." % (
-            number, name, self.attempts_on(number), self.coins, "" if self.coins == 1 else "s"))
+        # Rulebook p.25 (sticker), confirmed by the owner: each time you lose a mission
+        # you GAIN coins equal to the number of times you have lost it (1, then 2, then
+        # 3: 1 -> 3 -> 6 -> 10 in total). Hired mercenaries stay for the next attempt and
+        # unspent coins carry over; after each failure one may be swapped for another of
+        # the same cost (see ``swap``).
+        earned = self.losses_on(number)
+        self.coins += earned
+        self.swaps_allowed = True
+        kept = ""
+        if self.mercenaries:
+            kept = " %d mercenar%s stay%s on." % (len(self.mercenaries), "y" if len(self.mercenaries) == 1 else "ies",
+                                                 "s" if len(self.mercenaries) == 1 else "")
+        self.log.append("Mission %d (%s) lost (attempt %d). +%d coin%s (%d to spend).%s" % (
+            number, name, self.attempts_on(number), earned, "" if earned == 1 else "s", self.coins, kept))
         opened = False
         if not self.m_box_opened:
             self.m_box_opened = True
             opened = True
             self.log.append("Pack M opened: mercenaries are for hire between attempts.")
             self.reveal_lore("pack_m")
-        return {"won": False, "coins": self.coins, "earned": self.coins, "m_box_opened_now": opened}
+        return {"won": False, "coins": self.coins, "earned": earned, "m_box_opened_now": opened}
 
     # ------------------------------------------------------------------ mercenaries
     def hireable(self) -> List[dict]:
@@ -191,3 +204,27 @@ class CampaignState:
         self.coins -= int(m["cost"])
         self.mercenaries.append(mid)
         self.log.append("Hired %s for %d coin%s." % (m["name"], m["cost"], "" if m["cost"] == 1 else "s"))
+
+    def swappable(self, mid: str) -> List[dict]:
+        """Mercenaries that ``mid`` (already hired) may be swapped for: same cost, not hired."""
+        if mid not in self.mercenaries or not self.swaps_allowed:
+            return []
+        cost = by_id(mid)["cost"]
+        from .mercenaries import MERCENARIES
+        return [{"id": m["id"], "name": m["name"], "cost": m["cost"]}
+                for m in MERCENARIES if m["cost"] == cost and m["id"] not in self.mercenaries]
+
+    def swap(self, old_id: str, new_id: str) -> None:
+        """Rulebook p.25 (sticker): after each failure you may swap any previously selected
+        mercenary with another of the same cost. Free; allowed until the next attempt starts."""
+        if old_id not in self.mercenaries:
+            raise ValueError("not hired")
+        if not self.swaps_allowed:
+            raise ValueError("swaps are only allowed after a failed attempt")
+        if new_id in self.mercenaries:
+            raise ValueError("already hired")
+        old, new = by_id(old_id), by_id(new_id)
+        if old["cost"] != new["cost"]:
+            raise ValueError("swaps must be for a mercenary of the same cost")
+        self.mercenaries[self.mercenaries.index(old_id)] = new_id
+        self.log.append("Swapped %s for %s." % (old["name"], new["name"]))

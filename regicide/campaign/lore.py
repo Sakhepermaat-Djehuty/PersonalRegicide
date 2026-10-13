@@ -29,7 +29,8 @@ for _m in MISSIONS:
                   "text": _m["rewards_text"]})
 _LORE.append({"id": "pack_m", "mission": 0, "title": "Pack M: the mercenary camp",
               "text": "Losing a mission is expected. Each failure brings coins, and mercenaries with "
-                      "fat stats and some flexibility can be hired for the next attempt. They never stay."})
+                      "fat stats and some flexibility can be hired. They fight with you until the mission "
+                      "is won, then go back to their lives."})
 _LORE.append({"id": "campaign_end", "mission": 13, "title": "Eternal mode",
               "text": "The campaign is complete. The party you built can keep adventuring in "
                       "generated missions."})

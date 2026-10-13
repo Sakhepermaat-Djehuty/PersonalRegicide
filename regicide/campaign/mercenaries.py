@@ -3,7 +3,10 @@
 Card list is from the physical-contents guide. Costs follow the fan implementation
 (DorkDad141/regicide-js ``initShop``), whose author owned the game: 12s and 2/5s cost 1,
 19s and choosable Companions cost 3, extra Jesters cost 5. Still tagged unverified until
-read off the real cards. Coins: the n-th loss on a mission grants n coins.
+read off the real cards. Coins (rulebook p.25 sticker, owner-confirmed): the n-th loss
+on a mission grants n coins; hired mercenaries stay until the mission is won; after each
+failure one may be swapped for another of the same cost. The "choose class" Animal
+Companions are the rulebook's Wild Animal mercenaries.
 """
 from __future__ import annotations
 
@@ -26,7 +29,7 @@ for _i in (1, 2):
     _add("merc_19_%d" % _i, "Mercenary 19 (no class)", 3,
          {"id": "M19_%d" % _i, "rank": "19", "suits": [], "value": 19, "name": "Mercenary 19", "flags": ["mercenary"]})
 for _i in (1, 2):
-    _add("merc_ace_%d" % _i, "Mercenary Animal Companion (choose class)", 3,
+    _add("merc_ace_%d" % _i, "Wild Animal (choose class)", 3,
          {"id": "MA_%d" % _i, "rank": "A", "suits": [], "value": 1, "name": "Companion", "flags": ["mercenary", "choosable"]})
 for _i in (1, 2):
     _add("merc_jester_%d" % _i, "Extra Jester", 5,

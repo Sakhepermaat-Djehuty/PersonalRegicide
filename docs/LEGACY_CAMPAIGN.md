@@ -255,17 +255,13 @@ quoted text at the top of this file: play the Jester alone, choose one of the fo
 classes for it, strength 8, ignores immunity, set aside face down after the enemy is
 defeated, never cleaned up to the discard pile or any mission zone.
 
-### Open question from p.25 (owner to confirm)
+### Mercenary persistence (p.25, confirmed by the owner)
 
-The mercenary sticker says that *after each failure* you may swap previously selected
-mercenaries for others of the same cost, and that each failure grants coins equal to the
-number of failures so far. Read literally, mercenaries hired for attempt 2 stay for
-attempt 3 (and coins accumulate: 1 after the first failure, 1+2 after the second). The
-owner wrote "Hired mercenaries are never kept", which the sticker on p.25 states for
-mission *success*. The engine currently clears mercenaries after every attempt and sets
-coins equal to the failure count. If the literal reading is right, the engine should
-keep hired mercenaries across failed attempts of the same mission, add new coins on each
-failure, and allow same-cost swaps.
+Mercenaries hired after a failure stay for every later attempt of that mission, each
+failure *adds* coins equal to the number of failures so far (1, then 2, then 3: totals
+1, 3, 6, 10), unspent coins carry over, and after each failure any hired mercenary may be
+swapped for another of the same cost. On success all mercenaries return to the box. The
+engine implements exactly this (`CampaignState.finish_attempt`, `hire`, `swap`).
 
 ### Engine work implied by pages 20–26 (tracked for Stage 4)
 
@@ -324,13 +320,17 @@ failure, and allow same-cost swaps.
   after each of M5–M8, ignores immunity after M9, removed after M10), Myla (7; joins
   after M5, leaves at M6, is the boss of M9), Esme (the 6♣; removed for M11, returns with
   all four suits).
-* **Mercenaries ("M" box, opened after your first loss)**: **confirmed by the owner:**
-  coins are given at the start of each attempt and equal the number of times that
-  mission has been failed (none on the first attempt, one on the second, two on the
-  third, and so on); nothing carries over, and hired mercenaries are never kept. Spend
-  them on mercenaries with a printed cost: 4 × "12" (one per basic class), 4 × "2/5"
-  (play as a 2 or a 5; counts 5 when discarded), 2 × "19" (no class), 2 × Animal
-  Companion with a chosen class, 2 × extra Jesters. VERIFY the printed costs.
+* **Mercenaries ("M" box, opened after your first loss)**: **confirmed by the owner and
+  the p.25 sticker:** each time you lose a mission you gain coins equal to the number of
+  times you have lost it (1 after the first loss, 2 more after the second, 3 more after
+  the third: 1, 3, 6, 10 in total). Hired mercenaries stay for the next attempt of the
+  same mission and unspent coins carry over; after each failure you may swap a hired
+  mercenary for another of the same cost. When the mission is won every mercenary
+  returns to the box and the next mission starts with none (the engine also drops unspent
+  coins at that point; unverified). Spend coins on mercenaries with a printed cost: 4 ×
+  "12" (one per basic class), 4 × "2/5" (declare 2 or 5 when it enters play), 2 × "19"
+  (no class), 2 × Wild Animal (declare one of four classes when it enters play), 2 ×
+  extra Jesters. VERIFY the printed costs.
 * **Feign death** is official (see above); regicide-js' "6 or more cards" is a
   simplification of "entire hand while at the hand limit".
 * **Jester**: regicide-js treats Jesters as a pool of 2 (plus bought extras), played from
@@ -429,8 +429,8 @@ tier, immunities, the start/end-of-turn effects, the enemy-defeated sequence and
 perfect-kill variant, what joins and leaves the party, and the reward pack contents.
 Globally confirm: whether a solo player may yield in Legacy (the base reading forbids it;
 the fan engine allows it unless the previous action was a yield; the solo rules on p.26
-do not mention yielding), whether hired mercenaries persist across failed attempts (see
-the p.25 open question above), the Evergreen Mother effects, the Mission 6
-second-printing rules, the E-box procedure, and what pack F is. Already confirmed from
-the rulebook: the class-ability text and resolution order for every class, the coin rule,
-the Jester claim rules, and the 2/5 and Wild Animal declarations.
+do not mention yielding), whether unspent coins are lost when a mission is won, the
+Evergreen Mother effects, the Mission 6 second-printing rules, the E-box procedure, and
+what pack F is. Already confirmed from the rulebook: the class-ability text and
+resolution order for every class, the coin and mercenary-persistence rules, the Jester
+claim rules, and the 2/5 and Wild Animal declarations.

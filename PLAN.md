@@ -44,12 +44,14 @@ is cramped, slow, or unclear. I render the same screens headlessly, but touch ta
 sizes and font rendering need a real device.
 
 **G2 — Legacy verification (in progress; you have played the whole campaign):**
-confirmed so far: the coin rule (coins per attempt = previous failures of that mission,
-mercenaries never kept), the solo Jester text, second-edition Mission 6. Still needed
-as photos: the player helper cards, every mission's rules and enemy stat cards, the
-rulebook's Jester / communication / feign death pages, the M card and mercenary costs,
-the relics, the special party cards, the C and E box rules and cards, pack F. Until
-then missions 3 to 12 are built from the fan transcription and labelled "unverified".
+confirmed so far: the whole rulebook (pages 2 to 26, transcribed in
+docs/LEGACY_CAMPAIGN.md), the player helper card, the coin and mercenary rule (each
+failure adds coins equal to the failures so far; hired mercenaries stay until the mission
+is won; same-cost swaps after each failure), the solo Jester text, second-edition
+Mission 6. Still needed as photos: every mission's rules, overview and enemy stat cards,
+the M card and mercenary costs, the relics (both sides), the special party cards, the C
+and E box rules and cards, pack F. Until then missions 3 to 12 are built from the fan
+transcription and labelled "unverified".
 
 **G3 — answered:** progressive reveal stays on. Campaigns are save files: main menu
 Continue / Load game / New game / Quick play / Lore (all games); game menu Next

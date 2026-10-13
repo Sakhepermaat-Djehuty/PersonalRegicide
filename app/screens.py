@@ -1019,6 +1019,8 @@ class _MapCanvas(ui.View):
 
 
 class MercenaryScreen(Screen):
+    swapping = None  # id of a hired mercenary being swapped, or None
+
     def layout(self) -> None:
         if not hasattr(self, "app"):
             return
@@ -1034,25 +1036,40 @@ class MercenaryScreen(Screen):
         y += 48
         if camp is None:
             return
-        self.add_subview(make_label("Coins: %d (one per previous failure of this mission). Mercenaries fight in the next "
-                                    "attempt only and are never kept. Costs are from the fan transcription until verified." % camp.coins,
-                                    (m, y, w - 2 * m, 60), 13, False, T.TEXT, lines=3))
-        y += 66
+        self.add_subview(make_label("Coins: %d. Each failure of a mission earns coins equal to the number of times it "
+                                    "has been failed. Hired mercenaries stay until the mission is won; after a failure "
+                                    "you may swap one for another of the same cost." % camp.coins,
+                                    (m, y, w - 2 * m, 72), 13, False, T.TEXT, lines=4))
+        y += 78
         sv = ui.ScrollView(frame=(m, y, w - 2 * m, h - y - T.BOTTOM_INSET))
         yy = 0
-        hired = list(camp.mercenaries)
-        for mid in hired:
-            from regicide.campaign.mercenaries import by_id
-            mm = by_id(mid)
-            sv.add_subview(make_label("Hired: %s" % mm["name"], (0, yy, w - 2 * m, 28), 14, True, T.OK))
-            yy += 32
-        for o in camp.hireable():
-            lab = make_label("%s — %d coin%s" % (o["name"], o["cost"], "" if o["cost"] == 1 else "s"), (0, yy, w - 2 * m - 90, 40), 14, False, T.TEXT, lines=2)
-            sv.add_subview(lab)
-            b = make_button("Hire", (lambda mid: lambda s: self._hire(mid))(o["id"]), (w - 2 * m - 80, yy + 2, 80, 36), True, 14)
-            set_enabled(b, bool(o["affordable"]))
-            sv.add_subview(b)
-            yy += 46
+        from regicide.campaign.mercenaries import by_id
+        if self.swapping is not None and self.swapping in camp.mercenaries:
+            cur = by_id(self.swapping)
+            sv.add_subview(make_label("Swap %s for:" % cur["name"], (0, yy, w - 2 * m - 90, 28), 14, True, T.OK))
+            sv.add_subview(make_button("Cancel", lambda s: self._cancel_swap(), (w - 2 * m - 80, yy - 2, 80, 32), False, 13))
+            yy += 36
+            for o in camp.swappable(self.swapping):
+                lab = make_label(o["name"], (0, yy, w - 2 * m - 90, 40), 14, False, T.TEXT, lines=2)
+                sv.add_subview(lab)
+                b = make_button("Take", (lambda nid: lambda s: self._swap(nid))(o["id"]), (w - 2 * m - 80, yy + 2, 80, 36), True, 14)
+                sv.add_subview(b)
+                yy += 46
+        else:
+            for mid in list(camp.mercenaries):
+                mm = by_id(mid)
+                sv.add_subview(make_label("Hired: %s" % mm["name"], (0, yy, w - 2 * m - 90, 28), 14, True, T.OK))
+                if camp.swappable(mid):
+                    sv.add_subview(make_button("Swap", (lambda hid: lambda s: self._begin_swap(hid))(mid),
+                                               (w - 2 * m - 80, yy - 2, 80, 32), False, 13))
+                yy += 36
+            for o in camp.hireable():
+                lab = make_label("%s — %d coin%s" % (o["name"], o["cost"], "" if o["cost"] == 1 else "s"), (0, yy, w - 2 * m - 90, 40), 14, False, T.TEXT, lines=2)
+                sv.add_subview(lab)
+                b = make_button("Hire", (lambda mid: lambda s: self._hire(mid))(o["id"]), (w - 2 * m - 80, yy + 2, 80, 36), True, 14)
+                set_enabled(b, bool(o["affordable"]))
+                sv.add_subview(b)
+                yy += 46
         sv.content_size = (w - 2 * m, yy + 20)
         self.add_subview(sv)
 
@@ -1063,6 +1080,25 @@ class MercenaryScreen(Screen):
             import console
             console.hud_alert(str(e), "error")
             return
+        self.app.save_campaign()
+        self.layout()
+
+    def _begin_swap(self, mid: str) -> None:
+        self.swapping = mid
+        self.layout()
+
+    def _cancel_swap(self) -> None:
+        self.swapping = None
+        self.layout()
+
+    def _swap(self, new_id: str) -> None:
+        try:
+            self.app.campaign.swap(self.swapping, new_id)
+        except ValueError as e:
+            import console
+            console.hud_alert(str(e), "error")
+            return
+        self.swapping = None
         self.app.save_campaign()
         self.layout()
 

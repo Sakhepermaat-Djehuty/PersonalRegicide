@@ -90,29 +90,75 @@ def test_loss_earns_coins_opens_pack_m_and_mercenaries_join_next_attempt():
     g._lose("test")
     res = c.finish_attempt(g)
     assert not res["won"] and res["m_box_opened_now"] and c.coins == 1 and c.losses_on(1) == 1
+    assert res["earned"] == 1 and c.swaps_allowed
     g = c.start_attempt(seed=6)
+    assert not c.swaps_allowed
     g._lose("test")
     res = c.finish_attempt(g)
-    assert c.coins == 2  # coins for an attempt = times the mission has been failed; none carry over
+    # rulebook p.25: each failure GAINS coins equal to the failures so far: 1 -> 3 -> 6 -> 10
+    assert res["earned"] == 2 and c.coins == 3
     offers = c.hireable()
     assert offers and any(o["affordable"] for o in offers)
     cheap = [o for o in offers if o["cost"] <= 1][0]
     c.hire(cheap["id"])
     with pytest.raises(ValueError):
         c.hire(cheap["id"])
+    assert c.coins == 2
     g = c.start_attempt(seed=7)
     merc_ids = [x for x in g.cards if x.startswith("M")]
     assert merc_ids, "hired mercenary should be in the reserve"
-    # mercenaries are never kept: gone after the attempt, won or lost
+    # hired mercenaries stay for the next attempt of the same mission; unspent coins carry
     g._lose("test")
-    c.finish_attempt(g)
-    assert c.mercenaries == [] and c.coins == 3
+    res = c.finish_attempt(g)
+    assert c.mercenaries == [cheap["id"]] and res["earned"] == 3 and c.coins == 5
     assert not any(x.startswith("M") for x in [cd["id"] for cd in c.party])
     g = c.start_attempt(seed=8)
-    assert not [x for x in g.cards if x.startswith("M")]
+    assert [x for x in g.cards if x.startswith("M")], "kept mercenary rejoins the reserve"
     win_quickly(g)
     c.finish_attempt(g)
-    assert c.coins == 0 and c.mission == 2
+    # on success every mercenary returns to the box and coins do not carry to the next mission
+    assert c.mercenaries == [] and c.coins == 0 and c.mission == 2
+    g = c.start_attempt(seed=9)
+    assert not [x for x in g.cards if x.startswith("M")]
+
+
+def test_mercenary_swap_same_cost_after_failure_only():
+    c = CampaignState.new(1, ["Solo"], seed=5)
+    c.m_box_opened = True
+    c.coins = 3
+    c.hire("merc_12H")
+    # no failure yet in this mission: swapping is not on offer
+    assert c.swappable("merc_12H") == []
+    with pytest.raises(ValueError):
+        c.swap("merc_12H", "merc_12C")
+    g = c.start_attempt(seed=5)
+    g._lose("test")
+    c.finish_attempt(g)
+    assert c.swaps_allowed and c.coins == 3
+    names = {o["id"] for o in c.swappable("merc_12H")}
+    assert "merc_12C" in names and "merc_25S" in names  # same cost (1), not hired
+    assert "merc_12H" not in names and "merc_19_1" not in names  # itself; cost 3
+    with pytest.raises(ValueError):
+        c.swap("merc_12H", "merc_19_1")  # different cost
+    with pytest.raises(ValueError):
+        c.swap("merc_19_1", "merc_19_2")  # not hired
+    c.swap("merc_12H", "merc_12C")
+    assert c.mercenaries == ["merc_12C"] and c.coins == 3  # swaps are free
+    c.hire("merc_12H")
+    with pytest.raises(ValueError):
+        c.swap("merc_12C", "merc_12H")  # target already hired
+    # a second swap of the same slot is still allowed until the next attempt starts
+    c.swap("merc_12C", "merc_12D")
+    g = c.start_attempt(seed=6)
+    assert not c.swaps_allowed and c.swappable("merc_12D") == []
+    assert {x for x in g.cards if x.startswith("M12")} == {"M12D", "M12H"}
+    # round trip through the save format keeps the flag and the hires
+    d = c.to_dict()
+    c2 = CampaignState.from_dict(d)
+    assert c2.mercenaries == c.mercenaries and c2.swaps_allowed is False and c2.coins == c.coins
+    # old saves without the field default to no swaps
+    d.pop("swaps_allowed")
+    assert CampaignState.from_dict(d).swaps_allowed is False
 
 
 def test_extra_jester_mercenary_adds_solo_power():

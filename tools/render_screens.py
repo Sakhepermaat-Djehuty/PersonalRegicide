@@ -150,6 +150,15 @@ def main(argv):
     shot(app, "48_mission_lost")
     app.show(MercenaryScreen(app))
     shot(app, "49_mercenary_camp")
+    hires = ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Hire" and v.enabled)
+    if hires:
+        ui.tap(app, *ui.root_point(app, hires[0]))
+        shot(app, "49b_mercenary_hired")
+        swaps = ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Swap")
+        if swaps:
+            ui.tap(app, *ui.root_point(app, swaps[0]))
+            shot(app, "49c_mercenary_swap")
+            ui.tap(app, *ui.root_point(app, ui.button(app, "Cancel")))
     app.show(PartyScreen(app))
     shot(app, "50_party")
     app.show(ProgressScreen(app))

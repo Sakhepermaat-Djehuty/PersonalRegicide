@@ -247,8 +247,20 @@ def test_campaign_loss_opens_mercenary_camp(app):
     assert hires
     ui.tap(app, *ui.root_point(app, hires[0]))
     assert len(app.campaign.mercenaries) == 1 and app.campaign.coins == 0
+    hired = app.campaign.mercenaries[0]
+    # after a failure the hired mercenary may be swapped for another of the same cost
+    _tap_button(app, "Swap")
+    assert ui.button(app, "Cancel")
+    takes = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Take")]
+    assert takes
+    ui.tap(app, *ui.root_point(app, takes[0]))
+    assert len(app.campaign.mercenaries) == 1 and app.campaign.mercenaries[0] != hired
+    assert app.campaign.coins == 0
     _tap_button(app, "‹ Back")
     assert ui.button(app, "Retry mission (attempt 2)")
+    _tap_button(app, "Retry mission (attempt 2)")
+    # the hired mercenary is in this attempt's reserve and swaps are closed
+    assert any(x.startswith("M") for x in app.game.cards) and not app.campaign.swaps_allowed
 
 
 def test_solo_jester_class_choice_overlay(app):
