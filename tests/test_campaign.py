@@ -34,19 +34,45 @@ def test_campaign_mission1_is_base_regicide_with_legacy_extras():
     assert c.attempts_on(1) == 1
 
 
+def resolve_choices(c: CampaignState) -> None:
+    """Resolve pending reward choices like a player who always takes the first option."""
+    while c.pending:
+        step = c.pending_choice()
+        assert step["options"], step
+        c.resolve_choice(step["options"][0])
+
+
 def test_mission1_win_applies_rewards_and_unlocks_mission2():
     c = CampaignState.new(1, ["Solo"], seed=2)
     g = c.start_attempt(seed=2)
+    assert g.enemy.name.endswith("Justicar") and g.enemy.name.split()[0] in ("Cleric", "Bard", "Warrior", "Paladin")
     win_quickly(g)
     res = c.finish_attempt(g)
     assert res["won"]
     assert c.mission == 2 and c.completed == [1]
     assert "flute" in c.relics
-    assert P.find(c.party, "ARC25") is not None
-    assert len(c.corrupted) == 1
-    corrupted = P.find(c.party, c.corrupted[0])
-    assert "corrupted" in corrupted["flags"] and corrupted["rank"] in "23456789"
+    arc = P.find(c.party, "ARC25")
+    assert arc is not None and arc["name"] == "High Arcana" and arc["suits"] == []
+    # reward card: "Open pack C and corrupt a character in your party" -> the player chooses
+    assert c.corrupted == [] and len(c.pending) == 1 and res["pending"][0]["kind"] == "choice_corrupt"
+    step = c.pending_choice()
+    options = step["options"]
+    assert options and all(P.find(c.party, o)["rank"] in "23456789" for o in options)
+    assert "6H" not in options and "6C" in options  # the 6 is always Esme (clubs)
+    with pytest.raises(RuntimeError):
+        c.start_attempt(seed=3)  # must choose first
+    with pytest.raises(ValueError):
+        c.resolve_choice("10S")  # not an option
+    line = c.resolve_choice("4H")
+    assert "corrupted" in line and c.corrupted == ["4H"] and "corrupted" in P.find(c.party, "4H")["flags"]
     assert not c.pending
+    # the choice survives a save round trip while pending
+    c2 = CampaignState.new(1, ["Solo"], seed=2)
+    g2 = c2.start_attempt(seed=2)
+    win_quickly(g2)
+    c2.finish_attempt(g2)
+    c3 = CampaignState.from_dict(c2.to_dict())
+    assert c3.pending_choice()["options"] == c2.pending_choice()["options"]
 
 
 def test_mission2_hydras_recycle_on_imperfect_kill_and_banish_on_exact():
@@ -54,6 +80,7 @@ def test_mission2_hydras_recycle_on_imperfect_kill_and_banish_on_exact():
     g = c.start_attempt(seed=3)
     win_quickly(g)
     c.finish_attempt(g)
+    resolve_choices(c)
     g = c.start_attempt(seed=4)
     assert g.config.rules_id == "legacy_m2"
     assert g.enemy.name == "Hydra" and len(g.enemy.suits) == 2 and g.enemy.max_hp == 20
@@ -118,6 +145,7 @@ def test_loss_earns_coins_opens_pack_m_and_mercenaries_join_next_attempt():
     c.finish_attempt(g)
     # on success every mercenary returns to the box and coins do not carry to the next mission
     assert c.mercenaries == [] and c.coins == 0 and c.mission == 2
+    resolve_choices(c)
     g = c.start_attempt(seed=9)
     assert not [x for x in g.cards if x.startswith("M")]
 
@@ -276,6 +304,7 @@ def test_campaign_roundtrip_and_bot_can_play_attempts():
         g = c.start_attempt()
         play_out(g, greedy_policy)
         c.finish_attempt(g)
+        resolve_choices(c)
         if c.mission == 2:
             break
     d = json.loads(json.dumps(c.to_dict()))

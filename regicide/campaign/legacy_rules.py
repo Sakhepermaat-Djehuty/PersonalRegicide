@@ -99,8 +99,14 @@ class LegacyRules(BaseRules):
 
     # ------------------------------------------------------------------ relics
     def special_actions(self, game) -> List[Dict[str, Any]]:
+        """Kinfolk Flute, solo side (unverified, from the fan implementation): once per
+        turn store one card of strength 2–5 on the flute; flute cards may later join a
+        kinfolk attack. The multiplayer side (confirmed from the card): after the active
+        player forms an attack, before step 2, other players may add cards from hand that
+        form a valid kinfolk attack with it (no animal companions). That side is not
+        implemented yet, so the flute does nothing with 2+ players for now."""
         acts: List[Dict[str, Any]] = []
-        if "flute" in game.extra.get("relics", []) and game.phase == "play":
+        if "flute" in game.extra.get("relics", []) and game.phase == "play" and game.config.players == 1:
             if game.extra.get("flute_turn") != game.turn:
                 flute = game.extra.get("flute", [])
                 rank = game.cards[flute[0]].rank if flute else None

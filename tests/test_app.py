@@ -209,6 +209,24 @@ def test_campaign_flow_win_then_mission2(app):
     assert app.campaign.mission == 2 and "flute" in app.campaign.relics
     assert "m1_outcome" in app.campaign.lore_seen and "m2_intro" not in app.campaign.lore_seen
     _tap_button(app, "Game menu")
+    # the corruption is a player choice: it blocks the next mission until made
+    with pytest.raises(KeyError):
+        ui.button(app, "Next mission: start")
+    reward = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Reward:"))]
+    assert reward and "corrupt" in reward[0].title
+    ui.tap(app, *ui.root_point(app, reward[0]))
+    from app.widgets import CardView
+    confirm = ui.button(app, "Confirm")
+    assert confirm and not confirm.enabled
+    cards = ui.find(app, lambda v: isinstance(v, CardView))
+    options = app.campaign.pending_choice()["options"]
+    assert {v.card.id for v in cards} == set(options)
+    ui.tap(app, *ui.root_point(app, cards[0]))
+    assert ui.button(app, "Confirm").enabled
+    chosen = cards[0].card.id
+    _tap_button(app, "Confirm")
+    assert app.campaign.corrupted == [chosen] and not app.campaign.pending
+    assert store.load_campaign(app.campaign.slot).corrupted == [chosen]
     assert ui.button(app, "Next mission: start")
     _tap_button(app, "Next mission: start")
     assert "m2_intro" in app.campaign.lore_seen

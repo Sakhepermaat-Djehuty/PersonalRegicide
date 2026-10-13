@@ -131,6 +131,17 @@ def main(argv):
     shot(app, "44_mission_complete")
     app.show(CampaignScreen(app))
     shot(app, "45_campaign_mission2")
+    # the corruption reward is a player choice
+    rewards = ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Reward:"))
+    if rewards:
+        ui.tap(app, *ui.root_point(app, rewards[0]))
+        shot(app, "45b_reward_choice")
+        from app.widgets import CardView
+        cards = ui.find(app, lambda v: isinstance(v, CardView))
+        ui.tap(app, *ui.root_point(app, cards[0]))
+        shot(app, "45c_reward_chosen")
+        ui.tap(app, *ui.root_point(app, ui.button(app, "Confirm")))
+        shot(app, "45d_campaign_after_choice")
     app.start_attempt()
     gs = app.current
     g = app.game

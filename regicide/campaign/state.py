@@ -183,6 +183,23 @@ class CampaignState:
             self.reveal_lore("pack_m")
         return {"won": False, "coins": self.coins, "earned": earned, "m_box_opened_now": opened}
 
+    # ------------------------------------------------------------------ reward choices
+    def pending_choice(self) -> Optional[dict]:
+        """The reward step waiting for the player's decision, if any."""
+        return dict(self.pending[0]) if self.pending else None
+
+    def resolve_choice(self, option: str) -> str:
+        """Apply the first pending reward step with the player's ``option``; returns the
+        log line. Raises ValueError when the option is not allowed."""
+        if not self.pending:
+            raise ValueError("nothing to choose")
+        step = self.pending[0]
+        line = M.apply_step(self, step, self._rng(), option=option)
+        self.pending.pop(0)
+        self.log.append(line)
+        self.touch()
+        return line
+
     # ------------------------------------------------------------------ mercenaries
     def hireable(self) -> List[dict]:
         if not self.m_box_opened:

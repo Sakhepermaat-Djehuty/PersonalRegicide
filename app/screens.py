@@ -12,7 +12,7 @@ from regicide.campaign import CampaignState
 from regicide.campaign import lore as L
 from regicide.campaign import party as P
 from regicide.campaign.missions import MISSIONS, mission as mission_info
-from regicide.cards import BASIC_SUITS, SUIT_NAME, SUIT_SYMBOL, Card
+from regicide.cards import BASIC_SUITS, CLASS_NAME, SUIT_NAME, SUIT_SYMBOL, Card
 from regicide.engine import (PHASE_CHOOSE_NEXT, PHASE_LOST, PHASE_PLAY, PHASE_SUFFER, PHASE_WON,
                              Game, IllegalAction)
 from regicide.rules import GameConfig
@@ -22,8 +22,6 @@ from . import theme as T
 from .widgets import (CardStrip, EnemyPanel, HandGrid, make_button, make_label, set_enabled)
 
 VERSION = "alpha 3"
-
-CLASS_NAME = {"H": "Cleric", "D": "Bard", "C": "Warrior", "S": "Paladin"}
 
 
 def suit_name(game: Game, s: str) -> str:
@@ -819,7 +817,10 @@ class CampaignResultOverlay(Overlay):
         items: List[ui.View] = []
         if res.get("won"):
             items.append(make_label("Mission %d complete" % num, (0, 0, 10, 36), 22, True, T.ACCENT, ui.ALIGN_CENTER))
-            lines = res.get("rewards") or ["No rewards."]
+            lines = list(res.get("rewards") or [])
+            for step in res.get("pending") or []:
+                lines.append("To choose: %s" % step.get("label", "a reward"))
+            lines = lines or ["No rewards."]
             items.append(make_label("\n".join(lines), (0, 0, 10, 24 * len(lines) + 10), 13, False, T.TEXT, ui.ALIGN_LEFT, 0))
             if app.campaign and app.campaign.finished:
                 items.append(make_label("The campaign is complete!", (0, 0, 10, 30), 16, True, T.OK, ui.ALIGN_CENTER))
@@ -876,8 +877,13 @@ class CampaignScreen(Screen):
             self.add_subview(make_label(stats, (m, y, w - 2 * m, 20), 12, False, T.MUTED))
             y += 26
             in_progress = store.has_attempt(camp.slot)
+            choice = camp.pending_choice()
             if in_progress:
                 self.add_subview(make_button("Continue attempt", lambda s: app.resume_attempt(), (x, y, bw, 46)))
+                y += 54
+            elif choice is not None:
+                self.add_subview(make_button("Reward: %s" % choice.get("label", "choose"),
+                                             lambda s: app.show(ChoiceScreen(app)), (x, y, bw, 46)))
                 y += 54
             elif info.get("playable"):
                 attempt = camp.attempts_on(camp.mission) + 1
@@ -1101,6 +1107,91 @@ class MercenaryScreen(Screen):
         self.swapping = None
         self.app.save_campaign()
         self.layout()
+
+
+class ChoiceScreen(Screen):
+    """Resolve a pending reward choice: pick one party card from the allowed options."""
+
+    chosen = None
+
+    def layout(self) -> None:
+        if not hasattr(self, "app"):
+            return
+        for v in list(self.subviews):
+            self.remove_subview(v)
+        app = self.app
+        camp = app.campaign
+        w, h = self.width, self.height
+        m = T.MARGIN
+        y = T.TOP_INSET
+        self.add_subview(make_button("‹ Back", lambda s: app.show(CampaignScreen(app)), (m, y, 80, 36), False, 14))
+        self.add_subview(make_label("Reward", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
+        y += 48
+        step = camp.pending_choice() if camp is not None else None
+        if step is None:
+            self.add_subview(make_label("Nothing to choose.", (m, y, w - 2 * m, 30), 14, False, T.MUTED))
+            return
+        self.add_subview(make_label(step.get("label", ""), (m, y, w - 2 * m, 44), 15, True, T.ACCENT, lines=2))
+        y += 48
+        hint = {"choice_corrupt": "Tap the character who takes the corruption. Corrupted cards banish the top "
+                                  "card of the reserve when played and their own class ignores immunity."}.get(step["kind"], "")
+        if hint:
+            self.add_subview(make_label(hint, (m, y, w - 2 * m, 56), 12, False, T.MUTED, lines=3))
+            y += 60
+        options = list(step.get("options") or [])
+        from .widgets import CardView
+        self.confirm_btn = make_button("Confirm", lambda s: self._confirm(), (m, h - T.BOTTOM_INSET - 50, w - 2 * m, 46))
+        set_enabled(self.confirm_btn, self.chosen in options)
+        sv = ui.ScrollView(frame=(m, y, w - 2 * m, h - y - T.BOTTOM_INSET - 60))
+        cols = 5
+        gap = 6
+        cw = (w - 2 * m - gap * (cols - 1)) / cols
+        ch = cw * 1.42
+        self._views = []
+        for i, cid in enumerate(options):
+            d = P.find(camp.party, cid)
+            if d is None:
+                continue
+            r, col = divmod(i, cols)
+            v = CardView(P.to_card(d), on_tap=self._pick)
+            v.small = True
+            v.selected = cid == self.chosen
+            v.frame = (col * (cw + gap), r * (ch + gap), cw, ch)
+            sv.add_subview(v)
+            self._views.append(v)
+        rows = (len(options) + cols - 1) // cols
+        sv.content_size = (w - 2 * m, rows * (ch + gap) + 20)
+        self.add_subview(sv)
+        self.add_subview(self.confirm_btn)
+        if not options:
+            self.add_subview(make_label("No character qualifies; confirm to skip.", (m, y, w - 2 * m, 30), 13, False, T.MUTED))
+            set_enabled(self.confirm_btn, True)
+
+    def _pick(self, view) -> None:
+        self.chosen = view.card.id
+        for v in self._views:
+            v.selected = v.card.id == self.chosen
+            v.set_needs_display()
+        set_enabled(self.confirm_btn, True)
+
+    def _confirm(self) -> None:
+        camp = self.app.campaign
+        step = camp.pending_choice()
+        if step is None:
+            self.app.show(CampaignScreen(self.app))
+            return
+        try:
+            if step.get("options"):
+                camp.resolve_choice(self.chosen)
+            else:
+                camp.pending.pop(0)
+                camp.log.append("%s: nothing qualified." % step.get("label", "reward"))
+        except ValueError as e:
+            import console
+            console.hud_alert(str(e), "error")
+            return
+        self.app.save_campaign()
+        self.app.show(CampaignScreen(self.app))
 
 
 class PartyScreen(Screen):

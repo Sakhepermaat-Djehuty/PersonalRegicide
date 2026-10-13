@@ -72,13 +72,14 @@ def corrupted_ids(party: Sequence[CardDict]) -> List[str]:
     return [str(c["id"]) for c in party if "corrupted" in c.get("flags", [])]
 
 
-def pick_corruption_target(party: Sequence[CardDict], rng: random.Random) -> Optional[str]:
-    """A random basic card of value 2–9 to corrupt.
+def corruption_candidates(party: Sequence[CardDict]) -> List[str]:
+    """Party cards that may be corrupted now (the reward card says "corrupt a character
+    in your party": the player chooses).
 
-    Constraints follow the fan implementation: never repeat a rank, never the same
+    The constraints follow the fan implementation until pack C's corruption rules card
+    is read: basic cards of strength 2–9 only, never repeat a strength, never the same
     class more than twice, and the 6 is always Esme, the 6 of Warriors (clubs), with one
-    clubs slot kept free for her until she is corrupted. (The physical game names the
-    character on a story card; this stands in until the owner enters the real ones.)
+    clubs slot kept free for her until she is corrupted.
     """
     used_ranks = set()
     suit_count: Dict[str, int] = {}
@@ -105,6 +106,12 @@ def pick_corruption_target(party: Sequence[CardDict], rng: random.Random) -> Opt
         if suit_count.get(suits[0], 0) >= limit:
             continue
         candidates.append(str(c["id"]))
+    return sorted(candidates)
+
+
+def pick_corruption_target(party: Sequence[CardDict], rng: random.Random) -> Optional[str]:
+    """A random corruption candidate (used by tests and bots); None when nothing qualifies."""
+    candidates = corruption_candidates(party)
     if not candidates:
         return None
-    return rng.choice(sorted(candidates))
+    return rng.choice(candidates)

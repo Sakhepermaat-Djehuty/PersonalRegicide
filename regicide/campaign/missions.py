@@ -10,16 +10,22 @@ import itertools
 import random
 from typing import Any, Dict, List, Optional
 
-from ..cards import BASIC_SUITS, RANK_VALUE, SUIT_NAME
+from ..cards import BASIC_SUITS, CLASS_NAME, RANK_VALUE, SUIT_NAME
 from . import party as P
 
 Step = Dict[str, Any]
 
 
+TIER_NAME = {"J": "Justicar", "Q": "Queen", "K": "King"}
+
+
 def _royal_castle(rng: random.Random, corrupted: bool = False) -> List[dict]:
+    """Mission 1's enemy stat card: Justicars 10/20, Queens 15/30, Kings 20/40, one of each
+    basic class per tier (each immune to its own class)."""
     tiers = []
     for rank, atk, hp in (("J", 10, 20), ("Q", 15, 30), ("K", 20, 40)):
         tier = [{"id": rank + s, "rank": rank, "suits": [s], "value": RANK_VALUE[rank],
+                 "name": "%s %s" % (CLASS_NAME[s], TIER_NAME[rank]),
                  "attack": atk, "health": hp, "flags": ["corrupted"] if corrupted else []} for s in BASIC_SUITS]
         rng.shuffle(tier)
         tiers.append(tier)
@@ -37,22 +43,22 @@ def _hydra_castle(rng: random.Random) -> List[dict]:
 
 MISSIONS: List[Dict[str, Any]] = [
     {
-        "number": 1, "title": "Call to Arms", "fan_title": "The Beginning", "location": "Deccaria",
-        "rules_id": "legacy_m1", "playable": True, "verified": False,
-        "summary": "Plain Regicide: four Jacks (10/20), four Queens (15/30), four Kings (20/40), "
-                   "each immune to its own class. Legacy changes already apply: the new Jester, "
-                   "feign death, and the banished pile.",
-        "rewards_text": "One party member is corrupted. You gain the Kinfolk Flute. An Arcane of strength 25 "
-                        "joins the party for the next mission.",
+        "number": 1, "title": "Call to Arms", "fan_title": "The Beginning", "location": "Ostrana",
+        "rules_id": "legacy_m1", "playable": True, "verified": True,
+        "summary": "Four Justicars (10/20), four Queens (15/30) and four Kings (20/40), one of each "
+                   "class, each immune to its own class. Enemy defeated: into the discard pile, or on "
+                   "top of the reserve deck if dealt exact damage.",
+        "rewards_text": "Open pack C and corrupt a character in your party. Add the High Arcana (25) to "
+                        "your party. Acquire the Kinfolk Flute.",
     },
     {
         "number": 2, "title": "Shadow and Mist", "fan_title": "The Hydra Assault", "location": "Umbera cavern",
         "rules_id": "legacy_m2", "playable": True, "verified": False,
         "summary": "Six Hydras (10/20), each with two classes and immune to both. An imperfect kill sends "
                    "the Hydra to the bottom of the enemy deck at full health; only exact damage banishes it. "
-                   "The Arcane 25 fights with you; corrupted cards banish the top reserve card when played.",
+                   "The High Arcana (25) fights with you; corrupted cards banish the top reserve card when played.",
         "rewards_text": "One random 3, 5, 7 and 9 each gain a second class. Another party member is corrupted. "
-                        "The Arcane leaves.",
+                        "The High Arcana leaves.",
     },
     {"number": 3, "title": "Lessons in Flames", "fan_title": "The Mage Tower", "location": "Magic Academy",
      "rules_id": "legacy_m3", "playable": False, "verified": False,
@@ -135,28 +141,47 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
     steps wait for the player. Each step is JSON-serialisable."""
     steps: List[Step] = []
     if number == 1:
-        steps.append({"kind": "corrupt_random", "label": "A party member is corrupted"})
+        # Reward cards (confirmed): "Open pack C and corrupt a character in your party",
+        # "Add the High Arcana to your party", "Acquire the new relic" (Kinfolk Flute).
+        steps.append(_corrupt_choice(camp, "Open pack C: corrupt a character in your party"))
+        steps.append({"kind": "add_card", "card": HIGH_ARCANA, "label": "The High Arcana (25, Elf Mage) joins the party"})
         steps.append({"kind": "relic", "relic": "flute", "label": "Relic: Kinfolk Flute"})
-        steps.append({"kind": "add_card", "card": {"id": "ARC25", "rank": "25", "suits": [], "value": 25,
-                                                     "name": "Arcane", "flags": []},
-                      "label": "The Arcane (strength 25, no class) joins for mission 2"})
     elif number == 2:
         steps.append({"kind": "m2_suits", "label": "A 3, 5, 7 and 9 each gain a second class"})
-        steps.append({"kind": "corrupt_random", "label": "A party member is corrupted"})
-        steps.append({"kind": "remove_card", "card_id": "ARC25", "label": "The Arcane leaves"})
+        steps.append(_corrupt_choice(camp, "Corrupt a character in your party"))
+        steps.append({"kind": "remove_card", "card_id": HIGH_ARCANA["id"], "label": "The High Arcana leaves"})
     return steps
+
+
+HIGH_ARCANA: Dict[str, Any] = {"id": "ARC25", "rank": "25", "suits": [], "value": 25, "name": "High Arcana",
+                               "subtitle": "Elf Mage", "flags": []}
+
+
+def _corrupt_choice(camp, label: str) -> Step:
+    """A player choice among the party cards that may be corrupted now."""
+    return {"kind": "choice_corrupt", "label": label, "options": P.corruption_candidates(camp.party)}
 
 
 def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = None) -> str:
     """Apply one reward step; returns a log line. Raises ValueError if a choice is needed."""
     kind = step["kind"]
-    if kind == "corrupt_random":
-        target = P.pick_corruption_target(camp.party, rng)
-        if target is None:
-            return "No card left to corrupt."
+    if kind in ("choice_corrupt", "corrupt_random"):
+        if kind == "choice_corrupt":
+            options = list(step.get("options") or P.corruption_candidates(camp.party))
+            if not options:
+                return "No card left to corrupt."
+            if option is None:
+                raise ValueError("choose a character to corrupt")
+            if option not in options:
+                raise ValueError("%s cannot be corrupted now" % option)
+            target = option
+        else:
+            target = P.pick_corruption_target(camp.party, rng)
+            if target is None:
+                return "No card left to corrupt."
         P.add_flag(camp.party, target, "corrupted")
         camp.corrupted.append(target)
-        return "%s is corrupted (unverified: the story names the real character)." % P.to_card(P.find(camp.party, target)).label()
+        return "%s is corrupted." % P.to_card(P.find(camp.party, target)).label()
     if kind == "relic":
         if step["relic"] not in camp.relics:
             camp.relics.append(step["relic"])

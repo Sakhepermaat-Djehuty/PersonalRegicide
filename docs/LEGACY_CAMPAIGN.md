@@ -280,6 +280,48 @@ engine implements exactly this (`CampaignState.finish_attempt`, `hire`, `swap`).
 * 2/5 and Wild Animal declarations on entering play.
 * Relics with separate solo and multiplayer sides.
 
+## Mission 1, Call to Arms (confirmed, transcribed from the owner's photos)
+
+**Location card:** Ostrana (town art and a QR code to the FAQ on the front; a piece of
+the kingdom map on the back, labelled Ostrana).
+
+**Enemy stats card:** Justicars 10 / 20, Queens 15 / 30, Kings 20 / 40; one of each
+class (cleric, bard, warrior, paladin) per tier. Each enemy is immune to its own class.
+The example enemy is Nobutada, "Paladin Justicar", strength 10, health 20.
+
+**Mission rules card.** *Enemy defeated:* place the enemy in the discard pile. If the
+enemy was dealt exact damage, place it on top of the reserve deck instead. *Example:*
+Tanathil (7, elf paladin), Kazaghan (10, Deccary cleric) and River (3, halfling bard)
+deal exactly 20 to Nobutada, so Nobutada goes on top of the reserve deck.
+*Rules continued:* remember to reduce the enemy's strength on the strength tracker
+when you play a paladin, so you know how much damage to suffer. When a player defeats
+an enemy that same player must take the next turn. The QR code on the location card
+leads to frequently asked questions.
+
+**Rules summary card:** Enemy defeated: place enemy in discard pile. Exact kill (skull
+icon): place enemy on top of reserve deck instead.
+
+**Story cards:** an intro ("A corruption ravages the land ... the Syndicate ready their
+weapons to fight"), an outcome ("The royal hall has lost all pretense of decorum ...")
+and three reward cards. The card texts are kept out of this public repository; see the
+private lore overlay described in regicide/campaign/lore.py.
+
+**Reward cards, in order:**
+1. "Open pack C and corrupt a character in your party." The player chooses the
+   character; the rules of pack C (which characters qualify) are still to be read.
+2. "Add the High Arcana to your party." The High Arcana: strength 25, subtitle "Elf
+   Mage", no class icon on the card (so no class ability; to be confirmed).
+3. "Acquire the new relic." Kinfolk Flute, relic. Side photographed (the two-or-more
+   players side): "After you form an attack (before proceeding to Step 2), other players
+   may add cards from their hand to the attack, as long as the added cards form a valid
+   Kinfolk Attack. Animal Companions may not be added this way as they cannot be a part
+   of Kinfolk Attacks." The solo side is still to be photographed.
+
+**Engine status:** mission 1 is marked verified. The corruption is a player choice in the
+app (candidates still follow the fan constraints until pack C is read). The flute's
+multiplayer side is recorded but not implemented yet; the fan "store a 2–5 on the flute"
+mechanic is kept for solo play only, pending the solo side of the card.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
@@ -289,9 +331,10 @@ engine implements exactly this (`CampaignState.finish_attempt`, `hire`, `swap`).
   some missions).
 * **Mission zone**: a mission-specific area on the playmat that several missions fill.
 * **Relics** (persist between missions):
-  * Kinfolk Flute (after M1): once per turn store one card of value 2–5 from hand on the
-    flute; flute cards can be played as part of a combo later (all flute cards must share
-    a rank). VERIFY.
+  * Kinfolk Flute (after M1): **confirmed (2+ players side):** after the active player
+    forms an attack, before step 2, other players may add cards from hand that form a
+    valid kinfolk attack with it; no animal companions. Solo side: VERIFY (the fan
+    engine stores one 2–5 per turn on the flute to play in a later kinfolk attack).
   * Scarlet Whistle (after M4): play an Ace or Beast together with the top card of the
     discard pile as a pair. VERIFY.
   * Azure Emblem (after M6): after a Mage pick, keep one of the other revealed cards on
@@ -316,7 +359,7 @@ engine implements exactly this (`CampaignState.finish_attempt`, `hire`, `swap`).
 * **Beasts**: value 0 alone; paired with another card they copy its value. From M5 you
   pick one Beast of a basic suit to add to the deck for the mission (M11 excluded). A
   permanent ★ Beast joins after M9.
-* **Special party members**: Archmage (25, no suit; M2 only), Goran (8, gains a suit
+* **Special party members**: the High Arcana (25, "Elf Mage", no class icon; confirmed; joins after M1, leaves after M2 per the fan transcription), Goran (8, gains a suit
   after each of M5–M8, ignores immunity after M9, removed after M10), Myla (7; joins
   after M5, leaves at M6, is the boss of M9), Esme (the 6♣; removed for M11, returns with
   all four suits).
@@ -344,14 +387,17 @@ engine implements exactly this (`CampaignState.finish_attempt`, `hire`, `swap`).
 
 Numbers are attack / health.
 
-1. **Call to Arms** (fan name: The Beginning) — plain Regicide (4 J 10/20, 4 Q 15/30, 4 K 20/40). Reward: corrupt
-   one random party card (value 2–9, never repeating a rank, never the same suit more
-   than twice), gain the Kinfolk Flute, Archmage joins (for M2).
+1. **Call to Arms** (Ostrana; fan name: The Beginning) — **confirmed:** 4 Justicars
+   10/20, 4 Queens 15/30, 4 Kings 20/40, one per class. Enemy defeated: discard pile;
+   exact damage: top of the reserve deck. Rewards: open pack C and corrupt a character
+   of your choice (qualifying characters per pack C, still to be read; the fan
+   constraints are value 2–9, never repeating a rank, never the same suit more than
+   twice), add the High Arcana (25, no class icon), acquire the Kinfolk Flute.
 2. **Shadow and Mist** (fan name: The Hydra Assault; location Umbera cavern) — 6 Hydras 10/20, each with a distinct pair of basic suits
    (immune to both). Imperfect kill: the Hydra goes to the bottom of the enemy deck.
    Perfect kill: banished. Reward: pick one random 3, 5, 7 and 9 and give each a second
    basic suit (every suit used once; not a suit the card has); corrupt another card;
-   Archmage leaves.
+   the High Arcana leaves.
 3. **Lessons in Flames** (fan name: The Mage Tower; Magic Academy) — 4 Mages 10/30, 2 Wizards 15/45, 1 Grand Wizard 20/60, all ★.
    End of each turn (not on a kill): top tavern card to the mission zone. Enemies are
    immune to every suit present in the mission zone (shields are recalculated when ♠

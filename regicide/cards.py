@@ -28,7 +28,12 @@ SUIT_SYMBOL: Dict[str, str] = {
 }
 SUIT_NAME: Dict[str, str] = {
     HEARTS: "Hearts", DIAMONDS: "Diamonds", CLUBS: "Clubs", SPADES: "Spades",
-    "M": "Mages", "R": "Reavers", "G": "Guardians", "U": "Druids", "T": "Drums",
+    "M": "Mages", "R": "Reavers", "G": "Guardians", "U": "Druids", "T": "Chanters",
+}
+# Legacy class names (the rulebook's names for the suits).
+CLASS_NAME: Dict[str, str] = {
+    HEARTS: "Cleric", DIAMONDS: "Bard", CLUBS: "Warrior", SPADES: "Paladin",
+    "M": "Mage", "R": "Reaver", "G": "Guardian", "U": "Druid", "T": "Chanter",
 }
 
 NUMBER_RANKS: Tuple[str, ...] = ("A", "2", "3", "4", "5", "6", "7", "8", "9", "10")
