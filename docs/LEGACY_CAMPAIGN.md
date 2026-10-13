@@ -66,6 +66,40 @@ photos of the mission rule cards and I will reconcile the data files.
 
 ---
 
+## Player helper card (confirmed, transcribed from the owner's photo)
+
+Front, with the stickers that were added during the campaign:
+
+* Evergreen (p.15): a cleric, bard, warrior and paladin; ignores immunity.
+* Step 1, form an attack: Jester (p.20): anyone takes over the turn, the attack ignores
+  immunity. Animal Companion (p.14): play with one card, has strength 1. Beast (p.14):
+  play with one card, has the strength of that card. Corruption (p.15): banish the top
+  card of the reserve, ignores immunity. Restoration (p.15): heal the top card of the
+  banished pile, ignores immunity.
+* Step 2, cast spells, in this order: Mage (p.16): look at cards from the reserve,
+  choose one to add. Druid (p.16): deal the discard pile, allocate one card each to four
+  zones. Cleric (p.16): heal from the discard pile. Bard (p.16): draw cards as a team.
+  Chanter (p.16): players draw a chosen number, discard to the hand limit.
+* Step 3, deal damage: Reaver (p.17): banish from the reserve to add damage, then
+  double. Warrior (p.17): double damage.
+* Either step 4a, suffer damage: Paladin (p.18): reduce enemy strength. Guardian
+  (p.18): players suffer no damage this turn. Or step 4b, enemy defeated.
+
+Back: start-of-turn effects resolve before step 1. Step 1: play cards to your playmat
+to form an attack; the attack strength is the combined strength of all cards in the
+attack; or yield and play no cards. Step 2: resolve the class abilities of the
+magic-using classes. Step 3: deal damage equal to the attack strength; fighter-class
+abilities resolve here; move the health counter. Enemy alive: step 4a: the enemy deals
+damage equal to its strength, protector-class abilities resolve here, discard cards from
+hand to satisfy the damage, and if you cannot, the mission is lost; end-of-turn effects
+resolve now; the next player starts their turn. Enemy defeated: step 4b: follow the
+enemy-defeated step in the mission rules, clean up the played cards, turn the next enemy
+face up; end-of-turn effects are skipped; the same player starts another turn.
+
+Still needed for exact numbers: rulebook pages 14 to 18 and 20 (how many cards a Mage
+looks at, which four zones a Druid uses, how a Chanter chooses, how many cards a Reaver
+banishes, and the Jester claim text).
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).

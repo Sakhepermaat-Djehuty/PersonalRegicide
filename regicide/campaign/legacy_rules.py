@@ -14,6 +14,11 @@ class LegacyRules(BaseRules):
 
     id = "legacy_m1"
     mission = 1
+    # Resolution order from the printed player helper card (confirmed by the owner):
+    # step 2 "cast spells": Mage, Druid, Cleric (H), Bard (D), Chanter;
+    # step 3 "deal damage": Reaver, Warrior (C);
+    # step 4a "suffer damage": Paladin (S), Guardian.
+    power_order = ("M", "U", "H", "D", "T", "R", "C", "S", "G")
 
     # ------------------------------------------------------------------ setup
     def build_decks(self, game) -> None:
