@@ -150,9 +150,10 @@ class BaseRules:
         return 0
 
     def can_yield(self, game: "Game") -> bool:
-        if game.config.players == 1:
-            return False
-        return game.yields_in_a_row < game.config.players - 1
+        """Official: "A player may not yield if every other player has yielded on their
+        last turn." With one player the condition is vacuously true, so solo never yields."""
+        me = game.active
+        return not all(game.last_action[i] == "yielded" for i in range(game.n_players) if i != me)
 
     def extra_plays(self, game: "Game", hand: Sequence[Card]) -> List[List[str]]:
         """Additional legal plays beyond singles / companions / sets (Legacy: beasts...)."""

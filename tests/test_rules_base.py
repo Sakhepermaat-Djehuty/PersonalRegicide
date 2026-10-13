@@ -359,7 +359,26 @@ def test_jester_resets_yield_streak():
     set_hand(g, ["X1", "9H"], player=1)
     g.yield_turn(); g.suffer(["9C", "9D"])
     g.play(["X1"])
-    assert g.yields_in_a_row == 0
+    assert g.last_action == ["yielded", "played", None]
+    g.choose_next(2)
+    assert g.can_yield()  # player 1 played, so not everyone else yielded
+
+
+def test_yield_rule_uses_last_turn_of_each_other_player():
+    """After a kill the same player takes a bonus turn; whether they may yield depends on
+    what the OTHER players did on their last turns, not on a consecutive-yield streak."""
+    g = new_game(3, seed=21)
+    set_enemy(g, "J", "H", hp=100)
+    set_hand(g, ["9C", "9D"], player=0)
+    set_hand(g, ["9S", "9H"], player=1)
+    set_hand(g, ["10C", "2D"], player=2)
+    g.yield_turn(); g.suffer(["9C", "9D"])      # P1 yielded
+    g.yield_turn(); g.suffer(["9S", "9H"])      # P2 yielded
+    assert g.active == 2 and not g.can_yield()  # everyone else yielded
+    g.enemy.hp = 20
+    g.play(["10C"])                             # kills -> bonus turn for P3
+    assert g.active == 2 and g.phase == PHASE_PLAY
+    assert not g.can_yield()                    # P1 and P2 still yielded on their last turns
 
 
 # ---------------------------------------------------------------- solo jester power

@@ -105,7 +105,9 @@ class Game:
         self.active = 0
         self.phase = PHASE_PLAY
         self.pending_damage = 0
-        self.yields_in_a_row = 0
+        # Each player's last turn action: "played", "yielded" or None. The official yield
+        # rule reads "every other player has yielded on their last turn".
+        self.last_action: List[Optional[str]] = [None] * config.players
         self.solo_jesters = config.solo_jesters
         self.solo_jesters_used = 0
         self.turn = 1
@@ -308,7 +310,7 @@ class Game:
         suits = tuple(sorted(set(s for c in cards for s in c.suits), key=_suit_sort_key))
         value = self.rules.play_value(self, cards)
         self.plays.append(Play(me, [c.id for c in cards], value, suits))
-        self.yields_in_a_row = 0
+        self.last_action[me] = "played"
         self._event("play", player=me, cards=[c.id for c in cards], value=value, kind=kind)
         self._say("%s plays %s." % (self.players[me].name, " + ".join(c.label() for c in cards)))
 
@@ -377,7 +379,7 @@ class Game:
         if not self.can_yield():
             raise IllegalAction("You may not yield now." if self.n_players > 1
                                 else "You cannot yield in a solo game.")
-        self.yields_in_a_row += 1
+        self.last_action[self.active] = "yielded"
         self._event("yield", player=self.active)
         self._say("%s yields." % self.active_player.name)
         self._enter_suffer()
@@ -400,7 +402,7 @@ class Game:
             played = card.with_changes(suits=(suit,), value=8)
             self.cards[jid] = played
             self.plays.append(Play(self.active, [jid], 8, (suit,)))
-            self.yields_in_a_row = 0
+            self.last_action[self.active] = "played"
             self.extra["jester_attack"] = True
             self._event("play", player=self.active, cards=[jid], value=8, kind="jester_attack")
             self._event("solo_jester", mode="attack", suit=suit, remaining=self.solo_jesters)
@@ -673,7 +675,7 @@ class Game:
             "immunity_cancelled": self.immunity_cancelled,
             "active": self.active, "phase": self.phase,
             "pending_damage": self.pending_damage,
-            "yields_in_a_row": self.yields_in_a_row,
+            "last_action": list(self.last_action),
             "solo_jesters": self.solo_jesters, "solo_jesters_used": self.solo_jesters_used,
             "turn": self.turn, "enemies_defeated": self.enemies_defeated,
             "result": self.result, "loss_reason": self.loss_reason,
@@ -700,7 +702,7 @@ class Game:
         g.immunity_cancelled = bool(d.get("immunity_cancelled", False))
         g.active = int(d["active"]); g.phase = d["phase"]
         g.pending_damage = int(d.get("pending_damage", 0))
-        g.yields_in_a_row = int(d.get("yields_in_a_row", 0))
+        g.last_action = list(d.get("last_action", [None] * config.players))
         g.solo_jesters = int(d.get("solo_jesters", 0))
         g.solo_jesters_used = int(d.get("solo_jesters_used", 0))
         g.turn = int(d.get("turn", 1)); g.enemies_defeated = int(d.get("enemies_defeated", 0))

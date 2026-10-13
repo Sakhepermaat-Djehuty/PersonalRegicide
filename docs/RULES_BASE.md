@@ -70,7 +70,11 @@ Play one of the following face up in front of the enemy:
 
 Or **yield**: say "yield", skip steps 2 and 3, go straight to step 4. A player may not
 yield if every other player yielded on their most recent turn (so with 2 players you
-cannot yield if the other player just yielded; with 1 player you can never yield).
+cannot yield if the other player just yielded; with 1 player you can never yield). The
+engine records each player's last turn action and applies this literally: it is not a
+"consecutive yields" counter, so the bonus turn after a kill is still restricted if the
+other players' last turns were yields. The record is not reset when a new enemy appears
+(strict reading; no official ruling found).
 
 A player who cannot play a card and may not yield loses the game for everybody.
 

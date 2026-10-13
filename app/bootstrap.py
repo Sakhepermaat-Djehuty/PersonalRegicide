@@ -13,8 +13,11 @@ import urllib.request
 import zipfile
 
 REPO = "Sakhepermaat-Djehuty/PersonalRegicide"
-BRANCH = os.environ.get("REGICIDE_BRANCH", "main")
-URL = "https://github.com/%s/archive/refs/heads/%s.zip" % (REPO, BRANCH)
+BRANCH = os.environ.get("REGICIDE_BRANCH")  # None = the repository's default branch
+if BRANCH:
+    URL = "https://github.com/%s/archive/refs/heads/%s.zip" % (REPO, BRANCH)
+else:
+    URL = "https://github.com/%s/archive/HEAD.zip" % REPO
 
 
 def target_dir():

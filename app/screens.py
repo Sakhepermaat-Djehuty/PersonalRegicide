@@ -396,7 +396,9 @@ class GameScreen(Screen):
             self.left_btn.title = "Yield"
             set_enabled(self.left_btn, g.can_yield(), False)
             if g.n_players == 1:
-                self.mid_btn.title = "Jester attack" if g.rules.solo_jester_mode(g) == "attack" else "Jester power"
+                narrow = self.width < 385
+                attack = g.rules.solo_jester_mode(g) == "attack"
+                self.mid_btn.title = ("Jester" if narrow else "Jester attack") if attack else ("Jester" if narrow else "Jester power")
                 self.mid_btn.hidden = False
                 set_enabled(self.mid_btn, g.can_use_solo_jester(), False)
             else:
@@ -425,7 +427,7 @@ class GameScreen(Screen):
             feign = g.feign_death_available()
             self.left_btn.title = "Feign death" if feign else "Suggest"
             set_enabled(self.left_btn, True, False)
-            self.mid_btn.title = "Jester power"
+            self.mid_btn.title = "Jester" if self.width < 385 else "Jester power"
             self.mid_btn.hidden = not (g.n_players == 1 and g.rules.solo_jester_mode(g) == "refresh")
             set_enabled(self.mid_btn, g.can_use_solo_jester(), False)
             self.right_btn.title = "Discard"

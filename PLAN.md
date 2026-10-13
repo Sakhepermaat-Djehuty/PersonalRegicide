@@ -73,7 +73,7 @@ shareable web build, Inferno/Crown Duels content later.
 ## Getting it onto the phone (Stage 2 deliverable)
 
 1. In Pythonista create `bootstrap.py`, paste the contents of `app/bootstrap.py` from
-   this repo, run it. It downloads the current `main` branch as a zip, unpacks it to
+   this repo, run it. It downloads the repository's default branch as a zip, unpacks it to
    `~/Documents/PersonalRegicide`, and keeps your saves in `~/Documents/PersonalRegicide-saves`
    so updates never touch them.
 2. Run `PersonalRegicide/app/main.py`. Add it to the home screen via Pythonista's
