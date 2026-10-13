@@ -186,6 +186,104 @@ played against the enemy and put them on top of the discard pile in any order yo
 3. Turn the next enemy face up. Exact damage: the mission rules say what happens.
 End-of-turn effects are skipped and the same player starts another turn.
 
+## Rulebook, pages 20–26 (confirmed, transcribed from the owner's photos)
+
+**Enemy immunity (p.20).** An enemy is immune to the class ability of cards matching its
+class icon; their strength still counts as damage. Mage immunity: an attack containing a
+mage is still banished at clean-up even when the mage ability was blocked. Enemies that
+gain an immunity during a mission: gaining paladin immunity means every paladin played
+against it so far stops reducing its strength (it is immune to past and future paladins);
+paladins that ignore immunity (corrupted, or part of a Jester attack) keep working.
+Gaining warrior immunity does not undo damage already doubled; later warriors do not
+double.
+
+**Jester, multiplayer (p.20).** The Jester is played alone in step 1 to a central spot.
+Any player, including the one who played it, may claim it without talking: they put it on
+their playmat, take over the current turn and form an attack from their hand. That attack
+is added to the Jester and ignores the enemy's immunity, so all of its class abilities
+resolve. The immunity itself is not lost for later turns, but a paladin that benefited
+from the Jester keeps reducing the enemy's strength in later turns. Paladins played
+before or after the Jester attack do not ignore immunity. Play then continues clockwise
+from the claimer. The Jester has strength 0.
+
+**Multi-class attacks (p.21).** All class abilities in the attack apply, in rulebook
+order, each class at most once per attack. Animal companion: played alone or with any one
+other card (never a Jester); strength 1; its ability applies; the same class twice counts
+once; it cannot join a kinfolk attack; two companions may pair with each other. Beast:
+pairs like a companion but copies the paired card's strength; alone, in hand or in the
+discard pile its strength is 0. Multi-class cards: resolve every class on the card in
+rulebook order; a corrupted multi-class card ignores immunity for all of its classes.
+
+**Kinfolk (p.22).** Sets of equal strength totalling at most 10: pairs of 2 to 5, three
+2s or 3s, four or five 2s. Abilities resolve at the total strength. Example: corrupted 3
+of warriors with 3 of paladins: banish the top reserve card first, deal 12, reduce the
+enemy's strength by 6; only the corrupted card's own class ignores immunity. Reaver
+example: 5 of warriors with 5 of reavers, reveal 2, add a 7 for 17, reaver doubles to 34,
+warrior doubles to 68.
+
+**Mages (p.23).** The mage, the cards played with it and every card it added form one
+attack and are banished at the enemy-defeated step. Examples: an ace with a 9 of mages
+peeks at 10 cards and adds a 6 of bards for strength 16 (draw 16, deal 32). Mage into
+mage: ace plus 8 of mages (strength 9) peeks at 9, chooses a 7 of mages, peeks at 7,
+chooses a 3 of paladins: strength 19 (1+8+7+3). Kinfolk 3 corrupted warrior, 3 mage, 3
+paladin: peek 9, add a 4 of clerics: heal 13, deal 26, reduce strength by 13.
+
+**Relics (p.24).** Permanent once gained; kept in the relics area for the rest of the
+campaign. Each relic card has two sides: one for solo play and one for two or more
+players. **Communication (p.24).** Never share hand information. Public information
+(piles, the enemy, the discard) may be discussed. When any player may act (the starting
+player, claiming the Jester) communicate only through the speed of play.
+
+**Mission end (p.25).** Win when the last enemy is defeated. Lose when damage cannot be
+satisfied or a player can neither play nor yield. On success: reform the party; set
+aside non-party cards such as Jesters; (sticker) return all mercenaries to the mercenary
+box, the next mission starts with none; return the mission cards to the box; open the
+reward pack in the order shown; some rewards are kept permanently, in the party or in
+the box next to it. On failure: the first time, open pack M; otherwise reset the mission
+as its overview card says. **Mercenaries (sticker).** Each time you lose a mission you
+gain coins equal to the number of times you have lost this mission. Spend them on
+mercenaries for the next attempt; the cost is top-right on the card; coins may be spent
+on several mercenaries. After each failure you may swap any previously selected
+mercenary with another of the same cost. **2/5 mercenaries:** declare 2 or 5 when the
+card enters your playmat and keep that value while it is in play; at all other times
+(mission zone, discarding, discard pile) choose 2 or 5 when the value matters. **Wild
+Animal mercenaries** show four class icons: declare one class when the card enters your
+playmat; at other times you decide which class it is.
+
+**Game end (p.26).** The campaign ends after mission 12. **Solo play (p.26)** matches the
+quoted text at the top of this file: play the Jester alone, choose one of the four basic
+classes for it, strength 8, ignores immunity, set aside face down after the enemy is
+defeated, never cleaned up to the discard pile or any mission zone.
+
+### Open question from p.25 (owner to confirm)
+
+The mercenary sticker says that *after each failure* you may swap previously selected
+mercenaries for others of the same cost, and that each failure grants coins equal to the
+number of failures so far. Read literally, mercenaries hired for attempt 2 stay for
+attempt 3 (and coins accumulate: 1 after the first failure, 1+2 after the second). The
+owner wrote "Hired mercenaries are never kept", which the sticker on p.25 states for
+mission *success*. The engine currently clears mercenaries after every attempt and sets
+coins equal to the failure count. If the literal reading is right, the engine should
+keep hired mercenaries across failed attempts of the same mission, add new coins on each
+failure, and allow same-cost swaps.
+
+### Engine work implied by pages 20–26 (tracked for Stage 4)
+
+* A per-play "ignores immunity" flag so a Jester or corrupted paladin keeps its strength
+  reduction even after the enemy gains paladin immunity; plain paladins lose theirs.
+* Enemies gaining immunity mid-mission (mission rules), with the paladin recalculation.
+* Legacy kinfolk: any number of equal-strength cards totalling at most 10 (no four-card
+  cap, strength-based rather than rank-based so 2/5 cards work).
+* Beasts (copy partner strength), companions pairing with companions.
+* Mage attacks are banished even if the mage ability was blocked.
+* Interactive mid-resolution decisions: mage peek, pick and chain; druid deal and
+  allocate per player; chanter declared number; reaver count and choice. These need a
+  serialisable "decision pending" phase in the engine.
+* Suffering damage one card at a time with no over-discarding; clean-up order chosen by
+  the player.
+* 2/5 and Wild Animal declarations on entering play.
+* Relics with separate solo and multiplayer sides.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
@@ -330,6 +428,9 @@ cards themselves are definitive. For each mission, confirm: enemy strength/healt
 tier, immunities, the start/end-of-turn effects, the enemy-defeated sequence and its
 perfect-kill variant, what joins and leaves the party, and the reward pack contents.
 Globally confirm: whether a solo player may yield in Legacy (the base reading forbids it;
-the fan engine allows it unless the previous action was a yield), the mercenary cost/coin rule, the exact class-ability text and
-resolution order for Mage, Reaver, Guardian, Druid and Chanter, the Evergreen Mother
-effects, the Mission 6 second-printing rules, the E-box procedure, and what pack F is.
+the fan engine allows it unless the previous action was a yield; the solo rules on p.26
+do not mention yielding), whether hired mercenaries persist across failed attempts (see
+the p.25 open question above), the Evergreen Mother effects, the Mission 6
+second-printing rules, the E-box procedure, and what pack F is. Already confirmed from
+the rulebook: the class-ability text and resolution order for every class, the coin rule,
+the Jester claim rules, and the 2/5 and Wild Animal declarations.
