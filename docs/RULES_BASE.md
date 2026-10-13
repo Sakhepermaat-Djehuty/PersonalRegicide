@@ -28,7 +28,8 @@ config switch the engine exposes.
    Reveal the top card: the first enemy is always a Jack.
 2. Shuffle the tavern deck (number cards + the Jesters for the player count).
 3. Deal every player a full hand (max hand size).
-4. Any player may start; play proceeds clockwise.
+4. The rulebook's only first-player rule is "the player to have most recently committed
+   regicide goes first"; the app lets seat 1 start. Play proceeds clockwise.
 
 ## Enemies
 
@@ -155,7 +156,8 @@ play and may not yield.
 
 * Diamonds draw with every hand full: nothing happens.
 * Hearts with an empty discard pile: nothing happens.
-* A combo containing both ♥ and ♦ heals first, so the healed cards can be drawn.
+* A combo containing both ♥ and ♦ heals first; the healed cards go under the tavern deck,
+  so they are drawn by the same play only if the deck is shorter than the draw.
 * Exact kill with Clubs doubling: it is the doubled damage that must match exactly.
 * Shield larger than attack: damage to suffer is 0; the turn still passes.
 * Discarding a ♠ to suffer damage does not add a shield.
@@ -165,7 +167,9 @@ play and may not yield.
 
 ## Unofficial variants (switchable, off by default)
 
-These are house rules or companion-app style difficulty knobs, not part of the base
-rulebook: number of Jesters override, hand size −1 ("hard"), open hands (for a single
-person driving all seats), and a "reveal next enemy" peek. They are listed so the UI can
-offer them honestly labelled.
+These are house rules or companion-app style knobs, not part of the base rulebook:
+number of Jesters override, hand size override, open hands (one person driving all
+seats), `solo_can_yield` (some fan engines allow it; the official reading forbids it),
+`yield_reset_per_enemy` (forget who yielded when a new enemy appears), and
+`strict_minimal_discard` (reject a damage payment that contains a card it does not
+need). They are listed so the UI can offer them honestly labelled.

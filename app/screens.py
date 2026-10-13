@@ -64,6 +64,7 @@ class App(ui.View):
     def show(self, screen: Screen) -> None:
         if self.current is not None:
             self.remove_subview(self.current)
+        T.apply_safe_area(self)
         self.current = screen
         screen.frame = (0, 0, self.width, self.height)
         self.add_subview(screen)
@@ -73,6 +74,7 @@ class App(ui.View):
     def layout(self) -> None:
         cur = getattr(self, "current", None)
         if cur is not None:
+            T.apply_safe_area(self)
             cur.frame = (0, 0, self.width, self.height)
             cur.layout()
 

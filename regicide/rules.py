@@ -30,6 +30,9 @@ class GameConfig:
     jesters: Optional[int] = None          # None = official table (deck Jesters, or solo powers)
     jester_may_choose_self: bool = True    # see docs/RULES_BASE.md, open point
     open_hands: bool = False               # UI hint only: one person drives all seats
+    solo_can_yield: bool = False           # unofficial variant
+    yield_reset_per_enemy: bool = False    # unofficial variant: forget yields on a new enemy
+    strict_minimal_discard: bool = False   # unofficial variant: no surplus cards when paying
     rules_id: str = "base"
     extra: Dict[str, Any] = field(default_factory=dict)  # mission / variant parameters
 
@@ -63,6 +66,8 @@ class GameConfig:
             "players": self.players, "names": list(self.names), "hand_size": self.hand_size,
             "jesters": self.jesters, "jester_may_choose_self": self.jester_may_choose_self,
             "open_hands": self.open_hands, "rules_id": self.rules_id, "extra": dict(self.extra),
+            "solo_can_yield": self.solo_can_yield, "yield_reset_per_enemy": self.yield_reset_per_enemy,
+            "strict_minimal_discard": self.strict_minimal_discard,
         }
 
     @staticmethod
@@ -73,6 +78,9 @@ class GameConfig:
             jester_may_choose_self=bool(d.get("jester_may_choose_self", True)),
             open_hands=bool(d.get("open_hands", False)), rules_id=d.get("rules_id", "base"),
             extra=dict(d.get("extra", {})),
+            solo_can_yield=bool(d.get("solo_can_yield", False)),
+            yield_reset_per_enemy=bool(d.get("yield_reset_per_enemy", False)),
+            strict_minimal_discard=bool(d.get("strict_minimal_discard", False)),
         )
 
 
@@ -153,6 +161,8 @@ class BaseRules:
         """Official: "A player may not yield if every other player has yielded on their
         last turn." With one player the condition is vacuously true, so solo never yields."""
         me = game.active
+        if game.n_players == 1:
+            return bool(game.config.solo_can_yield) and game.last_action[0] != "yielded"
         return not all(game.last_action[i] == "yielded" for i in range(game.n_players) if i != me)
 
     def extra_plays(self, game: "Game", hand: Sequence[Card]) -> List[List[str]]:

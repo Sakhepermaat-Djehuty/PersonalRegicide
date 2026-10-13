@@ -248,3 +248,28 @@ def test_random_legacy_games_keep_invariants():
 def test_mission_table_is_complete():
     assert [m["number"] for m in MISSIONS] == list(range(1, 13))
     assert all(m["title"] and m["summary"] for m in MISSIONS)
+
+
+def test_corruption_targets_respect_esme_and_class_limits():
+    rng = random.Random(1)
+    party = P.starting_party()
+    picked = []
+    for _ in range(8):
+        t = P.pick_corruption_target(party, rng)
+        assert t is not None
+        P.add_flag(party, t, "corrupted")
+        picked.append(t)
+    ranks = [P.find(party, t)["rank"] for t in picked]
+    assert len(set(ranks)) == 8 and set(ranks) == set("23456789")
+    six = [t for t in picked if P.find(party, t)["rank"] == "6"][0]
+    assert P.find(party, six)["suits"] == ["C"]  # Esme
+    for s in "HDCS":
+        assert sum(1 for t in picked if P.find(party, t)["suits"][0] == s) <= 2
+    assert P.pick_corruption_target(party, rng) is None
+
+
+def test_mercenary_costs_follow_fan_shop():
+    from regicide.campaign.mercenaries import by_id
+    assert by_id("merc_12H")["cost"] == 1 and by_id("merc_25H")["cost"] == 1
+    assert by_id("merc_19_1")["cost"] == 3 and by_id("merc_ace_1")["cost"] == 3
+    assert by_id("merc_jester_1")["cost"] == 5

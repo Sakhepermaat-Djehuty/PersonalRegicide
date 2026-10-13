@@ -459,3 +459,42 @@ def test_save_load_roundtrip_and_determinism():
     assert g2.to_dict() == g.to_dict()
     play_out(g); play_out(g2)
     assert g.to_dict() == g2.to_dict()
+
+
+# ---------------------------------------------------------------- optional variants
+def test_variant_solo_can_yield():
+    g = Game.new(GameConfig(players=1, solo_can_yield=True), seed=30)
+    set_enemy(g, "J", "H")
+    assert g.can_yield()
+    g.yield_turn()
+    assert g.phase == PHASE_SUFFER
+    g.suffer(min_cover(g))
+    assert not g.can_yield()  # not twice in a row
+
+
+def test_variant_strict_minimal_discard():
+    g = Game.new(GameConfig(players=1, strict_minimal_discard=True), seed=31)
+    set_enemy(g, "J", "H")
+    set_hand(g, ["2C", "9S", "3D", "8D"])
+    g.play(["2C"])
+    with pytest.raises(IllegalAction):
+        g.suffer(["9S", "3D", "8D"])  # 3D not needed
+    g.suffer(["9S", "3D"])
+    assert g.phase == PHASE_PLAY
+
+
+def test_variant_yield_reset_per_enemy():
+    g = Game.new(GameConfig(players=2, yield_reset_per_enemy=True), seed=32)
+    set_enemy(g, "J", "H", hp=100)
+    set_hand(g, ["9C", "9D"], player=0)
+    set_hand(g, ["10C", "2D"], player=1)
+    g.yield_turn(); g.suffer(["9C", "9D"])
+    assert not g.can_yield()
+    g.enemy.hp = 20
+    g.play(["10C"])  # kill -> new enemy, yields forgotten
+    assert g.active == 1 and g.can_yield()
+
+
+def min_cover(g):
+    from regicide.bots import min_waste_discard
+    return min_waste_discard(g)

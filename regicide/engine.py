@@ -447,6 +447,10 @@ class Game:
                 feign = True
             else:
                 raise IllegalAction("Those cards cover %d damage; %d is needed." % (total, self.pending_damage))
+        elif self.config.strict_minimal_discard:
+            for c in cards:
+                if total - c.defence_value >= self.pending_damage:
+                    raise IllegalAction("%s is not needed to cover the damage." % c.label())
         for c in cards:
             hand.remove(c.id)
         self._discard_cards(cards)
@@ -573,6 +577,8 @@ class Game:
         self.plays = []
         self.immunity_cancelled = False
         self.enemy = None
+        if self.config.yield_reset_per_enemy:
+            self.last_action = [None] * self.n_players
         if not self.castle:
             self._win()
             return

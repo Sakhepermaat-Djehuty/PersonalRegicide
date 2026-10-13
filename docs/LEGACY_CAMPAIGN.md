@@ -24,6 +24,9 @@
   plus 2 Jesters) are the starting party, the "Golden Blade Syndicate"; 12 skull tokens
   (cover defeated enemies on the mission's enemy stat card); 2 metal tracker tokens on
   the central playmat's health and strength tracks.
+* Where the fan repo's prose and its engine disagree (mission 5 carry-over, mission 8
+  zone value, mission 9 pile card to discard, mission 10 Paladin reduction), this file
+  follows the engine, which the author tested against their copy.
 * Legacy vocabulary: the tavern deck is the **Reserve deck**, the castle deck is the
   **Enemy deck**, attack is **strength**, suits are **classes** with their own icons:
   Cleric (= ♥ heal), Bard (= ♦ draw), Warrior (= ♣ double), Paladin (= ♠ shield). New
@@ -197,6 +200,7 @@ The official compendium at regicidelegacy.com/compendium has a page per mission;
 cards themselves are definitive. For each mission, confirm: enemy strength/health per
 tier, immunities, the start/end-of-turn effects, the enemy-defeated sequence and its
 perfect-kill variant, what joins and leaves the party, and the reward pack contents.
-Globally confirm: the mercenary cost/coin rule, the exact class-ability text and
+Globally confirm: whether a solo player may yield in Legacy (the base reading forbids it;
+the fan engine allows it unless the previous action was a yield), the mercenary cost/coin rule, the exact class-ability text and
 resolution order for Mage, Reaver, Guardian, Druid and Chanter, the Evergreen Mother
 effects, the Mission 6 second-printing rules, the E-box procedure, and what pack F is.

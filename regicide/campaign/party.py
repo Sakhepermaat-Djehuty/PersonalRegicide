@@ -4,7 +4,7 @@ from __future__ import annotations
 import random
 from typing import Dict, List, Optional, Sequence
 
-from ..cards import BASIC_SUITS, NUMBER_RANKS, RANK_VALUE, Card
+from ..cards import BASIC_SUITS, CLUBS, NUMBER_RANKS, RANK_VALUE, Card
 
 CardDict = Dict[str, object]
 
@@ -75,9 +75,10 @@ def corrupted_ids(party: Sequence[CardDict]) -> List[str]:
 def pick_corruption_target(party: Sequence[CardDict], rng: random.Random) -> Optional[str]:
     """A random basic card of value 2–9 to corrupt.
 
-    Constraints follow the fan transcription: never repeat a rank, never the same
-    class more than twice. (The physical game names the character on a story card;
-    this stands in until the owner enters the real one.)
+    Constraints follow the fan implementation: never repeat a rank, never the same
+    class more than twice, and the 6 is always Esme, the 6 of Warriors (clubs), with one
+    clubs slot kept free for her until she is corrupted. (The physical game names the
+    character on a story card; this stands in until the owner enters the real ones.)
     """
     used_ranks = set()
     suit_count: Dict[str, int] = {}
@@ -86,6 +87,7 @@ def pick_corruption_target(party: Sequence[CardDict], rng: random.Random) -> Opt
             used_ranks.add(c["rank"])
             for s in c.get("suits", []):
                 suit_count[s] = suit_count.get(s, 0) + 1
+    six_done = "6" in used_ranks
     candidates = []
     for c in party:
         if c.get("name") or "corrupted" in c.get("flags", []):
@@ -93,9 +95,14 @@ def pick_corruption_target(party: Sequence[CardDict], rng: random.Random) -> Opt
         if c["rank"] not in ("2", "3", "4", "5", "6", "7", "8", "9"):
             continue
         suits = c.get("suits", [])
-        if len(suits) != 1 or suits[0] not in BASIC_SUITS:
+        if not suits or suits[0] not in BASIC_SUITS:
             continue
-        if c["rank"] in used_ranks or suit_count.get(suits[0], 0) >= 2:
+        if c["rank"] in used_ranks:
+            continue
+        if c["rank"] == "6" and suits[0] != CLUBS:
+            continue
+        limit = 1 if (suits[0] == CLUBS and not six_done and c["rank"] != "6") else 2
+        if suit_count.get(suits[0], 0) >= limit:
             continue
         candidates.append(str(c["id"]))
     if not candidates:

@@ -26,3 +26,18 @@ FONT_BOLD = "<system-bold>"
 TOP_INSET = 48      # below the notch when presented fullscreen with no title bar
 BOTTOM_INSET = 28   # above the home indicator
 MARGIN = 14
+
+
+def apply_safe_area(view) -> None:
+    """Pythonista's ui has no safe-area API; read UIKit's insets through objc_util when
+    available and update TOP_INSET / BOTTOM_INSET. Falls back to the constants above."""
+    global TOP_INSET, BOTTOM_INSET
+    try:
+        ins = view.objc_instance.safeAreaInsets()
+        top, bottom = float(ins.top), float(ins.bottom)
+    except Exception:
+        return
+    if top > 0:
+        TOP_INSET = max(24.0, top + 4.0)
+    if bottom >= 0:
+        BOTTOM_INSET = max(16.0, bottom + 8.0)

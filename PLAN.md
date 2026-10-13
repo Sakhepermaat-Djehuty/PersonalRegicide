@@ -13,7 +13,7 @@ points where I need you. The gates where I need you are marked **G0–G4**.
 
 | Question | Decision | Why |
 |---|---|---|
-| Runtime on the phone | **Pythonista 3** (`ui` module), engine in pure Python | It is what you use; saves live as plain JSON in Pythonista's Documents (iCloud-backed), which matters for a campaign you will play for weeks. No App Store, no hosting. |
+| Runtime on the phone | **Pythonista 3** (`ui` module), engine in pure Python | It is what you use; saves live as plain JSON files in Pythonista's local Documents folder (part of the device backup, and easy to copy out through the Files app), which matters for a campaign you will play for weeks. No App Store, no hosting. |
 | Alternative kept open | A browser build (PWA on GitHub Pages) later, if you want to share it with friends or play on another device | Would need the engine in the browser (Pyodide, ~10 MB) or a second engine in JS; iOS can purge web storage for rarely used sites, risky for campaign saves. |
 | Engine portability | `regicide/` has no dependencies and avoids syntax newer than Python 3.8 (CI checks with `vermin`) | Pythonista 3.4 ships Python 3.10; older Pythonista 3.3 ships 3.6 and is not supported. |
 | How I test the UI without an iPhone | A headless stand-in for `ui` (`tools/fakeui`) renders every screen to PNG and drives taps, so layout and flows are exercised on Linux | The first real-device run is still yours (G1). |
@@ -86,7 +86,10 @@ shareable web build, Inferno/Crown Duels content later.
   files that are easy to edit, and an in-app "report a rule" note.
 * Pythonista API drift: the UI uses only the long-stable subset (`ui.View`, `Button`,
   `Label`, `ScrollView`, `Path`, `draw_string`, `present`). The fake-ui shim documents
-  exactly which calls are relied on.
+  exactly which calls are relied on. Pythonista has no safe-area API, so the app reads
+  UIKit's insets through `objc_util` and falls back to fixed margins; the real values
+  come from your device (G1). If Pythonista freezes on iOS 26, enable "Launch in Safe
+  Mode" in iOS Settings → Pythonista (a known Pythonista issue).
 * Performance: the engine previews plays by copying the state; on a phone this is well
   under a frame at base-game sizes. Legacy's larger decks stay small too.
 * Copyright: no art or text from the published games; names of characters and missions
