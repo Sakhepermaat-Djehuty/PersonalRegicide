@@ -93,7 +93,7 @@ def test_loss_earns_coins_opens_pack_m_and_mercenaries_join_next_attempt():
     g = c.start_attempt(seed=6)
     g._lose("test")
     res = c.finish_attempt(g)
-    assert c.coins == 3  # 1 + 2
+    assert c.coins == 2  # coins for an attempt = times the mission has been failed; none carry over
     offers = c.hireable()
     assert offers and any(o["affordable"] for o in offers)
     cheap = [o for o in offers if o["cost"] <= 1][0]
@@ -103,11 +103,16 @@ def test_loss_earns_coins_opens_pack_m_and_mercenaries_join_next_attempt():
     g = c.start_attempt(seed=7)
     merc_ids = [x for x in g.cards if x.startswith("M")]
     assert merc_ids, "hired mercenary should be in the reserve"
-    # mercenaries leave when the mission is completed
+    # mercenaries are never kept: gone after the attempt, won or lost
+    g._lose("test")
+    c.finish_attempt(g)
+    assert c.mercenaries == [] and c.coins == 3
+    assert not any(x.startswith("M") for x in [cd["id"] for cd in c.party])
+    g = c.start_attempt(seed=8)
+    assert not [x for x in g.cards if x.startswith("M")]
     win_quickly(g)
     c.finish_attempt(g)
-    assert c.mercenaries == []
-    assert not any(x.startswith("M") for x in [cd["id"] for cd in c.party])
+    assert c.coins == 0 and c.mission == 2
 
 
 def test_extra_jester_mercenary_adds_solo_power():
@@ -140,7 +145,7 @@ def test_solo_jester_attack_mode():
         g.players[0].hand.append(g.tavern.pop(0))
     g.enemy.hp = 1
     g.play([g.players[0].hand[0]])
-    assert "X1" in g.banished
+    assert "X1" in g.set_aside and "X1" not in g.banished and "X1" not in g.discard
 
 
 def test_multiplayer_jester_claim_attack_ignores_immunity_once():
@@ -243,6 +248,7 @@ def test_random_legacy_games_keep_invariants():
         play_out(g, random_policy, rng)
         ids = g.all_card_ids() + g.extra.get("flute", [])
         assert sorted(ids) == sorted(g.cards)
+        assert all(g.cards[x].is_jester for x in g.set_aside)
 
 
 def test_mission_table_is_complete():

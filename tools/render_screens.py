@@ -106,13 +106,14 @@ def main(argv):
     gs.refresh(after_action=False)
     shot(app, "30_result")
     # campaign
-    from app.screens import CampaignScreen, MercenaryScreen, MissionListScreen, PartyScreen
+    from app.screens import CampaignScreen, MercenaryScreen, MissionListScreen, PartyScreen, MapScreen, LoreScreen, LoadGameScreen, ProgressScreen
     from app import store
-    store.delete_campaign()
+    for r in store.list_campaigns():
+        store.delete_campaign(r["slot"])
     app.campaign = None
-    app.show(CampaignScreen(app))
-    shot(app, "40_campaign_empty")
-    app.new_campaign(1, ["Solo"])
+    app.show(MenuScreen(app))
+    shot(app, "40_menu_no_games")
+    app.new_campaign(1, ["Solo"], "First run")
     shot(app, "41_campaign_mission1")
     app.start_attempt()
     gs = app.current
@@ -151,8 +152,17 @@ def main(argv):
     shot(app, "49_mercenary_camp")
     app.show(PartyScreen(app))
     shot(app, "50_party")
-    app.show(MissionListScreen(app))
-    shot(app, "51_missions")
+    app.show(ProgressScreen(app))
+    shot(app, "51_progress")
+    app.show(MapScreen(app))
+    shot(app, "52_map")
+    app.show(LoreScreen(app, local=True))
+    shot(app, "53_lore")
+    app.new_campaign(3, ["Ana", "Ben", "Cy"], "Second run")
+    app.show(LoadGameScreen(app))
+    shot(app, "54_load_game")
+    app.show(MenuScreen(app))
+    shot(app, "55_menu_with_games")
     print("done")
 
 

@@ -45,6 +45,7 @@ def _tap_card(app, gs, card_id):
 
 
 def test_menu_to_solo_game_and_play_with_taps(app):
+    _tap_button(app, "Quick play (base Regicide)")
     _tap_button(app, "Solo game")
     _tap_button(app, "Start")
     gs = _game_screen(app)
@@ -139,6 +140,7 @@ def test_autosave_and_continue(app, tmp_path):
     assert saved.to_dict() == app.game.to_dict()
     from app.screens import MenuScreen
     app.show(MenuScreen(app))
+    _tap_button(app, "Quick play (base Regicide)")
     _tap_button(app, "Continue game")
     assert app.game.to_dict() == saved.to_dict()
 
@@ -189,11 +191,11 @@ def _rig_win(app):
 
 def test_campaign_flow_win_then_mission2(app):
     from app import store
-    _tap_button(app, "Legacy campaign")
-    _tap_button(app, "Start a campaign")
+    _tap_button(app, "New game")
     _tap_button(app, "Start")
-    assert app.campaign is not None and store.has_campaign()
-    _tap_button(app, "Start attempt 1")
+    assert app.campaign is not None and store.has_campaign(app.campaign.slot)
+    assert app.campaign.name.startswith("Campaign")
+    _tap_button(app, "Next mission: start")
     gs = _game_screen(app)
     assert app.in_campaign and app.game.config.rules_id == "legacy_m1"
     assert gs.mid_btn.title == "Jester attack"
@@ -203,11 +205,13 @@ def test_campaign_flow_win_then_mission2(app):
     gs.hand.set_selection([first.id])
     _tap_button(app, "Play")
     assert app.game.phase == "won"
-    assert ui.button(app, "Campaign overview")
+    assert ui.button(app, "Game menu")
     assert app.campaign.mission == 2 and "flute" in app.campaign.relics
-    _tap_button(app, "Campaign overview")
-    assert ui.button(app, "Start attempt 1")
-    _tap_button(app, "Start attempt 1")
+    assert "m1_outcome" in app.campaign.lore_seen and "m2_intro" not in app.campaign.lore_seen
+    _tap_button(app, "Game menu")
+    assert ui.button(app, "Next mission: start")
+    _tap_button(app, "Next mission: start")
+    assert "m2_intro" in app.campaign.lore_seen
     assert app.game.config.rules_id == "legacy_m2"
     assert app.game.enemy.name == "Hydra"
     # the flute button appears when a 2-5 is in hand
@@ -244,7 +248,7 @@ def test_campaign_loss_opens_mercenary_camp(app):
     ui.tap(app, *ui.root_point(app, hires[0]))
     assert len(app.campaign.mercenaries) == 1 and app.campaign.coins == 0
     _tap_button(app, "‹ Back")
-    assert ui.button(app, "Start attempt 2")
+    assert ui.button(app, "Retry mission (attempt 2)")
 
 
 def test_solo_jester_class_choice_overlay(app):
@@ -258,9 +262,62 @@ def test_solo_jester_class_choice_overlay(app):
 
 
 def test_campaign_screens_render(app):
-    from app.screens import CampaignScreen, MercenaryScreen, MissionListScreen, PartyScreen, CampaignLogScreen
-    app.new_campaign(2, ["A", "B"])
+    from app.screens import (CampaignScreen, MercenaryScreen, MissionListScreen, PartyScreen, CampaignLogScreen,
+                             MapScreen, ProgressScreen, LoreScreen, LoadGameScreen, QuickPlayScreen, MenuScreen)
+    app.new_campaign(2, ["A", "B"], "Test game")
     app.campaign.m_box_opened = True
-    for scr in (CampaignScreen(app), MercenaryScreen(app), MissionListScreen(app), PartyScreen(app), CampaignLogScreen(app)):
+    for scr in (CampaignScreen(app), MercenaryScreen(app), MissionListScreen(app), PartyScreen(app), CampaignLogScreen(app),
+                MapScreen(app), ProgressScreen(app), LoreScreen(app, local=True), LoreScreen(app, local=False),
+                LoadGameScreen(app), QuickPlayScreen(app), MenuScreen(app)):
         app.show(scr)
         assert ui.render(app).size[0] > 0
+
+
+def test_save_slots_load_and_delete(app, tmp_path):
+    from app import store
+    from app.screens import LoadGameScreen, MenuScreen
+    app.new_campaign(1, ["Solo"], "First run")
+    first = app.campaign.slot
+    app.new_campaign(2, ["A", "B"], "Second run")
+    second = app.campaign.slot
+    assert first != second
+    rows = store.list_campaigns()
+    assert [r["name"] for r in rows] == ["Second run", "First run"] or len(rows) == 2
+    app.show(MenuScreen(app))
+    assert ui.button(app, "Continue: Second run")
+    _tap_button(app, "Load game")
+    opens = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Open")]
+    assert len(opens) == 2
+    app.open_campaign(first)
+    assert app.campaign.name == "First run" and app.settings["last_campaign"] == first
+    # delete through the screen (alert answers 1 = Delete)
+    import console
+    console.script_answers(1)
+    app.show(LoadGameScreen(app))
+    dels = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Delete")]
+    ui.tap(app, *ui.root_point(app, dels[0]))
+    assert len(store.list_campaigns()) == 1
+
+
+def test_lore_is_global_and_survives_delete(app):
+    from app import store
+    app.new_campaign(1, ["Solo"], "Lore run")
+    assert "m1_intro" in app.campaign.lore_seen
+    assert any(e["id"] == "m1_intro" for e in app.lore_entries(local=True))
+    assert any(e["id"] == "m1_intro" for e in app.lore_entries(local=False))
+    store.delete_campaign(app.campaign.slot)
+    assert "m1_intro" in store.global_lore_seen()
+
+
+def test_map_screen_selection(app):
+    from app.screens import MapScreen
+    app.new_campaign(1, ["Solo"], "Map run")
+    scr = MapScreen(app)
+    app.show(scr)
+    pts = scr.canvas._points()
+    x, y = pts[0]
+    ui.tap(app, scr.canvas.x + x, scr.canvas.y + y)
+    assert scr.selected == 1 and "Call to Arms" in scr.caption.text
+    x, y = pts[4]
+    ui.tap(app, scr.canvas.x + x, scr.canvas.y + y)
+    assert scr.selected == 5 and "Unknown" in scr.caption.text

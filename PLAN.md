@@ -36,27 +36,24 @@ points where I need you. The gates where I need you are marked **G0–G4**.
 
 ## Where I need you
 
-**G0 — before you first run Alpha 1 (no blocker for me):**
-1. Which Pythonista version do you have (Settings → About; 3.4 or newer expected) and which iPhone (screen size)?
-2. How do you like to get code onto the phone: the bootstrap script in `app/README.md`
-   (downloads the repo zip from GitHub, no other apps needed), Working Copy (git), or
-   iCloud Drive? I default to the bootstrap script.
+**G0 — answered:** Pythonista 3.4 (Python 3.10), iPhone 16e (390×844 points, the
+layout's primary size). Code delivery: the bootstrap script.
 
 **G1 — after Alpha 1 lands:** run it on the phone, send screenshots and anything that
 is cramped, slow, or unclear. I render the same screens headlessly, but touch target
 sizes and font rendering need a real device.
 
-**G2 — Legacy verification (when you have the game, or by reading the official
-compendium at regicidelegacy.com/compendium):** the checklist at the end of
-`docs/LEGACY_CAMPAIGN.md`. The most valuable items, in order: the mercenary coin/cost
-rule, the exact class-ability texts (Mage, Reaver, Guardian, Druid, Chanter) and their
-resolution order, each mission's rules card (photos are ideal), the Mission 6 second
-printing rules, the Eternal-mode cards. Until then those parts are built from the fan
-transcription and labelled "unverified" in the app.
+**G2 — Legacy verification (in progress; you have played the whole campaign):**
+confirmed so far: the coin rule (coins per attempt = previous failures of that mission,
+mercenaries never kept), the solo Jester text, second-edition Mission 6. Still needed
+as photos: the player helper cards, every mission's rules and enemy stat cards, the
+rulebook's Jester / communication / feign death pages, the M card and mercenary costs,
+the relics, the special party cards, the C and E box rules and cards, pack F. Until
+then missions 3 to 12 are built from the fan transcription and labelled "unverified".
 
-**G3 — a choice:** should the campaign ship with the transcribed content now (default:
-yes, flagged) or should I hold each mission until you have verified it? Also: keep
-progressive reveal on (default) or show everything?
+**G3 — answered:** progressive reveal stays on. Campaigns are save files: main menu
+Continue / Load game / New game / Quick play / Lore (all games); game menu Next
+mission / Deck list / Map / Progress / Lore (this game).
 
 **G4 — "more":** tell me which extras matter most so Stage 7 is ordered right: bot
 teammates, undo, stats/medals, difficulty modifiers, daily challenge, iPad layout, a

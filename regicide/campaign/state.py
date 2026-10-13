@@ -17,6 +17,9 @@ class CampaignState:
 
     def __init__(self) -> None:
         self.created = time.strftime("%Y-%m-%d")
+        self.last_played = time.strftime("%Y-%m-%d %H:%M")
+        self.slot = ""                       # save-slot id (set by the app's store)
+        self.name = "Campaign"
         self.players = 1
         self.names: List[str] = ["Player 1"]
         self.party: List[dict] = P.starting_party()
@@ -32,6 +35,7 @@ class CampaignState:
         self.mercenaries: List[str] = []     # hired for the current mission
         self.pending: List[dict] = []        # reward steps awaiting a choice
         self.log: List[str] = []
+        self.lore_seen: List[str] = []       # lore entry ids revealed in this campaign
         self.reveal_all = False
         self.seed = random.SystemRandom().randrange(2 ** 31)
         self.rng_calls = 0
@@ -40,7 +44,9 @@ class CampaignState:
     # ------------------------------------------------------------------ persistence
     def to_dict(self) -> dict:
         return {
-            "version": self.VERSION, "created": self.created, "players": self.players,
+            "version": self.VERSION, "created": self.created, "last_played": self.last_played,
+            "slot": self.slot, "name": self.name, "lore_seen": list(self.lore_seen),
+            "players": self.players,
             "names": list(self.names), "party": [dict(c) for c in self.party],
             "relics": list(self.relics), "corrupted": list(self.corrupted), "flags": dict(self.flags),
             "mission": self.mission, "completed": list(self.completed),
@@ -61,14 +67,24 @@ class CampaignState:
         return c
 
     @classmethod
-    def new(cls, players: int, names: Optional[List[str]] = None, seed: Optional[int] = None) -> "CampaignState":
+    def new(cls, players: int, names: Optional[List[str]] = None, seed: Optional[int] = None,
+            name: str = "Campaign") -> "CampaignState":
         c = cls()
         c.players = players
+        c.name = name
         c.names = list(names or ["Player %d" % (i + 1) for i in range(players)])
         if seed is not None:
             c.seed = seed
         c.log.append("Campaign started with %d player%s." % (players, "" if players == 1 else "s"))
+        c.reveal_lore("m1_intro")
         return c
+
+    def touch(self) -> None:
+        self.last_played = time.strftime("%Y-%m-%d %H:%M")
+
+    def reveal_lore(self, entry_id: str) -> None:
+        if entry_id not in self.lore_seen:
+            self.lore_seen.append(entry_id)
 
     def _rng(self) -> random.Random:
         """A deterministic stream per campaign; advances per use so saves replay."""
@@ -103,6 +119,8 @@ class CampaignState:
         cfg = GameConfig(players=self.players, names=tuple(self.names), rules_id=M.mission(number)["rules_id"],
                          extra=extra)
         self.attempts[str(number)] = self.attempts_on(number) + 1
+        self.touch()
+        self.reveal_lore("m%d_intro" % number)
         g = Game.new(cfg, seed=seed if seed is not None else rng.randrange(2 ** 31))
         return g
 
@@ -112,9 +130,15 @@ class CampaignState:
         if number != self.mission:
             raise RuntimeError("attempt is for mission %d but the campaign is at %d" % (number, self.mission))
         name = M.mission(number)["title"]
+        self.touch()
+        # Mercenaries are hired for one attempt only (official: never kept).
+        if self.mercenaries:
+            self.log.append("The mercenaries go back to their lives.")
+            self.mercenaries = []
         if game.result != "loss":
             self.completed.append(number)
             self.log.append("Mission %d (%s) completed on attempt %d." % (number, name, self.attempts_on(number)))
+            self.reveal_lore("m%d_outcome" % number)
             applied = []
             rng = self._rng()
             for step in M.reward_steps(self, number, rng):
@@ -124,26 +148,27 @@ class CampaignState:
                     line = M.apply_step(self, step, rng)
                     applied.append(line)
                     self.log.append(line)
-            if self.mercenaries:
-                self.log.append("The mercenaries go back to their lives.")
-                self.mercenaries = []
+            self.coins = 0
             if number >= len(M.MISSIONS):
                 self.finished = True
                 self.log.append("Campaign complete!")
+                self.reveal_lore("campaign_end")
             else:
                 self.mission = number + 1
             return {"won": True, "rewards": applied, "pending": list(self.pending)}
         self.losses[str(number)] = self.losses_on(number) + 1
-        earned = self.losses_on(number)
-        self.coins += earned
-        self.log.append("Mission %d (%s) lost (attempt %d). %d coin%s earned." % (
-            number, name, self.attempts_on(number), earned, "" if earned == 1 else "s"))
+        # Official: coins for an attempt equal the number of times the mission has been
+        # failed so far; nothing carries over.
+        self.coins = self.losses_on(number)
+        self.log.append("Mission %d (%s) lost (attempt %d). %d coin%s to spend on the next attempt." % (
+            number, name, self.attempts_on(number), self.coins, "" if self.coins == 1 else "s"))
         opened = False
         if not self.m_box_opened:
             self.m_box_opened = True
             opened = True
             self.log.append("Pack M opened: mercenaries are for hire between attempts.")
-        return {"won": False, "coins": self.coins, "earned": earned, "m_box_opened_now": opened}
+            self.reveal_lore("pack_m")
+        return {"won": False, "coins": self.coins, "earned": self.coins, "m_box_opened_now": opened}
 
     # ------------------------------------------------------------------ mercenaries
     def hireable(self) -> List[dict]:

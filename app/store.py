@@ -119,31 +119,164 @@ def _atomic_write(path: str, text: str) -> None:
     os.replace(tmp, path)
 
 
-# ---------------------------------------------------------------------------- campaign
-CAMPAIGN = "campaign.json"
-CAMPAIGN_GAME = "campaign_attempt.json"
+# ---------------------------------------------------------------------------- campaigns
+# Each campaign ("game") lives in its own slot folder: campaigns/<slot>/campaign.json plus
+# attempt.json for an attempt in progress. Lore unlocked anywhere is also remembered in
+# lore_seen.json at the save root so it survives deleting a game.
+import re
+import glob
+
+LEGACY_CAMPAIGN = "campaign.json"
+LEGACY_CAMPAIGN_GAME = "campaign_attempt.json"
+GLOBAL_LORE = "lore_seen.json"
+LORE_OVERLAY = "lore_private.json"
+
+
+def campaigns_dir() -> str:
+    d = os.path.join(save_dir(), "campaigns")
+    os.makedirs(d, exist_ok=True)
+    _migrate_single_campaign(d)
+    return d
+
+
+def _migrate_single_campaign(d: str) -> None:
+    old = _path(LEGACY_CAMPAIGN)
+    if not os.path.exists(old):
+        return
+    try:
+        with open(old) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return
+    slot = data.get("slot") or new_slot_id(data.get("name") or "Campaign")
+    data["slot"] = slot
+    sd = os.path.join(d, slot)
+    os.makedirs(sd, exist_ok=True)
+    _atomic_write(os.path.join(sd, "campaign.json"), json.dumps(data, indent=1))
+    os.remove(old)
+    old_game = _path(LEGACY_CAMPAIGN_GAME)
+    if os.path.exists(old_game):
+        os.replace(old_game, os.path.join(sd, "attempt.json"))
+
+
+def new_slot_id(name: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "campaign"
+    d = os.path.join(save_dir(), "campaigns")
+    os.makedirs(d, exist_ok=True)
+    slot = base
+    n = 2
+    while os.path.exists(os.path.join(d, slot)):
+        slot = "%s-%d" % (base, n)
+        n += 1
+    return slot
+
+
+def slot_dir(slot: str) -> str:
+    d = os.path.join(campaigns_dir(), slot)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def attempt_path(slot: str) -> str:
+    return os.path.join(slot_dir(slot), "attempt.json")
+
+
+def list_campaigns() -> List[dict]:
+    out: List[dict] = []
+    for cp in glob.glob(os.path.join(campaigns_dir(), "*", "campaign.json")):
+        try:
+            with open(cp) as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            continue
+        slot = os.path.basename(os.path.dirname(cp))
+        out.append({
+            "slot": slot, "name": d.get("name", slot), "players": d.get("players", 1),
+            "mission": d.get("mission", 1), "finished": bool(d.get("finished")),
+            "last_played": d.get("last_played", d.get("created", "")),
+            "has_attempt": os.path.exists(attempt_path(slot)),
+        })
+    out.sort(key=lambda r: r["last_played"], reverse=True)
+    return out
 
 
 def save_campaign(camp) -> None:
-    _atomic_write(_path(CAMPAIGN), json.dumps(camp.to_dict(), indent=1))
+    if not camp.slot:
+        camp.slot = new_slot_id(camp.name)
+    _atomic_write(os.path.join(slot_dir(camp.slot), "campaign.json"), json.dumps(camp.to_dict(), indent=1))
+    add_global_lore(camp.lore_seen)
 
 
-def load_campaign():
+def load_campaign(slot: Optional[str] = None):
     from regicide.campaign import CampaignState
+    if slot is None:
+        rows = list_campaigns()
+        if not rows:
+            return None
+        slot = rows[0]["slot"]
     try:
-        with open(_path(CAMPAIGN)) as f:
-            return CampaignState.from_dict(json.load(f))
+        with open(os.path.join(campaigns_dir(), slot, "campaign.json")) as f:
+            c = CampaignState.from_dict(json.load(f))
+            c.slot = slot
+            return c
     except (OSError, ValueError, KeyError):
         return None
 
 
-def has_campaign() -> bool:
-    return os.path.exists(_path(CAMPAIGN))
+def has_campaign(slot: Optional[str] = None) -> bool:
+    if slot is None:
+        return bool(list_campaigns())
+    return os.path.exists(os.path.join(campaigns_dir(), slot, "campaign.json"))
 
 
-def delete_campaign() -> None:
-    for name in (CAMPAIGN, CAMPAIGN_GAME):
-        try:
-            os.remove(_path(name))
-        except OSError:
-            pass
+def delete_campaign(slot: str) -> None:
+    import shutil
+    d = os.path.join(campaigns_dir(), slot)
+    if os.path.isdir(d):
+        shutil.rmtree(d)
+
+
+def save_attempt(game: Game, slot: str) -> None:
+    _atomic_write(attempt_path(slot), json.dumps(game.to_dict()))
+
+
+def load_attempt(slot: str) -> Optional[Game]:
+    try:
+        with open(attempt_path(slot)) as f:
+            return Game.from_dict(json.load(f))
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def has_attempt(slot: str) -> bool:
+    return os.path.exists(attempt_path(slot))
+
+
+def delete_attempt(slot: str) -> None:
+    try:
+        os.remove(attempt_path(slot))
+    except OSError:
+        pass
+
+
+def global_lore_seen() -> List[str]:
+    try:
+        with open(_path(GLOBAL_LORE)) as f:
+            return list(json.load(f))
+    except (OSError, ValueError):
+        return []
+
+
+def add_global_lore(ids) -> None:
+    seen = global_lore_seen()
+    changed = False
+    for i in ids:
+        if i not in seen:
+            seen.append(i)
+            changed = True
+    if changed:
+        _atomic_write(_path(GLOBAL_LORE), json.dumps(seen))
+
+
+def lore_overlay_path() -> str:
+    return _path(LORE_OVERLAY)

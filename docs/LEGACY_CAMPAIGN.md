@@ -38,17 +38,25 @@
 * **Jester, changed in Legacy** (rulebook p.20): the Jester is played alone; then any
   player, including the one who played it, may claim it, put it on their playmat and
   take over the current turn, forming an attack from their hand as normal. The enemy
-  ignores immunity only for that attack, not for later turns. Solo (p.26): twice per
-  attempt you may play a Jester as an attack on its own: choose one of the four basic
-  classes, it has strength 8, that class ability resolves ignoring immunity; it is
-  flipped face down when the enemy is defeated.
+  ignores immunity only for that attack, not for later turns. VERIFY the multiplayer
+  text. Solo (p.26, **confirmed by the owner, quoted**): "Twice per game, a jester can be
+  played to form an attack on its own instead of playing cards from hand. When a jester
+  is played move it to your personal playmat, then choose one of the four basic classes.
+  It always attacks with a strength of 8 and activates the selected class ability. It
+  may not be played with any other cards. This attack ignores the immunity of the enemy.
+  During the enemy defeated step, remove the jester from play and flip it facedown so it
+  may not be used again during this mission attempt. Although the jester is played to
+  your playmat, it is never cleaned up to the discard pile (or any other zone specified
+  by the mission rules). It always goes back to the side during the Enemy Defeated
+  step." The engine keeps used Jesters in a set-aside zone accordingly.
 * **Feign death** (official): when you are at your hand limit you may discard your
   entire hand to satisfy a strike even if its total is lower than the strength.
 * Setup per mission: shuffle the party plus Jesters by player count (same table as the
   base game) into the reserve; draw to the hand limit; enemy deck grouped by strength,
   weakest group on top; set the trackers. Banished party cards return at mission end.
 * The second printing rewrote Mission 6 to be easier; the compendium lets first-edition
-  owners use the new rules.
+  owners use the new rules. The owner's copy is the second edition, so the app will
+  implement the second-edition Mission 6.
 
 ### What I need from you (the owner of the physical game) — see PLAN.md gate G2
 
@@ -74,10 +82,11 @@ photos of the mission rule cards and I will reconcile the data files.
     discard pile as a pair. VERIFY.
   * Azure Emblem (after M6): after a Mage pick, keep one of the other revealed cards on
     top of the tavern deck instead of discarding them all. VERIFY.
-  * Evergreen Mother, corrupted (from M9): corrupted cards banish from the discard pile
-    instead of the tavern deck (tavern if the discard is empty). Replaced in M12 by
+  * Evergreen Mother, corrupted (from M9): the fan engine banishes from the discard
+    pile instead of the reserve; the owner remembers it banishing a card from another
+    player's hand instead. VERIFY from the card (photo pending). Replaced in M12 by
     Evergreen Mother, restored: restored cards that would be banished go under the
-    tavern deck instead. VERIFY.
+    reserve deck instead. VERIFY.
 * **New suits / classes** (each has 3/5/7/9 cards that join temporarily, one stays):
   * ★ Mages (M3, permanent A–10★ added): reveal N cards from the tavern, pick one to add
     to the combo (its suits and value join), discard the rest; a picked Mage chains.
@@ -97,13 +106,13 @@ photos of the mission rule cards and I will reconcile the data files.
   after each of M5–M8, ignores immunity after M9, removed after M10), Myla (7; joins
   after M5, leaves at M6, is the boss of M9), Esme (the 6♣; removed for M11, returns with
   all four suits).
-* **Mercenaries ("M" box, opened after your first loss)**: each loss on a mission
-  grants coins (reviewers: first loss 1 coin, second 2, fourth 4, i.e. coins equal to the
-  number of losses so far; unspent coins seem to carry over). Spend them on mercenaries
-  with a printed cost who join for the next attempt only: 4 × "12" (one per basic
-  class), 4 × "2/5" (play as a 2 or a 5; counts 5 when discarded), 2 × "19" (no class),
-  2 × Animal Companion with a chosen class, 2 × extra Jesters. VERIFY the exact costs and
-  coin rule from the M card.
+* **Mercenaries ("M" box, opened after your first loss)**: **confirmed by the owner:**
+  coins are given at the start of each attempt and equal the number of times that
+  mission has been failed (none on the first attempt, one on the second, two on the
+  third, and so on); nothing carries over, and hired mercenaries are never kept. Spend
+  them on mercenaries with a printed cost: 4 × "12" (one per basic class), 4 × "2/5"
+  (play as a 2 or a 5; counts 5 when discarded), 2 × "19" (no class), 2 × Animal
+  Companion with a chosen class, 2 × extra Jesters. VERIFY the printed costs.
 * **Feign death** is official (see above); regicide-js' "6 or more cards" is a
   simplification of "entire hand while at the hand limit".
 * **Jester**: regicide-js treats Jesters as a pool of 2 (plus bought extras), played from

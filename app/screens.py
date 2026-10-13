@@ -1,6 +1,7 @@
 """Screens and app flow for the Pythonista client."""
 from __future__ import annotations
 
+import os
 import random
 from typing import Callable, Dict, List, Optional
 
@@ -8,6 +9,7 @@ import ui
 
 from regicide.bots import greedy_policy, min_waste_discard
 from regicide.campaign import CampaignState
+from regicide.campaign import lore as L
 from regicide.campaign import party as P
 from regicide.campaign.missions import MISSIONS, mission as mission_info
 from regicide.cards import BASIC_SUITS, SUIT_NAME, SUIT_SYMBOL, Card
@@ -19,7 +21,7 @@ from . import store
 from . import theme as T
 from .widgets import (CardStrip, EnemyPanel, HandGrid, make_button, make_label, set_enabled)
 
-VERSION = "alpha 2"
+VERSION = "alpha 3"
 
 CLASS_NAME = {"H": "Cleric", "D": "Bard", "C": "Warrior", "S": "Paladin"}
 
@@ -58,7 +60,10 @@ class App(ui.View):
         self.game: Optional[Game] = None
         self.undo_stack: List[dict] = []
         self.current: Optional[Screen] = None
-        self.campaign: Optional[CampaignState] = store.load_campaign()
+        self.campaign: Optional[CampaignState] = None
+        last = self.settings.get("last_campaign")
+        if last and store.has_campaign(last):
+            self.campaign = store.load_campaign(last)
         self.in_campaign = False
 
     def show(self, screen: Screen) -> None:
@@ -97,24 +102,43 @@ class App(ui.View):
         return True
 
     # campaign ----------------------------------------------------------
-    def new_campaign(self, players: int, names: List[str]) -> None:
-        self.campaign = CampaignState.new(players, names)
-        store.save_campaign(self.campaign)
-        store.delete_game(store.CAMPAIGN_GAME)
+    def new_campaign(self, players: int, names: List[str], name: str = "Campaign") -> None:
+        self.campaign = CampaignState.new(players, names, name=name)
+        self.campaign.slot = store.new_slot_id(name)
+        self.save_campaign()
         self.show(CampaignScreen(self))
+
+    def open_campaign(self, slot: str) -> bool:
+        c = store.load_campaign(slot)
+        if c is None:
+            return False
+        self.campaign = c
+        self.settings["last_campaign"] = slot
+        self.save_settings()
+        self.show(CampaignScreen(self))
+        return True
+
+    def save_campaign(self) -> None:
+        if self.campaign is None:
+            return
+        store.save_campaign(self.campaign)
+        self.settings["last_campaign"] = self.campaign.slot
+        self.save_settings()
 
     def start_attempt(self) -> None:
         assert self.campaign is not None
         self.in_campaign = True
         self.game = self.campaign.start_attempt()
         self.undo_stack = []
-        store.save_campaign(self.campaign)
+        self.save_campaign()
         self.autosave()
         self.show(GameScreen(self))
 
     def resume_attempt(self) -> bool:
-        g = store.load_game(store.CAMPAIGN_GAME)
-        if g is None or self.campaign is None:
+        if self.campaign is None:
+            return False
+        g = store.load_attempt(self.campaign.slot)
+        if g is None:
             return False
         self.in_campaign = True
         self.game = g
@@ -125,13 +149,25 @@ class App(ui.View):
     def finish_attempt(self) -> dict:
         assert self.campaign is not None and self.game is not None
         res = self.campaign.finish_attempt(self.game)
-        store.save_campaign(self.campaign)
-        store.delete_game(store.CAMPAIGN_GAME)
+        self.save_campaign()
+        store.delete_attempt(self.campaign.slot)
         return res
 
     def autosave(self) -> None:
-        if self.game is not None and not self.game.is_over:
-            store.save_game(self.game, store.CAMPAIGN_GAME if self.in_campaign else store.AUTOSAVE)
+        if self.game is None or self.game.is_over:
+            return
+        if self.in_campaign and self.campaign is not None:
+            store.save_attempt(self.game, self.campaign.slot)
+        else:
+            store.save_game(self.game, store.AUTOSAVE)
+
+    def lore_entries(self, local: bool) -> List[dict]:
+        allv = L.entries(store.lore_overlay_path())
+        if local:
+            seen = set(self.campaign.lore_seen) if self.campaign else set()
+        else:
+            seen = set(store.global_lore_seen())
+        return [e for e in allv if e["id"] in seen]
 
     def remember_for_undo(self) -> None:
         if self.game is not None:
@@ -159,31 +195,63 @@ class MenuScreen(Screen):
             return
         for v in list(self.subviews):
             self.remove_subview(v)
+        app = self.app
         w = self.width
-        y = T.TOP_INSET + 30
+        y = T.TOP_INSET + 24
         self.add_subview(make_label("REGICIDE", (0, y, w, 44), 36, True, T.ACCENT, ui.ALIGN_CENTER))
         y += 46
-        self.add_subview(make_label("personal edition · %s" % VERSION, (0, y, w, 20), 13, False, T.MUTED, ui.ALIGN_CENTER))
-        y += 50
-        bw, bh, gap = min(300, w - 2 * T.MARGIN), 50, 14
+        self.add_subview(make_label("legacy · personal edition · %s" % VERSION, (0, y, w, 20), 13, False, T.MUTED, ui.ALIGN_CENTER))
+        y += 40
+        bw, bh, gap = min(300, w - 2 * T.MARGIN), 48, 12
+        x = (w - bw) / 2
+        items: List = []
+        camp = app.campaign
+        if camp is not None and store.has_campaign(camp.slot):
+            items.append(("Continue: %s" % camp.name, lambda s: app.open_campaign(camp.slot), True))
+        items += [
+            ("Load game", lambda s: app.show(LoadGameScreen(app)), bool(store.list_campaigns())),
+            ("New game", lambda s: app.show(NewGameScreen(app, 1, campaign=True)), True),
+            ("Quick play (base Regicide)", lambda s: app.show(QuickPlayScreen(app)), False),
+            ("Lore", lambda s: app.show(LoreScreen(app, local=False)), False),
+            ("Settings", lambda s: app.show(SettingsScreen(app)), False),
+            ("Rules", lambda s: app.show(RulesScreen(app)), False),
+            ("Quit", lambda s: app.close(), False),
+        ]
+        for title, action, primary in items:
+            b = make_button(title, action, (x, y, bw, bh), primary)
+            if title == "Load game" and not store.list_campaigns():
+                set_enabled(b, False)
+            self.add_subview(b)
+            y += bh + gap
+
+
+class QuickPlayScreen(Screen):
+    """Base Regicide outside the campaign."""
+
+    def layout(self) -> None:
+        if not hasattr(self, "app"):
+            return
+        for v in list(self.subviews):
+            self.remove_subview(v)
+        app = self.app
+        w = self.width
+        m = T.MARGIN
+        y = T.TOP_INSET
+        self.add_subview(make_button("‹ Menu", lambda s: app.show(MenuScreen(app)), (m, y, 80, 36), False, 14))
+        self.add_subview(make_label("Quick play", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
+        y += 60
+        bw, bh, gap = min(300, w - 2 * m), 48, 12
         x = (w - bw) / 2
         items: List = []
         if store.has_game():
             items.append(("Continue game", self._continue, True))
         items += [
-            ("Solo game", lambda s: self.app.show(NewGameScreen(self.app, 1)), True),
-            ("Pass and play (2–4)", lambda s: self.app.show(NewGameScreen(self.app, max(2, self.app.settings.get("last_players", 2)))), True),
-            ("Legacy campaign", lambda s: self.app.show(CampaignScreen(self.app)), True),
-            ("History", lambda s: self.app.show(HistoryScreen(self.app)), False),
-            ("Rules", lambda s: self.app.show(RulesScreen(self.app)), False),
-            ("Settings", lambda s: self.app.show(SettingsScreen(self.app)), False),
-            ("Quit", lambda s: self.app.close(), False),
+            ("Solo game", lambda s: app.show(NewGameScreen(app, 1)), True),
+            ("Pass and play (2–4)", lambda s: app.show(NewGameScreen(app, max(2, app.settings.get("last_players", 2)))), True),
+            ("History", lambda s: app.show(HistoryScreen(app)), False),
         ]
         for title, action, primary in items:
-            b = make_button(title, action or (lambda s: None), (x, y, bw, bh), primary)
-            if action is None:
-                set_enabled(b, False)
-            self.add_subview(b)
+            self.add_subview(make_button(title, action, (x, y, bw, bh), primary))
             y += bh + gap
 
     def _continue(self, sender) -> None:
@@ -193,12 +261,56 @@ class MenuScreen(Screen):
             self.layout()
 
 
+class LoadGameScreen(Screen):
+    def layout(self) -> None:
+        if not hasattr(self, "app"):
+            return
+        for v in list(self.subviews):
+            self.remove_subview(v)
+        app = self.app
+        w, h = self.width, self.height
+        m = T.MARGIN
+        y = T.TOP_INSET
+        self.add_subview(make_button("‹ Menu", lambda s: app.show(MenuScreen(app)), (m, y, 80, 36), False, 14))
+        self.add_subview(make_label("Load game", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
+        y += 50
+        sv = ui.ScrollView(frame=(m, y, w - 2 * m, h - y - T.BOTTOM_INSET))
+        yy = 0
+        rows = store.list_campaigns()
+        if not rows:
+            sv.add_subview(make_label("No saved games yet.", (0, 0, w - 2 * m, 30), 14, False, T.MUTED))
+        for r in rows:
+            panel = ui.View(frame=(0, yy, w - 2 * m, 92))
+            panel.background_color = T.PANEL
+            panel.corner_radius = 10
+            state = "complete" if r["finished"] else "mission %d%s" % (r["mission"], " · attempt in progress" if r["has_attempt"] else "")
+            panel.add_subview(make_label(r["name"], (12, 8, w - 2 * m - 24, 24), 17, True, T.TEXT))
+            panel.add_subview(make_label("%d player%s · %s · %s" % (r["players"], "" if r["players"] == 1 else "s", state, r["last_played"]),
+                                         (12, 32, w - 2 * m - 24, 20), 12, False, T.MUTED))
+            panel.add_subview(make_button("Open", (lambda slot: lambda s: app.open_campaign(slot))(r["slot"]), (12, 54, 110, 32), True, 14))
+            panel.add_subview(make_button("Delete", (lambda slot, name: lambda s: self._delete(slot, name))(r["slot"], r["name"]), (w - 2 * m - 12 - 90, 54, 90, 32), False, 14))
+            sv.add_subview(panel)
+            yy += 100
+        sv.content_size = (w - 2 * m, yy + 20)
+        self.add_subview(sv)
+
+    @ui.in_background
+    def _delete(self, slot: str, name: str) -> None:
+        import console
+        if console.alert("Delete game?", "'%s' will be deleted. Lore you unlocked stays in the Lore screen." % name, "Delete", "Cancel") == 1:
+            store.delete_campaign(slot)
+            if self.app.campaign is not None and self.app.campaign.slot == slot:
+                self.app.campaign = None
+            self.app.show(LoadGameScreen(self.app))
+
+
 # ============================================================================ new game
 class NewGameScreen(Screen):
     def __init__(self, app: "App", players: int, campaign: bool = False, **kw) -> None:
         super().__init__(app, **kw)
         self.players = players
         self.campaign = campaign
+        self.game_name_field: Optional[ui.TextField] = None
         self.name_fields: List[ui.TextField] = []
 
     def layout(self) -> None:
@@ -210,10 +322,18 @@ class NewGameScreen(Screen):
         w = self.width
         m = T.MARGIN
         y = T.TOP_INSET
-        back = (lambda s: self.app.show(CampaignScreen(self.app))) if self.campaign else (lambda s: self.app.show(MenuScreen(self.app)))
+        back = (lambda s: self.app.show(MenuScreen(self.app))) if self.campaign else (lambda s: self.app.show(QuickPlayScreen(self.app)))
         self.add_subview(make_button("‹ Back", back, (m, y, 80, 36), False, 14))
-        self.add_subview(make_label("New campaign" if self.campaign else "New game", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
+        self.add_subview(make_label("New game" if self.campaign else "Quick game", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
         y += 56
+        if self.campaign:
+            self.add_subview(make_label("Game name", (m, y, 120, 36), 15, False, T.MUTED))
+            tf = ui.TextField(frame=(m + 120, y, w - 2 * m - 120, 36))
+            tf.text = self.game_name_field.text if self.game_name_field is not None else "Campaign %d" % (len(store.list_campaigns()) + 1)
+            tf.font = (T.FONT, 16)
+            self.game_name_field = tf
+            self.add_subview(tf)
+            y += 48
         self.add_subview(make_label("Players", (m, y, 120, 32), 16, True))
         seg = ui.SegmentedControl(frame=(m + 120, y, w - 2 * m - 120, 32))
         seg.segments = ["1", "2", "3", "4"]
@@ -273,7 +393,8 @@ class NewGameScreen(Screen):
         self.app.settings["last_players"] = self.players
         self.app.save_settings()
         if self.campaign:
-            self.app.new_campaign(self.players, names)
+            gname = (self.game_name_field.text.strip() if self.game_name_field is not None else "") or "Campaign"
+            self.app.new_campaign(self.players, names, gname)
             return
         cfg = GameConfig(players=self.players, names=tuple(names),
                          jester_may_choose_self=bool(self.app.settings.get("jester_may_choose_self", True)),
@@ -711,11 +832,13 @@ class CampaignResultOverlay(Overlay):
             if app.campaign and app.campaign.m_box_opened:
                 items.append(make_button("Mercenary camp", lambda b: app.show(MercenaryScreen(app)), (0, 0, 10, 46)))
             items.append(make_button("Try again", lambda b: app.start_attempt(), (0, 0, 10, 46), not (app.campaign and app.campaign.m_box_opened)))
-        items.append(make_button("Campaign overview", lambda b: app.show(CampaignScreen(app)), (0, 0, 10, 46), False))
+        items.append(make_button("Game menu", lambda b: app.show(CampaignScreen(app)), (0, 0, 10, 46), False))
         return items
 
 
 class CampaignScreen(Screen):
+    """The game menu of one campaign save."""
+
     def layout(self) -> None:
         if not hasattr(self, "app"):
             return
@@ -726,21 +849,15 @@ class CampaignScreen(Screen):
         m = T.MARGIN
         y = T.TOP_INSET
         self.add_subview(make_button("‹ Menu", lambda s: app.show(MenuScreen(app)), (m, y, 80, 36), False, 14))
-        self.add_subview(make_label("Legacy campaign", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
-        y += 52
         camp = app.campaign
-        bw = min(320, w - 2 * m)
-        x = (w - bw) / 2
+        self.add_subview(make_label(camp.name if camp else "No game", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
+        y += 50
         if camp is None:
-            self.add_subview(make_label(
-                "Twelve missions with one persistent party. Mission 1 is plain Regicide; every mission "
-                "after it adds enemies, rules and rewards. Rules for later missions are revealed when you "
-                "reach them. Content past mission 1 is a transcription that still needs checking against "
-                "the physical cards.", (m, y, w - 2 * m, 120), 14, False, T.TEXT, lines=6))
-            y += 130
-            self.add_subview(make_button("Start a campaign", lambda s: app.show(NewGameScreen(app, 1, campaign=True)), (x, y, bw, 50)))
+            self.add_subview(make_label("Open a game from the main menu.", (m, y, w - 2 * m, 30), 14, False, T.MUTED))
             return
         info = mission_info(camp.mission)
+        bw = min(320, w - 2 * m)
+        x = (w - bw) / 2
         if camp.finished:
             self.add_subview(make_label("Campaign complete!", (m, y, w - 2 * m, 30), 18, True, T.OK, ui.ALIGN_CENTER))
             y += 40
@@ -751,43 +868,154 @@ class CampaignScreen(Screen):
             y += 24
             self.add_subview(make_label(info["summary"], (m, y, w - 2 * m, 84), 13, False, T.TEXT, lines=5))
             y += 88
-            stats = "Attempts %d · Losses %d · Coins %d" % (camp.attempts_on(camp.mission), camp.losses_on(camp.mission), camp.coins)
+            stats = "Attempts %d · Losses %d" % (camp.attempts_on(camp.mission), camp.losses_on(camp.mission))
+            if camp.m_box_opened:
+                stats += " · Coins %d" % camp.coins
             if not info.get("verified", False):
                 stats += " · rules unverified"
             self.add_subview(make_label(stats, (m, y, w - 2 * m, 20), 12, False, T.MUTED))
             y += 26
-            if store.has_game(store.CAMPAIGN_GAME):
-                self.add_subview(make_button("Continue the current attempt", lambda s: app.resume_attempt(), (x, y, bw, 46)))
+            in_progress = store.has_attempt(camp.slot)
+            if in_progress:
+                self.add_subview(make_button("Continue attempt", lambda s: app.resume_attempt(), (x, y, bw, 46)))
                 y += 54
-            if info.get("playable"):
-                self.add_subview(make_button("Start attempt %d" % (camp.attempts_on(camp.mission) + 1), lambda s: app.start_attempt(), (x, y, bw, 46), not store.has_game(store.CAMPAIGN_GAME)))
+            elif info.get("playable"):
+                attempt = camp.attempts_on(camp.mission) + 1
+                title = "Next mission: start" if attempt == 1 else "Retry mission (attempt %d)" % attempt
+                self.add_subview(make_button(title, lambda s: app.start_attempt(), (x, y, bw, 46)))
+                y += 54
             else:
                 b = make_button("Mission %d arrives in a later build" % camp.mission, lambda s: None, (x, y, bw, 46))
                 set_enabled(b, False)
                 self.add_subview(b)
-            y += 54
-        party_line = "Party %d cards · corrupted %d · relics: %s" % (
-            len(camp.party), len(camp.corrupted), ", ".join(camp.relics) if camp.relics else "none")
-        self.add_subview(make_label(party_line, (m, y, w - 2 * m, 40), 12, False, T.MUTED, lines=2))
-        y += 44
+                y += 54
+            if camp.m_box_opened and not in_progress:
+                self.add_subview(make_button("Mercenary camp (%d coin%s)" % (camp.coins, "" if camp.coins == 1 else "s"),
+                                             lambda s: app.show(MercenaryScreen(app)), (x, y, bw, 44), False))
+                y += 52
+        y += 6
         row_h, gap = 44, 10
-        buttons = [("Party", lambda s: app.show(PartyScreen(app)))]
-        if camp.m_box_opened:
-            buttons.append(("Mercenary camp", lambda s: app.show(MercenaryScreen(app))))
-        buttons.append(("Missions", lambda s: app.show(MissionListScreen(app))))
-        buttons.append(("Campaign log", lambda s: app.show(CampaignLogScreen(app))))
-        buttons.append(("Abandon campaign", self._abandon))
+        buttons = [
+            ("Deck list", lambda s: app.show(PartyScreen(app))),
+            ("Map", lambda s: app.show(MapScreen(app))),
+            ("Progress", lambda s: app.show(ProgressScreen(app))),
+            ("Lore", lambda s: app.show(LoreScreen(app, local=True))),
+        ]
         for title, action in buttons:
             self.add_subview(make_button(title, action, (x, y, bw, row_h), False))
             y += row_h + gap
 
-    @ui.in_background
-    def _abandon(self, sender) -> None:
-        import console
-        if console.alert("Abandon campaign?", "All campaign progress will be deleted.", "Delete", "Cancel") == 1:
-            store.delete_campaign()
-            self.app.campaign = None
-            self.app.show(CampaignScreen(self.app))
+
+class MapScreen(Screen):
+    """A stylised route across Deccaria: one stop per mission."""
+
+    STOPS = [(0.14, 0.92), (0.40, 0.86), (0.70, 0.84), (0.86, 0.72), (0.62, 0.64), (0.32, 0.60),
+             (0.14, 0.48), (0.40, 0.42), (0.70, 0.40), (0.84, 0.28), (0.56, 0.20), (0.26, 0.12)]
+
+    def __init__(self, app: "App", **kw) -> None:
+        super().__init__(app, **kw)
+        self.selected: Optional[int] = None
+        self.canvas = _MapCanvas(self)
+        self.caption = make_label("", (0, 0, 10, 10), 13, False, T.TEXT, ui.ALIGN_CENTER, lines=3)
+        self.add_subview(self.canvas)
+        self.add_subview(self.caption)
+
+    def layout(self) -> None:
+        if not hasattr(self, "caption"):
+            return
+        for v in list(self.subviews):
+            if v not in (self.canvas, self.caption):
+                self.remove_subview(v)
+        app = self.app
+        w, h = self.width, self.height
+        m = T.MARGIN
+        y = T.TOP_INSET
+        self.add_subview(make_button("‹ Back", lambda s: app.show(CampaignScreen(app)), (m, y, 80, 36), False, 14))
+        self.add_subview(make_label("Map of Deccaria", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
+        y += 46
+        self.caption.frame = (m, h - T.BOTTOM_INSET - 60, w - 2 * m, 56)
+        self.canvas.frame = (m, y, w - 2 * m, self.caption.y - y - 6)
+        self.canvas.set_needs_display()
+        self._update_caption()
+
+    def _update_caption(self) -> None:
+        camp = self.app.campaign
+        if camp is None:
+            return
+        n = self.selected or camp.mission
+        info = mission_info(n)
+        if camp.revealed(n):
+            state = "completed" if n in camp.completed else ("current" if n == camp.mission else "locked")
+            self.caption.text = "%d. %s — %s (%s)" % (n, info["title"], info["location"], state)
+        else:
+            self.caption.text = "%d. Unknown. Complete mission %d to reveal it." % (n, n - 1)
+
+    def select(self, n: int) -> None:
+        self.selected = n
+        self._update_caption()
+        self.canvas.set_needs_display()
+
+
+class _MapCanvas(ui.View):
+    def __init__(self, screen: MapScreen, **kw) -> None:
+        super().__init__(**kw)
+        self.screen = screen
+        self.background_color = "#1f2a26"
+        self.corner_radius = 14
+
+    def _points(self):
+        w, h = self.width, self.height
+        return [(x * w, y * h) for x, y in MapScreen.STOPS]
+
+    def draw(self) -> None:
+        camp = self.screen.app.campaign
+        pts = self._points()
+        # terrain hint: a few soft shapes
+        ui.set_color("#26332e")
+        ui.Path.oval(self.width * 0.05, self.height * 0.55, self.width * 0.5, self.height * 0.3).fill()
+        ui.Path.oval(self.width * 0.45, self.height * 0.08, self.width * 0.5, self.height * 0.32).fill()
+        ui.set_color("#2b3c55")
+        ui.Path.oval(self.width * 0.55, self.height * 0.56, self.width * 0.42, self.height * 0.2).fill()
+        # route
+        route = ui.Path()
+        route.line_width = 3
+        route.move_to(*pts[0])
+        for p in pts[1:]:
+            route.line_to(*p)
+        ui.set_color("#6b5d3a")
+        route.stroke()
+        for i, (x, y) in enumerate(pts):
+            n = i + 1
+            r = 15
+            if camp is not None and n in camp.completed:
+                fill, ring, txt = T.ACCENT, T.ACCENT, T.BG
+            elif camp is not None and n == camp.mission and not camp.finished:
+                fill, ring, txt = T.PANEL, T.ACCENT, T.TEXT
+            else:
+                fill, ring, txt = "#2a2f3a", "#4a5060", T.MUTED
+            if self.screen.selected == n:
+                ui.set_color(T.TEXT)
+                ui.Path.oval(x - r - 4, y - r - 4, 2 * r + 8, 2 * r + 8).stroke()
+            ui.set_color(fill)
+            ui.Path.oval(x - r, y - r, 2 * r, 2 * r).fill()
+            ring_path = ui.Path.oval(x - r, y - r, 2 * r, 2 * r)
+            ring_path.line_width = 2
+            ui.set_color(ring)
+            ring_path.stroke()
+            ui.draw_string(str(n), (x - r, y - 9, 2 * r, 18), (T.FONT_BOLD, 13), txt, ui.ALIGN_CENTER)
+            if camp is not None and camp.revealed(n):
+                title = mission_info(n)["title"]
+                ty = y + r + 2 if i % 2 == 0 else y - r - 16
+                ui.draw_string(title, (x - 60, ty, 120, 16), (T.FONT, 10), T.MUTED, ui.ALIGN_CENTER)
+
+    def touch_ended(self, touch) -> None:
+        x, y = touch.location
+        best = None
+        for i, (px, py) in enumerate(self._points()):
+            if (px - x) ** 2 + (py - y) ** 2 <= 24 ** 2:
+                best = i + 1
+        if best is not None:
+            self.screen.select(best)
 
 
 class MercenaryScreen(Screen):
@@ -806,8 +1034,8 @@ class MercenaryScreen(Screen):
         y += 48
         if camp is None:
             return
-        self.add_subview(make_label("Coins: %d. Hired mercenaries fight in every attempt at this mission and leave "
-                                    "when it is completed. Costs are placeholders until verified." % camp.coins,
+        self.add_subview(make_label("Coins: %d (one per previous failure of this mission). Mercenaries fight in the next "
+                                    "attempt only and are never kept. Costs are from the fan transcription until verified." % camp.coins,
                                     (m, y, w - 2 * m, 60), 13, False, T.TEXT, lines=3))
         y += 66
         sv = ui.ScrollView(frame=(m, y, w - 2 * m, h - y - T.BOTTOM_INSET))
@@ -835,7 +1063,7 @@ class MercenaryScreen(Screen):
             import console
             console.hud_alert(str(e), "error")
             return
-        store.save_campaign(self.app.campaign)
+        self.app.save_campaign()
         self.layout()
 
 
@@ -851,7 +1079,7 @@ class PartyScreen(Screen):
         m = T.MARGIN
         y = T.TOP_INSET
         self.add_subview(make_button("‹ Back", lambda s: app.show(CampaignScreen(app)), (m, y, 80, 36), False, 14))
-        self.add_subview(make_label("Party", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
+        self.add_subview(make_label("Deck list", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
         y += 48
         if camp is None:
             return
@@ -949,7 +1177,12 @@ class TextScreen(Screen):
         w, h = self.width, self.height
         m = T.MARGIN
         y = T.TOP_INSET
-        back_to = CampaignScreen if isinstance(self, (MissionListScreen, CampaignLogScreen)) else MenuScreen
+        if isinstance(self, (MissionListScreen, CampaignLogScreen, ProgressScreen)) or (isinstance(self, LoreScreen) and self.local):
+            back_to = CampaignScreen
+        elif isinstance(self, HistoryScreen):
+            back_to = QuickPlayScreen
+        else:
+            back_to = MenuScreen
         self.add_subview(make_button("‹ Back", lambda s: self.app.show(back_to(self.app)), (m, y, 80, 36), False, 14))
         self.add_subview(make_label(self.title, (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
         y += 48
@@ -1077,3 +1310,56 @@ class CampaignLogScreen(TextScreen):
         if camp is None:
             return "No campaign."
         return "\n".join(camp.log[-80:]) or "Nothing yet."
+
+
+class ProgressScreen(TextScreen):
+    title = "Progress"
+
+    def body(self) -> str:
+        camp = self.app.campaign
+        if camp is None:
+            return "No game."
+        lines = ["%s · %d player%s · started %s" % (camp.name, camp.players, "" if camp.players == 1 else "s", camp.created)]
+        total_attempts = sum(camp.attempts.values())
+        total_losses = sum(camp.losses.values())
+        lines.append("Missions completed: %d of 12 · attempts %d · losses %d" % (len(camp.completed), total_attempts, total_losses))
+        lines.append("Party %d cards · corrupted %d · relics: %s" % (len(camp.party), len(camp.corrupted), ", ".join(camp.relics) or "none"))
+        lines.append("")
+        for mi in MISSIONS:
+            n = mi["number"]
+            if n in camp.completed:
+                state = "done in %d attempt%s" % (camp.attempts_on(n), "" if camp.attempts_on(n) == 1 else "s")
+            elif n == camp.mission:
+                state = "current (%d attempt%s so far)" % (camp.attempts_on(n), "" if camp.attempts_on(n) == 1 else "s")
+            else:
+                state = "locked"
+            if camp.revealed(n):
+                lines.append("%d. %s — %s (%s)" % (n, mi["title"], mi["location"], state))
+            else:
+                lines.append("%d. ??? (%s)" % (n, state))
+        lines.append("")
+        lines.append("Campaign log")
+        lines.extend(camp.log[-60:] or ["Nothing yet."])
+        return "\n".join(lines)
+
+
+class LoreScreen(TextScreen):
+    title = "Lore"
+
+    def __init__(self, app: "App", local: bool = True, **kw) -> None:
+        super().__init__(app, **kw)
+        self.local = local
+        self.title = "Lore" if local else "Lore (all games)"
+
+    def body(self) -> str:
+        entries = self.app.lore_entries(self.local)
+        if not entries:
+            return "Nothing revealed yet. Lore appears as missions are reached and completed."
+        out = []
+        for e in entries:
+            out.append(e["title"])
+            out.append(e["text"])
+            out.append("")
+        if not os.path.exists(store.lore_overlay_path()):
+            out.append("(These are summaries written for this app. Put the real card text in %s to replace them; that file stays private.)" % store.LORE_OVERLAY)
+        return "\n".join(out)

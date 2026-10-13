@@ -99,6 +99,7 @@ class Game:
         self.discard: List[str] = []
         self.banished: List[str] = []      # Legacy: cards removed from the mission
         self.mission_zone: List[str] = []  # Legacy: mission specific area
+        self.set_aside: List[str] = []     # Legacy solo: Jesters flipped after an attack
         self.enemy: Optional[Enemy] = None
         self.plays: List[Play] = []
         self.immunity_cancelled = False
@@ -555,9 +556,11 @@ class Game:
         plan = self.rules.defeat_plan(self, exact)
         played = [self.cards[c] for p in self.plays for c in p.card_ids]
         if self.rules.solo_jester_mode(self) == "attack":
+            # Official solo rule: the Jester is never cleaned up to any pile; it goes back
+            # to the side, face down, unusable for the rest of this attempt.
             spent = [c for c in played if c.is_jester]
             played = [c for c in played if not c.is_jester]
-            self.banished.extend(c.id for c in spent)
+            self.set_aside.extend(c.id for c in spent)
         self._event("defeat", enemy=enemy.card_id, exact=exact, plan=plan)
         self._say("%s is defeated%s" % (enemy.name, " with exact damage! It joins the tavern deck." if exact else "."))
         self.enemies_defeated += 1
@@ -675,7 +678,7 @@ class Game:
             "players": [p.to_dict() for p in self.players],
             "tavern": list(self.tavern), "castle": list(self.castle),
             "discard": list(self.discard), "banished": list(self.banished),
-            "mission_zone": list(self.mission_zone),
+            "mission_zone": list(self.mission_zone), "set_aside": list(self.set_aside),
             "enemy": self.enemy.to_dict() if self.enemy else None,
             "plays": [p.to_dict() for p in self.plays],
             "immunity_cancelled": self.immunity_cancelled,
@@ -703,6 +706,7 @@ class Game:
         g.tavern = list(d["tavern"]); g.castle = list(d["castle"])
         g.discard = list(d["discard"]); g.banished = list(d.get("banished", []))
         g.mission_zone = list(d.get("mission_zone", []))
+        g.set_aside = list(d.get("set_aside", []))
         g.enemy = Enemy.from_dict(d["enemy"]) if d.get("enemy") else None
         g.plays = [Play.from_dict(p) for p in d.get("plays", [])]
         g.immunity_cancelled = bool(d.get("immunity_cancelled", False))
@@ -723,7 +727,7 @@ class Game:
         for p in self.players:
             ids.extend(p.hand)
         ids.extend(self.tavern); ids.extend(self.castle); ids.extend(self.discard)
-        ids.extend(self.banished); ids.extend(self.mission_zone)
+        ids.extend(self.banished); ids.extend(self.mission_zone); ids.extend(self.set_aside)
         for p in self.plays:
             ids.extend(p.card_ids)
         if self.enemy:
