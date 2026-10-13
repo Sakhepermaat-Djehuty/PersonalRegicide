@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "personalregicide"
+version = "0.1.0"
+description = "Personal digital replica of Regicide and the Regicide Legacy campaign (Pythonista-first)."
+requires-python = ">=3.8"
+readme = "README.md"
+license = {text = "MIT"}
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "hypothesis>=6", "pillow>=9", "vermin>=1.6"]
+
+[tool.setuptools.packages.find]
+include = ["regicide*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,209 @@
+"""Game configuration and the rule hooks that Legacy missions override.
+
+``GameConfig`` is pure data (serialisable). ``BaseRules`` is behaviour: the engine calls
+its hooks at well-defined points so that a mission can change enemy immunity, add
+attack bonuses, react to played cards, decide what happens to a defeated enemy, and
+resolve suit powers the base game does not have. The base game uses ``BaseRules``
+unchanged; missions subclass it (see ``regicide/campaign``).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Sequence, Tuple, TYPE_CHECKING
+
+from .cards import CLUBS, DIAMONDS, HEARTS, SPADES, Card
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .engine import Game
+
+# Official setup table: players -> (max hand size, Jesters shuffled into the tavern deck)
+HAND_SIZE: Dict[int, int] = {1: 8, 2: 7, 3: 6, 4: 5}
+JESTERS_IN_DECK: Dict[int, int] = {1: 0, 2: 0, 3: 1, 4: 2}
+SOLO_JESTER_POWERS = 2
+
+
+@dataclass
+class GameConfig:
+    players: int = 1
+    names: Tuple[str, ...] = ()
+    hand_size: Optional[int] = None        # None = official table
+    jesters: Optional[int] = None          # None = official table (deck Jesters, or solo powers)
+    jester_may_choose_self: bool = True    # see docs/RULES_BASE.md, open point
+    open_hands: bool = False               # UI hint only: one person drives all seats
+    rules_id: str = "base"
+    extra: Dict[str, Any] = field(default_factory=dict)  # mission / variant parameters
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.players <= 4:
+            raise ValueError("players must be 1..4")
+        names = list(self.names)
+        while len(names) < self.players:
+            names.append("Player %d" % (len(names) + 1))
+        self.names = tuple(names[: self.players])
+
+    @property
+    def max_hand(self) -> int:
+        return self.hand_size if self.hand_size is not None else HAND_SIZE[self.players]
+
+    @property
+    def deck_jesters(self) -> int:
+        """Jesters shuffled into the tavern deck (0 in solo: they are powers instead)."""
+        if self.players == 1:
+            return 0
+        return self.jesters if self.jesters is not None else JESTERS_IN_DECK[self.players]
+
+    @property
+    def solo_jesters(self) -> int:
+        if self.players != 1:
+            return 0
+        return self.jesters if self.jesters is not None else SOLO_JESTER_POWERS
+
+    def to_dict(self) -> dict:
+        return {
+            "players": self.players, "names": list(self.names), "hand_size": self.hand_size,
+            "jesters": self.jesters, "jester_may_choose_self": self.jester_may_choose_self,
+            "open_hands": self.open_hands, "rules_id": self.rules_id, "extra": dict(self.extra),
+        }
+
+    @staticmethod
+    def from_dict(d: dict) -> "GameConfig":
+        return GameConfig(
+            players=int(d.get("players", 1)), names=tuple(d.get("names", ())),
+            hand_size=d.get("hand_size"), jesters=d.get("jesters"),
+            jester_may_choose_self=bool(d.get("jester_may_choose_self", True)),
+            open_hands=bool(d.get("open_hands", False)), rules_id=d.get("rules_id", "base"),
+            extra=dict(d.get("extra", {})),
+        )
+
+
+class BaseRules:
+    """Hooks with base-game behaviour. Missions override what they need."""
+
+    id = "base"
+    # Order in which suit powers resolve. Hearts before Diamonds is an explicit official
+    # rule; Clubs and Spades only matter for damage / defence so they come last.
+    power_order: Tuple[str, ...] = (HEARTS, DIAMONDS, CLUBS, SPADES)
+
+    # --- setup ---------------------------------------------------------------
+    def build_decks(self, game: "Game") -> None:
+        """Populate game.cards, game.tavern and game.castle (ids). Base: official decks."""
+        from .cards import build_castle, build_tavern, card_table
+        tavern = build_tavern(game.config.deck_jesters)
+        castle = build_castle(game.rng)
+        game.cards = card_table(tavern + castle)
+        game.rng.shuffle(tavern)
+        game.tavern = [c.id for c in tavern]
+        game.castle = [c.id for c in castle]
+
+    def enemy_stats(self, game: "Game", card: Card) -> Tuple[int, int]:
+        """(attack, health) for a revealed castle card."""
+        from .cards import ROYAL_ATTACK, ROYAL_HEALTH
+        return ROYAL_ATTACK[card.rank], ROYAL_HEALTH[card.rank]
+
+    # --- queries ---------------------------------------------------------------
+    def immune(self, game: "Game", suit: str) -> bool:
+        enemy = game.enemy
+        if enemy is None:
+            return False
+        if game.immunity_cancelled:
+            return False
+        return suit in enemy.suits
+
+    def attack_bonus(self, game: "Game") -> int:
+        """Added to the enemy's printed attack before shields (Legacy missions)."""
+        return 0
+
+    def damage_reduction(self, game: "Game") -> int:
+        """Subtracted from the damage a combo deals (Legacy mission 10)."""
+        return 0
+
+    def can_yield(self, game: "Game") -> bool:
+        if game.config.players == 1:
+            return False
+        return game.yields_in_a_row < game.config.players - 1
+
+    def extra_plays(self, game: "Game", hand: Sequence[Card]) -> List[List[str]]:
+        """Additional legal plays beyond singles / companions / sets (Legacy: beasts...)."""
+        return []
+
+    def validate_combo(self, game: "Game", cards: Sequence[Card]) -> Tuple[str, Optional[str]]:
+        """Return (kind, error). Kinds: single, jester, companion, set."""
+        return classify_combo(cards)
+
+    # --- resolution hooks --------------------------------------------------------
+    def on_turn_start(self, game: "Game") -> None:
+        pass
+
+    def on_turn_end(self, game: "Game") -> None:
+        pass
+
+    def on_cards_played(self, game: "Game", cards: Sequence[Card]) -> None:
+        pass
+
+    def resolve_power(self, game: "Game", suit: str, value: int, cards: Sequence[Card]) -> Any:
+        """Resolve a non-basic suit power (Legacy). Return value is logged."""
+        raise NotImplementedError("suit %s has no power in these rules" % suit)
+
+    def defeat_plan(self, game: "Game", exact: bool) -> Dict[str, Any]:
+        """Where the defeated enemy and the played cards go."""
+        return {"enemy_to": "tavern_top" if exact else "discard", "played_to": "discard"}
+
+    def order_for_discard(self, game: "Game", cards: List[Card]) -> List[Card]:
+        """Order in which a batch of cards is put on the discard pile (last = on top)."""
+        return cards
+
+    def on_enemy_revealed(self, game: "Game") -> None:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Combo classification (shared by rules and bots)
+# ---------------------------------------------------------------------------
+
+def classify_combo(cards: Sequence[Card]) -> Tuple[str, Optional[str]]:
+    """Classify a set of cards as a legal base-game play.
+
+    Returns ``(kind, None)`` or ``("", reason)``.
+    """
+    if not cards:
+        return "", "Pick at least one card."
+    ids = [c.id for c in cards]
+    if len(set(ids)) != len(ids):
+        return "", "Duplicate card."
+    jesters = [c for c in cards if c.is_jester]
+    if jesters:
+        if len(cards) == 1:
+            return "jester", None
+        return "", "A Jester must be played alone."
+    if len(cards) == 1:
+        return "single", None
+    aces = [c for c in cards if c.is_ace]
+    if len(cards) == 2 and aces:
+        # Animal Companion: an Ace with any one other card (Ace + Ace allowed).
+        return "companion", None
+    if aces:
+        return "", "An Animal Companion pairs with exactly one other card."
+    ranks = set(c.rank for c in cards)
+    if len(ranks) != 1:
+        return "", "Combos need cards of the same number, or an Ace with one other card."
+    if len(cards) > 4:
+        return "", "A combo has at most four cards."
+    total = sum(c.value for c in cards)
+    if total > 10:
+        return "", "A combo's total must be 10 or less."
+    return "set", None
+
+
+RULES_REGISTRY: Dict[str, type] = {"base": BaseRules}
+
+
+def register_rules(cls: type) -> type:
+    RULES_REGISTRY[cls.id] = cls  # type: ignore[attr-defined]
+    return cls
+
+
+def get_rules(rules_id: str) -> BaseRules:
+    try:
+        return RULES_REGISTRY[rules_id]()
+    except KeyError:
+        raise KeyError("unknown rules id %r (registered: %s)" % (rules_id, sorted(RULES_REGISTRY)))
