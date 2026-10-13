@@ -27,8 +27,8 @@ points where I need you. The gates where I need you are marked **G0–G4**.
 |---|---|---|
 | 0 | Research, this plan, rules spec, campaign reference | done |
 | 1 | **Alpha 0 — engine + console**: full base Regicide for 1–4 players, solo Jester powers and medals, legal-move enumeration, save/load, bots, text client (`python -m regicide.cli`), test suite (rule-by-rule tests, thousands of bot games checking invariants), CI on Python 3.8/3.10/3.12 | done |
-| 2 | **Alpha 1 — phone UI**: Pythonista touch client for the base game (solo + pass-and-play with a hand-over screen), tap-to-select cards, forecast of a play, discard picker, Jester choice, autosave/resume, game log, settings (player names, open hands, variants), one-file bootstrap installer | this session |
-| 3 | **Alpha 2 — campaign skeleton**: party deck with per-card classes and flags, relics, corruption, mission log and attempts, coins and mercenaries, campaign save file, progressive reveal; Missions 1–2 playable (Call to Arms, Shadow and Mist) with the Kinfolk Flute, the Arcane 25 and the new Jester rules | this session |
+| 2 | **Alpha 1 — phone UI**: Pythonista touch client for the base game (solo + pass-and-play with a hand-over screen), tap-to-select cards, forecast of a play, discard picker, Jester choice, autosave/resume, undo, game log, history, settings, one-file bootstrap installer | done |
+| 3 | **Alpha 2 — campaign skeleton**: party deck with per-card classes and flags, relics, corruption, mission log and attempts, coins and mercenaries, campaign save file, progressive reveal; Missions 1–2 playable (Call to Arms, Shadow and Mist) with the Kinfolk Flute, the Arcane 25, corrupted cards, feign death and the Legacy Jester rules (claim in multiplayer, strength-8 class attack in solo) | done (content unverified, see G2) |
 | 4 | **Alpha 3 — Missions 3–6**: Mage class with the interactive reveal/pick, mission zone, dynamic immunities, shield recalculation, Reavers, Guardians, Beasts, Scarlet Whistle, Azure Emblem, carry-over damage, mission-zone damage | after G2 answers where they matter, otherwise built on the transcription |
 | 5 | **Alpha 4 — Missions 7–9**: Druids (discard sorting), Pilgrim deck, Chanters, ascending placement, captured piles, Evergreen Mother | same |
 | 6 | **Alpha 5 — Missions 10–12 and Eternal mode**: corrupted party as enemies, Beast hunt, restored cards, final boss, Location/Bane/Boon generator | needs E-box transcription (G2) |
@@ -61,6 +61,14 @@ progressive reveal on (default) or show everything?
 **G4 — "more":** tell me which extras matter most so Stage 7 is ordered right: bot
 teammates, undo, stats/medals, difficulty modifiers, daily challenge, iPad layout, a
 shareable web build, Inferno/Crown Duels content later.
+
+## What is in the build right now
+
+* Base Regicide, 1–4 players, every official rule, in the terminal and on the phone.
+* Legacy campaign: missions 1 and 2, relics (Kinfolk Flute), corruption, mercenaries
+  after a loss, feign death, the Legacy Jester, campaign save, mission list with
+  progressive reveal. Missions 3–12 are listed and described but not yet playable.
+* Tests: 82 in `tests/`, run by GitHub Actions on Python 3.8, 3.10 and 3.12.
 
 ## Getting it onto the phone (Stage 2 deliverable)
 

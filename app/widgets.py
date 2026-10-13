@@ -64,6 +64,7 @@ class CardView(ui.View):
         self.dimmed = False
         self.face_up = True
         self.small = False
+        self.badge = ""
         self.background_color = None  # drawn in draw()
 
     def draw(self) -> None:
@@ -100,6 +101,12 @@ class CardView(ui.View):
             ui.draw_string(c.name, (2, h * 0.8, w - 4, h * 0.18), (T.FONT, max(8, h * 0.1)), "#333333", ui.ALIGN_CENTER)
         if c.is_royal:
             ui.draw_string("%d" % c.value, (0, h * 0.8, w - 5, h * 0.18), (T.FONT_BOLD, h * 0.12), col, ui.ALIGN_RIGHT)
+        badge = self.badge or ("corrupted" if c.has("corrupted") else "restored" if c.has("restored") else "")
+        if badge:
+            ui.set_color("#5a1f6b" if badge == "corrupted" else "#1f6b3a" if badge == "restored" else T.ACCENT)
+            ui.Path.rounded_rect(3, 3, w - 6, max(12, h * 0.13), 4).fill()
+            ui.draw_string(badge, (3, 3, w - 6, max(12, h * 0.13)), (T.FONT_BOLD, max(8, h * 0.09)),
+                           "white" if badge in ("corrupted", "restored") else T.BG, ui.ALIGN_CENTER)
 
     def touch_ended(self, touch) -> None:
         x, y = touch.location
@@ -178,6 +185,7 @@ class HandGrid(ui.View):
         self.selected: List[str] = []
         self.on_change: Optional[Callable[[], None]] = None
         self.selectable: Callable[[Card], bool] = lambda c: True
+        self.badges: Dict[str, str] = {}
         self.background_color = None
         self.columns = 4
 
@@ -194,6 +202,7 @@ class HandGrid(ui.View):
         for c in self.cards:
             v = CardView(c, on_tap=self._tapped)
             v.selected = c.id in self.selected
+            v.badge = self.badges.get(c.id, "")
             self.views[c.id] = v
             self.add_subview(v)
         self.layout()

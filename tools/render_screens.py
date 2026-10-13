@@ -105,6 +105,54 @@ def main(argv):
     play_out(app.game, greedy_policy)
     gs.refresh(after_action=False)
     shot(app, "30_result")
+    # campaign
+    from app.screens import CampaignScreen, MercenaryScreen, MissionListScreen, PartyScreen
+    from app import store
+    store.delete_campaign()
+    app.campaign = None
+    app.show(CampaignScreen(app))
+    shot(app, "40_campaign_empty")
+    app.new_campaign(1, ["Solo"])
+    shot(app, "41_campaign_mission1")
+    app.start_attempt()
+    gs = app.current
+    shot(app, "42_campaign_attempt")
+    ui.tap(app, *ui.root_point(app, gs.mid_btn))
+    shot(app, "43_jester_class_choice")
+    gs.refresh(after_action=False)
+    # win mission 1 quickly, show rewards
+    g = app.game
+    g.castle = []
+    g.enemy.hp = 1
+    gs.refresh(after_action=False)
+    gs.hand.set_selection([g.hand()[0].id])
+    ui.tap(app, *ui.root_point(app, gs.right_btn))
+    shot(app, "44_mission_complete")
+    app.show(CampaignScreen(app))
+    shot(app, "45_campaign_mission2")
+    app.start_attempt()
+    gs = app.current
+    g = app.game
+    for cid in list(g.tavern):
+        c = g.cards[cid]
+        if 2 <= c.value <= 5 and c.is_number and not c.name:
+            g.tavern.remove(cid)
+            g.players[0].hand[0] = cid
+            break
+    gs.refresh(after_action=False)
+    shot(app, "46_hydra_attempt")
+    ui.tap(app, *ui.root_point(app, gs.special_btn))
+    shot(app, "47_flute_actions")
+    gs.refresh(after_action=False)
+    g._lose("The hydra was too much.")
+    gs.refresh(after_action=False)
+    shot(app, "48_mission_lost")
+    app.show(MercenaryScreen(app))
+    shot(app, "49_mercenary_camp")
+    app.show(PartyScreen(app))
+    shot(app, "50_party")
+    app.show(MissionListScreen(app))
+    shot(app, "51_missions")
     print("done")
 
 

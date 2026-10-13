@@ -14,6 +14,13 @@ Home-screen icon: in Pythonista's script menu use "Shortcuts" → "Home Screen" 
 Requirements: Pythonista 3.4 or newer (Python 3.10). Only the `ui` and `console`
 modules are used.
 
+## What the client offers
+
+Solo and pass-and-play Regicide with full rules enforcement, play forecasts, suggested
+discards, undo, autosave, history and medals; the Legacy campaign (missions 1–2 so far)
+with the party, mercenary camp, relics and a mission list that reveals missions as you
+reach them.
+
 ## Desktop preview
 
 The same code runs headlessly with the stand-in in `tools/fakeui`:

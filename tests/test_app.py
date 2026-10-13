@@ -177,3 +177,90 @@ def test_small_screen_layout_keeps_hand_visible(app):
     bottom = max(v.y + v.height for v in gs.hand.subviews)
     assert gs.hand.y + bottom < gs.left_btn.y, "hand overlaps the action bar on a 667pt screen"
     ui.set_screen_size(390, 844)
+
+
+# ---------------------------------------------------------------------------- campaign
+def _rig_win(app):
+    g = app.game
+    g.castle = []
+    g.enemy.hp = 1
+    g.enemy.max_hp = 1
+
+
+def test_campaign_flow_win_then_mission2(app):
+    from app import store
+    _tap_button(app, "Legacy campaign")
+    _tap_button(app, "Start a campaign")
+    _tap_button(app, "Start")
+    assert app.campaign is not None and store.has_campaign()
+    _tap_button(app, "Start attempt 1")
+    gs = _game_screen(app)
+    assert app.in_campaign and app.game.config.rules_id == "legacy_m1"
+    assert gs.mid_btn.title == "Jester attack"
+    _rig_win(app)
+    gs.refresh(after_action=False)
+    first = app.game.hand()[0]
+    gs.hand.set_selection([first.id])
+    _tap_button(app, "Play")
+    assert app.game.phase == "won"
+    assert ui.button(app, "Campaign overview")
+    assert app.campaign.mission == 2 and "flute" in app.campaign.relics
+    _tap_button(app, "Campaign overview")
+    assert ui.button(app, "Start attempt 1")
+    _tap_button(app, "Start attempt 1")
+    assert app.game.config.rules_id == "legacy_m2"
+    assert app.game.enemy.name == "Hydra"
+    # the flute button appears when a 2-5 is in hand
+    gs = _game_screen(app)
+    g = app.game
+    smalls = [c for c in g.hand() if 2 <= c.value <= 5 and c.is_number]
+    if not smalls:
+        for cid in list(g.tavern):
+            c = g.cards[cid]
+            if 2 <= c.value <= 5 and c.is_number and not c.name:
+                g.tavern.remove(cid)
+                g.players[0].hand[0] = cid
+                break
+        gs.refresh(after_action=False)
+    assert not gs.special_btn.hidden
+    _tap_button(app, "Flute")
+    labels = [b.title for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Store"))]
+    assert labels
+    ui.tap(app, *ui.root_point(app, ui.button(app, labels[0])))
+    assert len(app.game.extra["flute"]) == 1
+    assert any(v.badge == "flute" for v in gs.hand.views.values())
+
+
+def test_campaign_loss_opens_mercenary_camp(app):
+    app.new_campaign(1, ["Solo"])
+    app.start_attempt()
+    gs = _game_screen(app)
+    app.game._lose("test loss")
+    gs.refresh(after_action=False)
+    assert app.campaign.coins == 1 and app.campaign.m_box_opened
+    _tap_button(app, "Mercenary camp")
+    hires = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Hire" and v.enabled)]
+    assert hires
+    ui.tap(app, *ui.root_point(app, hires[0]))
+    assert len(app.campaign.mercenaries) == 1 and app.campaign.coins == 0
+    _tap_button(app, "‹ Back")
+    assert ui.button(app, "Start attempt 2")
+
+
+def test_solo_jester_class_choice_overlay(app):
+    app.new_campaign(1, ["Solo"])
+    app.start_attempt()
+    gs = _game_screen(app)
+    _tap_button(app, "Jester attack")
+    _tap_button(app, "♣ Warrior")
+    assert app.game.solo_jesters == 1
+    assert any("X1" in p.card_ids for p in app.game.plays)
+
+
+def test_campaign_screens_render(app):
+    from app.screens import CampaignScreen, MercenaryScreen, MissionListScreen, PartyScreen, CampaignLogScreen
+    app.new_campaign(2, ["A", "B"])
+    app.campaign.m_box_opened = True
+    for scr in (CampaignScreen(app), MercenaryScreen(app), MissionListScreen(app), PartyScreen(app), CampaignLogScreen(app)):
+        app.show(scr)
+        assert ui.render(app).size[0] > 0

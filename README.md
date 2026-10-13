@@ -13,13 +13,13 @@ or text with the published games. Buy the real thing: https://badgersfrommars.co
       engine.py        Game: state, legal actions, play/yield/suffer/jester, save/load
       bots.py          heuristic players (tests, autoplay, hints)
       cli.py           text client for a terminal or the Pythonista console
-      campaign/        Legacy campaign framework and missions (Stage 3+)
-    app/               Pythonista `ui` client (Stage 2)
+      campaign/        Legacy campaign: party, missions, rewards, mercenaries, rule sets
+    app/               Pythonista `ui` client (base game + campaign screens)
     tools/fakeui/      headless stand-in for Pythonista's `ui` so screens can be rendered
                        to PNG and tested on Linux
     tests/             pytest suite (rules, invariants over thousands of bot games)
     docs/              RULES_BASE.md (the spec the engine follows), LEGACY_CAMPAIGN.md
-                       (spoilers), PLAN.md is at the root
+                       (spoilers), research/ (the research reports); PLAN.md is at the root
 
 ## Quick start (desktop)
 

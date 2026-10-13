@@ -60,10 +60,12 @@ def min_waste_discard(game: Game, player: Optional[int] = None) -> List[str]:
 
 # --------------------------------------------------------------------------- policies
 def random_policy(game: Game, rng) -> dict:
-    acts = game.legal_actions()
+    acts = [a for a in game.legal_actions() if a["type"] != "special"]
     if game.phase == PHASE_SUFFER:
         if game.hand_defence_value() < game.pending_damage:
-            return {"type": "solo_jester"}  # the only way out (else the game would be lost)
+            if game.can_use_solo_jester():
+                return {"type": "solo_jester"}  # the only way out (else the game would be lost)
+            return {"type": "suffer", "cards": [c.id for c in game.hand()]}
         # random legal cover: shuffle and take until covered
         hand = list(game.hand())
         rng.shuffle(hand)
@@ -117,7 +119,7 @@ def greedy_policy(game: Game, rng=None) -> dict:
         if game.hand_defence_value() < game.pending_damage:
             if game.can_use_solo_jester():
                 return {"type": "solo_jester"}
-            return {"type": "suffer", "cards": [c.id for c in game.hand()]}
+            return {"type": "suffer", "cards": [c.id for c in game.hand()]}  # feign death or lose
         if game.can_use_solo_jester():
             # Refreshing before paying is worth it when the hand would be gutted.
             after = _simulate_turn(game, {"type": "suffer", "cards": min_waste_discard(game)})
@@ -131,11 +133,7 @@ def greedy_policy(game: Game, rng=None) -> dict:
                 "player": max(choices, key=lambda i: sum(c.value for c in game.hand(i)))}
     if game.phase != PHASE_PLAY:
         raise RuntimeError("game over")
-    candidates: List[dict] = [{"type": "play", "cards": p} for p in game.legal_plays()]
-    if game.can_yield():
-        candidates.append({"type": "yield"})
-    if game.can_use_solo_jester():
-        candidates.append({"type": "solo_jester"})
+    candidates: List[dict] = [a for a in game.legal_actions() if a["type"] != "suffer"]
     best: Optional[dict] = None
     best_score = None
     for act in candidates:
@@ -145,6 +143,8 @@ def greedy_policy(game: Game, rng=None) -> dict:
             score -= 4.0  # keep the powers for emergencies unless clearly better
         if act["type"] == "yield":
             score -= 2.0
+        if act["type"] == "special":
+            score -= 1.0  # relic bookkeeping is rarely urgent
         if best_score is None or score > best_score:
             best_score = score
             best = act
@@ -156,15 +156,17 @@ def greedy_policy(game: Game, rng=None) -> dict:
 def apply_action(game: Game, action: dict) -> None:
     t = action["type"]
     if t == "play":
-        game.play(action["cards"])
+        game.play(action["cards"], action.get("choice"))
     elif t == "yield":
         game.yield_turn()
     elif t == "solo_jester":
-        game.use_solo_jester()
+        game.use_solo_jester({"suit": action["suit"]} if "suit" in action else None)
     elif t == "suffer":
         game.suffer(action["cards"])
     elif t == "choose_next":
         game.choose_next(action["player"])
+    elif t == "special":
+        game.special(action)
     else:
         raise ValueError("unknown action %r" % (t,))
 

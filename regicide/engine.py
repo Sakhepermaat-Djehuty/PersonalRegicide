@@ -158,8 +158,10 @@ class Game:
     def is_over(self) -> bool:
         return self.phase in (PHASE_WON, PHASE_LOST)
 
-    def immune(self, suit: str) -> bool:
-        return self.rules.immune(self, suit)
+    def immune(self, suit: str, cards: Sequence[Card] = ()) -> bool:
+        if self.extra.get("jester_attack"):
+            return False  # Legacy: the attack formed with a claimed Jester ignores immunity
+        return self.rules.immune(self, suit, cards)
 
     @property
     def shield(self) -> int:
@@ -183,13 +185,20 @@ class Game:
         return self.phase == PHASE_PLAY and self.rules.can_yield(self)
 
     def can_use_solo_jester(self) -> bool:
-        return (self.n_players == 1 and self.solo_jesters > 0
-                and self.phase in (PHASE_PLAY, PHASE_SUFFER))
+        if self.n_players != 1 or self.solo_jesters <= 0:
+            return False
+        if self.rules.solo_jester_mode(self) == "attack":
+            return self.phase == PHASE_PLAY
+        return self.phase in (PHASE_PLAY, PHASE_SUFFER)
+
+    def feign_death_available(self) -> bool:
+        return (self.phase == PHASE_SUFFER and self.rules.feign_death_allowed(self)
+                and self.hand_defence_value() < self.pending_damage)
 
     def check_play(self, card_ids: Sequence[str]) -> Tuple[bool, str]:
         if self.phase != PHASE_PLAY:
             return False, "Not the moment to play cards."
-        hand = self.active_player.hand
+        hand = self.rules.playable_ids(self)
         for cid in card_ids:
             if cid not in hand:
                 return False, "Card %s is not in hand." % cid
@@ -202,7 +211,7 @@ class Game:
         """Every legal set of card ids the active player may play right now."""
         if self.phase != PHASE_PLAY:
             return []
-        hand = self.hand()
+        hand = [self.cards[c] for c in self.rules.playable_ids(self)]
         plays: List[List[str]] = []
         for c in hand:
             plays.append([c.id])
@@ -244,9 +253,17 @@ class Game:
             if self.can_yield():
                 acts.append({"type": "yield"})
         if self.can_use_solo_jester():
-            acts.append({"type": "solo_jester"})
+            if self.rules.solo_jester_mode(self) == "attack" and self.phase == PHASE_PLAY:
+                for suit in BASIC_SUITS:
+                    acts.append({"type": "solo_jester", "suit": suit})
+            elif self.rules.solo_jester_mode(self) == "refresh":
+                acts.append({"type": "solo_jester"})
         if self.phase == PHASE_SUFFER:
             acts.append({"type": "suffer", "damage": self.pending_damage})
+            if self.feign_death_available():
+                acts.append({"type": "suffer", "cards": list(self.active_player.hand), "feign": True})
+        if self.phase in (PHASE_PLAY, PHASE_SUFFER):
+            acts.extend(self.rules.special_actions(self))
         if self.phase == PHASE_CHOOSE_NEXT:
             for i in range(self.n_players):
                 if i == self.active and not self.config.jester_may_choose_self:
@@ -278,29 +295,36 @@ class Game:
                 "phase_after": g.phase}
 
     # ---------------------------------------------------------------- actions
-    def play(self, card_ids: Sequence[str]) -> None:
+    def play(self, card_ids: Sequence[str], choice: Optional[dict] = None) -> None:
         self.last_events = []
         ok, info = self.check_play(card_ids)
         if not ok:
             raise IllegalAction(info)
         kind = info
         cards = [self.cards[c] for c in card_ids]
-        hand = self.active_player.hand
         for c in cards:
-            hand.remove(c.id)
+            self.rules.remove_played(self, c.id)
         me = self.active
         suits = tuple(sorted(set(s for c in cards for s in c.suits), key=_suit_sort_key))
-        value = sum(c.value for c in cards)
+        value = self.rules.play_value(self, cards)
         self.plays.append(Play(me, [c.id for c in cards], value, suits))
         self.yields_in_a_row = 0
         self._event("play", player=me, cards=[c.id for c in cards], value=value, kind=kind)
         self._say("%s plays %s." % (self.players[me].name, " + ".join(c.label() for c in cards)))
 
         if kind == "jester":
-            self.immunity_cancelled = True
-            self._event("jester", player=me)
-            self._say("Jester! %s's immunity is cancelled." % self._enemy_label())
+            mode = self.rules.jester_mode(self)
             self.rules.on_cards_played(self, cards)
+            if mode == "claim":
+                # Legacy: someone claims the Jester and attacks now, ignoring immunity.
+                self._event("jester", player=me, mode="claim")
+                self._say("Jester! Whoever claims it attacks now, ignoring immunity.")
+                self.phase = PHASE_CHOOSE_NEXT
+                self.extra["jester_claim"] = True
+                return
+            self.immunity_cancelled = True
+            self._event("jester", player=me, mode="base")
+            self._say("Jester! %s's immunity is cancelled." % self._enemy_label())
             # Steps 3 and 4 are skipped. Someone is chosen to go next.
             if self.n_players == 1:
                 self.turn += 1
@@ -310,11 +334,15 @@ class Game:
             return
 
         self.rules.on_cards_played(self, cards)
+        self._resolve_attack(cards, suits, value, choice)
+
+    def _resolve_attack(self, cards: List[Card], suits: Tuple[str, ...], value: int,
+                        choice: Optional[dict] = None) -> None:
         damage = value
         for suit in self.rules.power_order:
             if suit not in suits:
                 continue
-            if self.immune(suit):
+            if self.immune(suit, cards):
                 self._event("power", suit=suit, value=value, immune=True)
                 self._say("%s is immune to %s." % (self._enemy_label(), SUIT_NAME.get(suit, suit)))
                 continue
@@ -323,7 +351,7 @@ class Game:
                 self._event("power", suit=suit, value=value, healed=n)
                 self._say("Hearts heal %d card%s under the tavern deck." % (n, "" if n == 1 else "s"))
             elif suit == DIAMONDS:
-                drawn = self._draw_round_robin(value, me)
+                drawn = self._draw_round_robin(value, self.active)
                 self._event("power", suit=suit, value=value, drawn=drawn)
                 self._say("Diamonds draw %d card%s." % (len(drawn), "" if len(drawn) == 1 else "s"))
             elif suit == CLUBS:
@@ -339,6 +367,7 @@ class Game:
                     damage = int(res["damage"])
                 self._event("power", suit=suit, value=value, result=res)
         damage = max(0, damage - self.rules.damage_reduction(self))
+        self.extra.pop("jester_attack", None)
         self._deal_damage(damage)
 
     def yield_turn(self) -> None:
@@ -353,10 +382,32 @@ class Game:
         self._say("%s yields." % self.active_player.name)
         self._enter_suffer()
 
-    def use_solo_jester(self) -> None:
+    def use_solo_jester(self, choice: Optional[dict] = None) -> None:
         self.last_events = []
         if not self.can_use_solo_jester():
             raise IllegalAction("No Jester power available now.")
+        if self.rules.solo_jester_mode(self) == "attack":
+            suit = (choice or {}).get("suit")
+            if suit not in BASIC_SUITS:
+                raise IllegalAction("Choose a class for the Jester.")
+            jid = "X%d" % (self.solo_jesters_used + 1)
+            card = self.cards.get(jid)
+            if card is None:
+                card = Card(id=jid, rank="X", suits=(), value=0, name="Jester")
+                self.cards[jid] = card
+            self.solo_jesters -= 1
+            self.solo_jesters_used += 1
+            played = card.with_changes(suits=(suit,), value=8)
+            self.cards[jid] = played
+            self.plays.append(Play(self.active, [jid], 8, (suit,)))
+            self.yields_in_a_row = 0
+            self.extra["jester_attack"] = True
+            self._event("play", player=self.active, cards=[jid], value=8, kind="jester_attack")
+            self._event("solo_jester", mode="attack", suit=suit, remaining=self.solo_jesters)
+            self._say("Jester attacks as an 8 of %s, ignoring immunity (%d left)." % (
+                SUIT_NAME.get(suit, suit), self.solo_jesters))
+            self._resolve_attack([played], (suit,), 8, None)
+            return
         p = self.active_player
         old = list(p.hand)
         self._discard_cards([self.cards[c] for c in old])
@@ -388,11 +439,18 @@ class Game:
                 raise IllegalAction("Card %s is not in hand." % cid)
         cards = [self.cards[c] for c in ids]
         total = sum(c.defence_value for c in cards)
+        feign = False
         if total < self.pending_damage:
-            raise IllegalAction("Those cards cover %d damage; %d is needed." % (total, self.pending_damage))
+            if self.feign_death_available() and set(ids) == set(hand):
+                feign = True
+            else:
+                raise IllegalAction("Those cards cover %d damage; %d is needed." % (total, self.pending_damage))
         for c in cards:
             hand.remove(c.id)
         self._discard_cards(cards)
+        if feign:
+            self._event("feign_death", player=self.active, cards=ids, damage=self.pending_damage)
+            self._say("%s feigns death, discarding the whole hand." % self.active_player.name)
         self._event("suffer", player=self.active, cards=ids, damage=self.pending_damage, paid=total)
         self._say("%s discards %s to suffer %d." % (
             self.active_player.name, " ".join(c.label() for c in cards) or "nothing", self.pending_damage))
@@ -408,11 +466,24 @@ class Game:
         if player == self.active and not self.config.jester_may_choose_self:
             raise IllegalAction("The Jester's player must choose someone else.")
         self._event("choose_next", chooser=self.active, player=player)
+        if self.extra.pop("jester_claim", False):
+            self._say("%s claims the Jester and attacks." % self.players[player].name)
+            self.active = player
+            self.extra["jester_attack"] = True
+            self.phase = PHASE_PLAY
+            self._event("turn", player=self.active, turn=self.turn)
+            self._check_can_act()
+            return
         self._say("%s chooses %s to go next." % (self.active_player.name, self.players[player].name))
         self.active = player
         self.turn += 1
         self.phase = PHASE_PLAY
         self._start_turn()
+
+    def special(self, action: dict) -> None:
+        """Relic / mission action provided by the rules (see rules.special_actions)."""
+        self.last_events = []
+        self.rules.do_special(self, action)
 
     # ------------------------------------------------------------- internals
     def _enemy_label(self) -> str:
@@ -477,6 +548,10 @@ class Game:
         assert enemy is not None
         plan = self.rules.defeat_plan(self, exact)
         played = [self.cards[c] for p in self.plays for c in p.card_ids]
+        if self.rules.solo_jester_mode(self) == "attack":
+            spent = [c for c in played if c.is_jester]
+            played = [c for c in played if not c.is_jester]
+            self.banished.extend(c.id for c in spent)
         self._event("defeat", enemy=enemy.card_id, exact=exact, plan=plan)
         self._say("%s is defeated%s" % (enemy.name, " with exact damage! It joins the tavern deck." if exact else "."))
         self.enemies_defeated += 1
@@ -532,8 +607,8 @@ class Game:
             return
         if self.hand_defence_value() >= self.pending_damage:
             return
-        if self.can_use_solo_jester():
-            return  # the Jester power may still rescue the player
+        if self.can_use_solo_jester() or self.feign_death_available():
+            return  # the Jester power / feigning death may still rescue the player
         self._lose("%s cannot suffer %d damage." % (self.active_player.name, self.pending_damage))
 
     def _end_turn(self) -> None:
@@ -558,6 +633,8 @@ class Game:
         if self.phase != PHASE_PLAY or self.is_over:
             return
         if self.legal_plays() or self.can_yield() or self.can_use_solo_jester():
+            return
+        if any(a.get("ends_turn") for a in self.rules.special_actions(self)):
             return
         self._lose("%s has no card to play and may not yield." % self.active_player.name)
 

@@ -51,6 +51,8 @@ class Card:
     value: int = 0
     name: str = ""
     flags: Tuple[str, ...] = ()
+    attack: int = 0     # enemy cards only (0 = use the royal table)
+    health: int = 0     # enemy cards only
 
     # -- classification -------------------------------------------------
     @property
@@ -102,6 +104,9 @@ class Card:
             d["name"] = self.name
         if self.flags:
             d["flags"] = list(self.flags)
+        if self.attack or self.health:
+            d["attack"] = self.attack
+            d["health"] = self.health
         return d
 
     @staticmethod
@@ -109,13 +114,23 @@ class Card:
         return Card(
             id=d["id"], rank=d["rank"], suits=tuple(d.get("suits", ())),
             value=int(d.get("value", 0)), name=d.get("name", ""),
-            flags=tuple(d.get("flags", ())),
+            flags=tuple(d.get("flags", ())), attack=int(d.get("attack", 0)),
+            health=int(d.get("health", 0)),
         )
+
+    def with_changes(self, **changes) -> "Card":
+        """Copy with fields replaced (cards are immutable)."""
+        d = {"id": self.id, "rank": self.rank, "suits": self.suits, "value": self.value,
+             "name": self.name, "flags": self.flags, "attack": self.attack, "health": self.health}
+        d.update(changes)
+        d["suits"] = tuple(d["suits"])
+        d["flags"] = tuple(d["flags"])
+        return Card(**d)
 
 
 def make_card(rank: str, suit: Optional[str] = None, *, id: Optional[str] = None,
               name: str = "", flags: Iterable[str] = (), value: Optional[int] = None,
-              suits: Optional[Sequence[str]] = None) -> Card:
+              suits: Optional[Sequence[str]] = None, attack: int = 0, health: int = 0) -> Card:
     """Build a card. ``make_card("7", "H")`` -> 7♥ with id "7H"."""
     if suits is None:
         suits = (suit,) if suit else ()
@@ -123,8 +138,9 @@ def make_card(rank: str, suit: Optional[str] = None, *, id: Optional[str] = None
     if id is None:
         id = rank + "".join(suits)
     if value is None:
-        value = RANK_VALUE[rank]
-    return Card(id=id, rank=rank, suits=suits, value=value, name=name, flags=tuple(flags))
+        value = RANK_VALUE.get(rank, 0)
+    return Card(id=id, rank=rank, suits=suits, value=value, name=name, flags=tuple(flags),
+                attack=attack, health=health)
 
 
 def jester_card(n: int) -> Card:

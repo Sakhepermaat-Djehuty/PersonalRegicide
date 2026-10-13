@@ -98,16 +98,48 @@ class BaseRules:
     def enemy_stats(self, game: "Game", card: Card) -> Tuple[int, int]:
         """(attack, health) for a revealed castle card."""
         from .cards import ROYAL_ATTACK, ROYAL_HEALTH
+        if card.attack or card.health:
+            return card.attack, card.health
         return ROYAL_ATTACK[card.rank], ROYAL_HEALTH[card.rank]
 
     # --- queries ---------------------------------------------------------------
-    def immune(self, game: "Game", suit: str) -> bool:
+    def immune(self, game: "Game", suit: str, cards: Sequence[Card] = ()) -> bool:
+        """Is the enemy immune to this suit's power, for a play of ``cards``?"""
         enemy = game.enemy
         if enemy is None:
             return False
         if game.immunity_cancelled:
             return False
         return suit in enemy.suits
+
+    def playable_ids(self, game: "Game") -> List[str]:
+        """Card ids the active player may include in a play (hand, plus e.g. a flute)."""
+        return list(game.active_player.hand)
+
+    def remove_played(self, game: "Game", card_id: str) -> None:
+        """Take a card out of wherever playable_ids() offered it from."""
+        game.active_player.hand.remove(card_id)
+
+    def jester_mode(self, game: "Game") -> str:
+        """'base': cancel immunity for the fight, choose who goes next.
+        'claim': (Legacy) a player claims the Jester and attacks now ignoring immunity."""
+        return "base"
+
+    def solo_jester_mode(self, game: "Game") -> str:
+        """'refresh': discard hand and draw to the limit (base game).
+        'attack': (Legacy) a strength-8 attack of a chosen basic class ignoring immunity."""
+        return "refresh"
+
+    def feign_death_allowed(self, game: "Game") -> bool:
+        """May the active player discard their whole hand to satisfy any damage?"""
+        return False
+
+    def special_actions(self, game: "Game") -> List[Dict[str, Any]]:
+        """Extra actions (relics, mission choices) available right now."""
+        return []
+
+    def do_special(self, game: "Game", action: Dict[str, Any]) -> None:
+        raise NotImplementedError("no special actions in these rules")
 
     def attack_bonus(self, game: "Game") -> int:
         """Added to the enemy's printed attack before shields (Legacy missions)."""
@@ -129,6 +161,10 @@ class BaseRules:
     def validate_combo(self, game: "Game", cards: Sequence[Card]) -> Tuple[str, Optional[str]]:
         """Return (kind, error). Kinds: single, jester, companion, set."""
         return classify_combo(cards)
+
+    def play_value(self, game: "Game", cards: Sequence[Card]) -> int:
+        """Attack value of a play (Legacy beasts copy their partner's value)."""
+        return sum(c.value for c in cards)
 
     # --- resolution hooks --------------------------------------------------------
     def on_turn_start(self, game: "Game") -> None:

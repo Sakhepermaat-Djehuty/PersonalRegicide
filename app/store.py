@@ -117,3 +117,33 @@ def _atomic_write(path: str, text: str) -> None:
     with open(tmp, "w") as f:
         f.write(text)
     os.replace(tmp, path)
+
+
+# ---------------------------------------------------------------------------- campaign
+CAMPAIGN = "campaign.json"
+CAMPAIGN_GAME = "campaign_attempt.json"
+
+
+def save_campaign(camp) -> None:
+    _atomic_write(_path(CAMPAIGN), json.dumps(camp.to_dict(), indent=1))
+
+
+def load_campaign():
+    from regicide.campaign import CampaignState
+    try:
+        with open(_path(CAMPAIGN)) as f:
+            return CampaignState.from_dict(json.load(f))
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def has_campaign() -> bool:
+    return os.path.exists(_path(CAMPAIGN))
+
+
+def delete_campaign() -> None:
+    for name in (CAMPAIGN, CAMPAIGN_GAME):
+        try:
+            os.remove(_path(name))
+        except OSError:
+            pass
