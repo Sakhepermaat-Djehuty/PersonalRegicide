@@ -406,12 +406,20 @@ def test_mission2_class_sticker_assignment_screen(app):
         own = P.find(app.campaign.party, cid)["suits"][0]
         for b in btns:
             assert b.enabled == (b.title != names[own])
-    # assign greedily: for each row take the first enabled class
+    # pick a legal assignment up front (greedy row by row can dead-end), then tap it
+    import itertools
+    plan = None
+    for perm in itertools.permutations(step["classes"], len(step["cards"])):
+        if all(s not in P.find(app.campaign.party, cid)["suits"] for cid, s in zip(step["cards"], perm)):
+            plan = dict(zip(step["cards"], perm))
+            break
+    assert plan is not None
     chosen = {}
     for i, cid in enumerate(step["cards"]):
         btns = sorted(ui.find(app, lambda v: isinstance(v, ui.Button) and v.title in names.values()), key=lambda b: (round(b.y), b.x))
         row = [b for b in btns if round(b.y) == sorted({round(x.y) for x in btns})[i]]
-        pick = [b for b in row if b.enabled][0]
+        pick = [b for b in row if b.title == names[plan[cid]]][0]
+        assert pick.enabled
         ui.tap(app, *ui.root_point(app, pick))
         chosen[cid] = pick.title
     assert ui.button(app, "Confirm").enabled
