@@ -165,9 +165,24 @@ class CardView(ui.View):
         self.face_up = True
         self.small = False
         self.badge = ""
+        self.order = 0                # selection order shown top right (0: none)
         self.background_color = None  # drawn in draw()
 
     def draw(self) -> None:
+        self._draw_face()
+        if self.order and self.face_up:
+            # the order the card was selected in: it enters play (or is discarded) in this
+            # order, the last one ending on top of the pile
+            W, H = self.width, self.height
+            d = max(13.0, min(W, H) * (0.3 if self.small else 0.22))
+            x, y = W - d - 2, 2.0
+            ui.set_color(T.ACCENT)
+            ui.Path.oval(x, y, d, d).fill()
+            size = d * 0.62
+            ui.draw_string(str(self.order), (x, y + (d - size * 1.2) / 2.0, d, size * 1.3), (T.FONT_BOLD, size),
+                           T.BG, ui.ALIGN_CENTER)
+
+    def _draw_face(self) -> None:
         W, H = self.width, self.height
         r = max(6.0, min(W, H) * 0.12)
         if not self.face_up:
@@ -451,7 +466,17 @@ class HandGrid(ui.View):
             v.badge = self.badges.get(c.id, "")
             self.views[c.id] = v
             self.add_subview(v)
+        self._number()
         self.layout()
+
+    def _number(self) -> None:
+        """Selected cards show the order they were tapped in (once two or more are selected):
+        they are played, or discarded one at a time, in that order, the last on top."""
+        for cid, v in self.views.items():
+            order = self.selected.index(cid) + 1 if (cid in self.selected and len(self.selected) >= 2) else 0
+            if v.order != order:
+                v.order = order
+                v.set_needs_display()
 
     def layout(self) -> None:
         if not hasattr(self, "views"):
@@ -482,6 +507,7 @@ class HandGrid(ui.View):
         else:
             self.selected.append(v.card.id)
             v.selected = True
+        self._number()
         self.layout()
         v.set_needs_display()
         if self.on_change:
@@ -492,6 +518,7 @@ class HandGrid(ui.View):
         for cid, v in self.views.items():
             v.selected = cid in self.selected
             v.set_needs_display()
+        self._number()
         self.layout()
         if self.on_change:
             self.on_change()

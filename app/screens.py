@@ -1373,6 +1373,24 @@ class PickOverlay(Overlay):
         self.panel.frame = ((self.width - pw) / 2, max(T.TOP_INSET, (self.height - ph) / 2), pw, ph)
 
 
+def attack_summary(g: Game, play_index) -> str:
+    """The attack a decision is about, for players weighing an addition (the Mage's look):
+    its cards, strength and classes, and the enemy's immunity."""
+    try:
+        play = g.plays[int(play_index)] if play_index is not None else (g.plays[-1] if g.plays else None)
+    except (IndexError, TypeError, ValueError):
+        play = None
+    if play is None:
+        return ""
+    cards = " + ".join(g.card(c).label() for c in play.card_ids)
+    classes = ", ".join("%s %s" % (SUIT_SYMBOL.get(x, x), CLASS_NAME.get(x, x)) for x in play.suits) or "no class"
+    text = "Your attack: %s, strength %d (%s)." % (cards, play.value, classes)
+    immune = g.rules.immune_suits(g) if g.enemy is not None else ()
+    if immune and not g.immunity_cancelled:
+        text += " %s is immune to %s." % (g.enemy.name, ", ".join(CLASS_NAME.get(x, x) + "s" for x in immune))
+    return text
+
+
 class MagePeekOverlay(PickOverlay):
     """The Mage's secret look: the cards taken from the top of the reserve in a row (Jesters
     and corrupted cards dimmed, they are discarded), one button per card that may join the
@@ -1384,6 +1402,7 @@ class MagePeekOverlay(PickOverlay):
         if n == 0:
             return ("Mage: the reserve deck is empty", "There was nothing to look at. The attack goes on resolving as it is.")
         title = "Mage: %d card%s revealed" % (n, "" if n == 1 else "s")
+        summary = attack_summary(g, d.get("play_index"))
         strength = int(d.get("strength", n))
         text = "You looked at the top %d card%s of the reserve deck%s. Jesters and corrupted cards are discarded. " \
                "Choose one of the rest to add to the attack; the others go to the discard pile." % (
@@ -1391,7 +1410,7 @@ class MagePeekOverlay(PickOverlay):
         if not d.get("eligible"):
             text = "You looked at the top %d card%s of the reserve deck, but none of them may join the attack: " \
                    "Jesters and corrupted cards are discarded." % (n, "" if n == 1 else "s")
-        return (title, text)
+        return (title, (summary + "\n\n" + text) if summary else text)
 
     def dimmed_ids(self, g: Game, d: dict) -> List[str]:
         eligible = set(str(c) for c in d.get("eligible", []))

@@ -207,3 +207,48 @@ def test_the_game_menu_names_a_reward_briefly_and_a_card_explains_it(app):
     b.action(b)
     _tap(app, "Choose")
     assert isinstance(app.current, ChoiceScreen)
+
+
+def test_selected_cards_show_the_order_they_were_tapped_in():
+    from app.widgets import HandGrid
+    from regicide.cards import Card
+    grid = HandGrid(frame=(0, 0, 360, 300))
+    cards = [Card(id=x, rank=x[0], suits=(x[1],), value=int(x[0])) for x in ("4C", "4H", "9S", "2D")]
+    grid.set_cards(cards)
+    grid._tapped(grid.views["4H"])
+    assert [grid.views[c].order for c in ("4C", "4H", "9S", "2D")] == [0, 0, 0, 0]   # one card: no number
+    grid._tapped(grid.views["4C"])
+    grid._tapped(grid.views["2D"])
+    assert [grid.views[c].order for c in ("4C", "4H", "9S", "2D")] == [2, 1, 0, 3]
+    grid._tapped(grid.views["4H"])                                              # untapping renumbers
+    assert [grid.views[c].order for c in ("4C", "4H", "9S", "2D")] == [1, 0, 0, 2]
+    drawn = []
+    real = ui.draw_string
+    ui.draw_string = lambda text, *a, **kw: (drawn.append(text), real(text, *a, **kw))[1]
+    try:
+        ui.render(grid.views["2D"])
+    finally:
+        ui.draw_string = real
+    assert drawn[-1] == "2"                                                     # drawn last, on top of the face
+    grid.clear_selection()
+    assert all(v.order == 0 for v in grid.views.values())
+
+
+def test_the_mage_look_shows_the_attack_so_far(app):
+    from app.screens import attack_summary
+    from helpers import set_hand, set_tavern_top, _pull, set_mission_enemy
+    from regicide.campaign import CampaignState
+    c = CampaignState.new(1, ["Ana"], seed=91)
+    c.mission, c.completed = 5, [1, 2, 3, 4]
+    for d in M.MAGE_DECK:
+        P.add_card(c.party, dict(d))
+    g = c.start_attempt(seed=91)
+    set_hand(g, ["4M", "4C", "9S", "8S"])
+    for x in ("3H", "2S", "6C", "7D"):
+        _pull(g, x)
+    set_tavern_top(g, ["3H", "2S", "6C", "7D"])
+    g.play(["4M", "4C"])
+    assert g.decision["kind"] == "mage_peek"
+    text = attack_summary(g, g.decision.get("play_index"))
+    assert text.startswith("Your attack: 4%s + 4♣, strength 8" % P.to_card(M.MAGE_DECK[3]).label()[1:])
+    assert "Warrior" in text and "Mage" in text
