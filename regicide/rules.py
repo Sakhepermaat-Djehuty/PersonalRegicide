@@ -182,6 +182,21 @@ class BaseRules:
         adds the ``play_index`` of the attack it concerns and stores it as ``game.decision``."""
         return None
 
+    def before_defeat(self, game: "Game", exact: bool) -> Optional[Dict[str, Any]]:
+        """Called when the enemy's health reaches 0, before the enemy-defeated steps.
+
+        Return a serialisable decision dict (with a ``player``) to ask the current player
+        something first (e.g. which mission zone card to rescue); the rules' ``decide``
+        must then end with ``game.resume_defeat()``. None continues at once."""
+        return None
+
+    def immune_suits(self, game: "Game") -> Tuple[str, ...]:
+        """Every suit the current enemy is immune to right now (for displays)."""
+        enemy = game.enemy
+        if enemy is None or game.immunity_cancelled:
+            return ()
+        return tuple(enemy.suits)
+
     def decision_actions(self, game: "Game") -> List[Dict[str, Any]]:
         """Legal actions for the deciding player while ``game.decision`` is pending.
 

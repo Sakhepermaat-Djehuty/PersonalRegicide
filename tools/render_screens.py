@@ -185,7 +185,7 @@ def main(argv):
     app.start_attempt()
     gs = app.current
     g = app.game
-    from tests.helpers import set_enemy, set_hand  # noqa: E402
+    from tests.helpers import set_enemy, set_hand, set_tavern_top  # noqa: E402
     set_enemy(g, "J", "H")
     set_hand(g, ["3C", "9S", "8S"], player=0)
     set_hand(g, ["3D", "3H", "7C", "AS"], player=1)
@@ -197,6 +197,33 @@ def main(argv):
     gs.hand.set_selection(["3D"])
     gs.refresh(after_action=False)
     shot(app, "57_flute_decision_hand")
+    # Mission 3: the mission zone and the exact-kill rescue
+    from regicide.campaign import missions as M
+    from regicide.campaign import party as P
+    app.new_campaign(1, ["Solo"], "Academy demo")
+    camp = app.campaign
+    camp.mission = 3
+    camp.completed = [1, 2]
+    camp.relics.append("flute")
+    P.add_card(camp.party, dict(M.HIGH_ARCANA))
+    app.save_campaign()
+    app.start_attempt()
+    gs = app.current
+    g = app.game
+    set_hand(g, ["9S", "8H", "7D", "5C", "6D"])
+    set_tavern_top(g, ["4H", "3S", "2D"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["9S"])
+    ui.tap(app, *ui.root_point(app, gs.right_btn))
+    gs.hand.set_selection(["7D"])
+    ui.tap(app, *ui.root_point(app, gs.right_btn))
+    shot(app, "58_mission3_zone")
+    g.enemy.hp = 10
+    set_hand(g, ["5C", "2D", "AS"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["5C"])
+    ui.tap(app, *ui.root_point(app, gs.right_btn))
+    shot(app, "59_mission3_rescue")
     app.open_campaign(slot)
     app.show(MercenaryScreen(app))
     shot(app, "49_mercenary_camp")

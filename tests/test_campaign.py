@@ -7,12 +7,13 @@ import pytest
 from regicide.bots import apply_action, greedy_policy, min_waste_discard, play_out, random_policy
 from regicide.campaign import CampaignState
 from regicide.campaign import party as P
+from regicide.campaign import missions as M
 from regicide.campaign.missions import MISSIONS
 from regicide.cards import make_card
 from regicide.engine import (PHASE_CHOOSE_NEXT, PHASE_DECIDE, PHASE_LOST, PHASE_PLAY, PHASE_SUFFER, PHASE_WON,
                              Game, IllegalAction)
 from regicide.rules import GameConfig, classify_combo
-from helpers import set_enemy, set_hand
+from helpers import set_enemy, set_hand, set_tavern_top
 
 
 def win_quickly(g: Game) -> None:
@@ -776,3 +777,130 @@ def test_coins_accumulate_one_three_six_ten_and_hires_persist_over_several_attem
         assert c.mercenaries == ["merc_12H", "merc_19_1"]
     assert c.coins == 6 + 5 + 6  # the 5th and 6th failures add 5 and 6
     assert "2 mercenaries stay on." in c.log[-2] or any("2 mercenaries stay on." in line for line in c.log)
+
+
+# ---------------------------------------------------------------- Mission 3: Lessons in Flames
+def _mission3(players=1, seed=50):
+    names = ["Solo", "Ben", "Cy"][:players]
+    c = CampaignState.new(players, names, seed=seed)
+    c.mission = 3
+    c.completed = [1, 2]
+    c.relics.append("flute")
+    P.add_card(c.party, dict(M.HIGH_ARCANA))
+    g = c.start_attempt(seed=seed)
+    return c, g
+
+
+def test_mission3_setup_removes_the_high_arcana_and_builds_the_academy():
+    c, g = _mission3()
+    assert P.find(c.party, "ARC25") is None and any("High Arcana" in line for line in c.log)
+    assert "ARC25" not in g.cards
+    enemies = [g.cards[x] for x in [g.enemy.card_id] + g.castle]
+    assert [e.name for e in enemies] == ["Instructor"] * 4 + ["Professor"] * 2 + ["Dean"]
+    assert all(e.suits == ("M",) for e in enemies)
+    assert (g.enemy.attack, g.enemy.max_hp) == (10, 30)
+    assert [g.cards[x].health for x in g.castle] == [30, 30, 30, 45, 45, 60]
+    assert g.immune("M") and not g.immune("H")
+    # the second attempt does not remove anything more (idempotent start steps)
+    g._lose("test")
+    c.finish_attempt(g)
+    n = len(c.log)
+    c.start_attempt(seed=51)
+    assert not any("High Arcana" in line for line in c.log[n:])
+
+
+def test_mission3_zone_grows_at_end_of_turn_and_grants_immunity():
+    c, g = _mission3()
+    set_hand(g, ["9S", "8H", "7D", "5S", "6C"])
+    set_tavern_top(g, ["4H", "3S", "2D"])
+    g.play(["9S"])                       # paladin: shield 9, enemy attack 10 -> 1 damage
+    assert g.shield == 9 and g.enemy_attack == 1 and g.phase == "suffer"
+    g.suffer(["7D"])
+    # end of turn: the top reserve card went into the zone, the next turn began
+    assert g.mission_zone == ["4H"] and g.phase == "play" and g.turn == 2
+    assert g.immune("H") and g.rules.immune_suits(g) == ("M", "H")
+    # a cleric played now is immune (strength still counts as damage)
+    set_hand(g, ["8H", "5S", "6C", "AS"])
+    hp = g.enemy.hp
+    g.play(["8H"])
+    assert g.enemy.hp == hp - 8 and any(ev["t"] == "power" and ev.get("immune") for ev in g.last_events)
+    assert len(g.tavern) >= 0 and "4H" in g.mission_zone
+    g.suffer(["5S"]) if g.phase == "suffer" else None
+    # a paladin entered the zone at the end of that turn: the earlier 9S stops shielding
+    assert g.mission_zone == ["4H", "3S"] and g.immune("S")
+    assert g.shield == 0 and g.enemy_attack == 10
+    # not after a defeat: end-of-turn effects are skipped when the enemy falls
+    g.enemy.hp = 1
+    set_hand(g, ["6C", "AS", "2S"])
+    g.play(["6C"])          # 12 damage, not exact -> no rescue decision
+    assert g.phase == "play" and g.enemies_defeated == 1
+    assert g.mission_zone == [] and set(["4H", "3S"]) <= set(g.banished)
+    assert g.cards[g.banished[-1]].name in ("Instructor",) or any(g.cards[x].name == "Instructor" for x in g.banished)
+    assert "2D" in g.tavern or "2D" in g.active_player.hand  # untouched: no end of turn
+
+
+def test_mission3_corrupted_and_jester_paladins_keep_their_shield():
+    c, g = _mission3()
+    P.add_flag(c.party, "5S", "corrupted")
+    g = c.start_attempt(seed=52)
+    g.cards["5S"] = g.cards["5S"].with_changes(flags=("corrupted",))
+    set_hand(g, ["5S", "9S", "8H", "7D"])
+    set_tavern_top(g, ["AD", "3S", "2D", "4D"])
+    g.play(["5S"])          # corrupted paladin: banishes AD, shield 5
+    assert g.banished == ["AD"] and g.shield == 5
+    g.suffer(["8H"])        # 3S enters the zone: paladin immunity
+    assert g.mission_zone == ["3S"] and g.immune("S")
+    assert g.shield == 5    # the corrupted paladin ignores immunity (rulebook p.20)
+    set_hand(g, ["9S", "7D", "6C"])
+    g.play(["9S"])          # a plain paladin now: immune, no extra shield
+    assert g.shield == 5
+    # a paladin inside a claimed-Jester attack keeps its shield too
+    c2, g2 = _mission3(players=3, seed=53)
+    jester = [x for x in g2.cards if g2.cards[x].is_jester][0]
+    set_hand(g2, [jester, "4D"], player=0)
+    set_hand(g2, ["7S", "3H", "2C"], player=1)
+    set_tavern_top(g2, ["3S", "2D", "5D"])
+    g2.play([jester])
+    assert g2.phase == "choose_next"
+    g2.choose_next(1)
+    g2.play(["7S"])
+    assert g2.plays[-1].jester and g2.shield == 7 and g2.phase == "suffer"
+    g2.suffer(["3H"])
+    assert g2.mission_zone == ["3S"] and g2.immune("S") and g2.shield == 7
+
+
+def test_mission3_exact_kill_rescues_one_zone_card_by_choice():
+    from regicide.engine import IllegalAction, PHASE_DECIDE
+    c, g = _mission3()
+    set_hand(g, ["9S", "8H", "7D", "5C", "6D"])
+    set_tavern_top(g, ["4H", "3S", "2D"])
+    g.play(["9S"]); g.suffer(["7D"])
+    g.play(["8H"]); g.suffer(["6D"]) if g.phase == "suffer" else None
+    assert g.mission_zone == ["4H", "3S"]
+    g.enemy.hp = 10
+    set_hand(g, ["5C", "2D", "AS"])
+    g.play(["5C"])          # 10 exact
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "zone_rescue" and g.deciding == 0
+    acts = g.legal_actions()
+    assert sorted(a["card"] for a in acts) == ["3S", "4H"] and not any(a.get("skip") for a in acts)
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "zone_rescue", "card": "2D"})
+    with pytest.raises(IllegalAction):
+        g.play(["2D"])
+    # the decision survives a save round trip
+    g = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    assert g.phase == PHASE_DECIDE and g.decision["exact"] is True
+    g.decide({"type": "zone_rescue", "card": "3S"})
+    assert g.phase == "play" and g.enemies_defeated == 1
+    assert "3S" in g.discard and g.discard[0] == "5C" and "4H" in g.banished and "3S" not in g.banished
+    assert g.mission_zone == [] and g.cards[g.enemy.card_id].name == "Instructor"
+    assert any(x.startswith("ACJ") for x in g.banished)  # the defeated Instructor is banished
+
+
+def test_mission3_bots_play_it_out():
+    from regicide.bots import play_out, greedy_policy, random_policy
+    for players, seed, policy in ((1, 60, greedy_policy), (2, 61, greedy_policy), (3, 62, random_policy)):
+        c, g = _mission3(players=players, seed=seed)
+        play_out(g, policy, rng=random.Random(seed))
+        assert g.is_over
+        assert len(g.all_card_ids()) == len(set(g.all_card_ids())) == len(g.cards)

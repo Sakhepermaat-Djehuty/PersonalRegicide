@@ -165,9 +165,9 @@ class EnemyPanel(ui.View):
         if g.immunity_cancelled:
             imm = "Immunity cancelled by the Jester"
             icol = T.OK
-        elif e.suits:
+        elif g.rules.immune_suits(g):
             legacy = g.config.rules_id.startswith("legacy")
-            names = [(CLASS_NAME.get(s, s) + "s") if legacy else SUIT_NAME.get(s, s) for s in e.suits]
+            names = [(CLASS_NAME.get(s, s) + "s") if legacy else SUIT_NAME.get(s, s) for s in g.rules.immune_suits(g)]
             imm = "Immune to %s" % " / ".join(names)
             icol = T.MUTED
         else:

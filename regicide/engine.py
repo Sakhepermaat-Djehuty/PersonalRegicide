@@ -62,19 +62,28 @@ class Enemy:
 
 @dataclass
 class Play:
-    """Cards played against the current enemy in one action."""
+    """Cards played against the current enemy in one action.
+
+    ``jester`` marks an attack formed with a claimed Jester (Legacy): it ignored immunity
+    when it resolved and, per rulebook p.20, a paladin in it keeps reducing the enemy's
+    strength even if the enemy later gains paladin immunity."""
     player: int
     card_ids: List[str]
     value: int
     suits: Tuple[str, ...]
+    jester: bool = False
 
     def to_dict(self) -> dict:
-        return {"player": self.player, "card_ids": list(self.card_ids), "value": self.value,
-                "suits": list(self.suits)}
+        d = {"player": self.player, "card_ids": list(self.card_ids), "value": self.value,
+             "suits": list(self.suits)}
+        if self.jester:
+            d["jester"] = True
+        return d
 
     @staticmethod
     def from_dict(d: dict) -> "Play":
-        return Play(int(d["player"]), list(d["card_ids"]), int(d["value"]), tuple(d["suits"]))
+        return Play(int(d["player"]), list(d["card_ids"]), int(d["value"]), tuple(d["suits"]),
+                    bool(d.get("jester", False)))
 
 
 @dataclass
@@ -180,11 +189,20 @@ class Game:
         """Total Spades shield against the current enemy.
 
         Computed from the plays on the table so that a Jester cancelling a ♠ enemy's
-        immunity retroactively activates earlier Spades (official rule).
+        immunity retroactively activates earlier Spades (base game), and so that an enemy
+        gaining paladin immunity mid-fight (Legacy mission zones) silences the plain
+        paladins already played while a claimed-Jester attack or a corrupted paladin
+        keeps its reduction (rulebook p.20).
         """
-        if self.enemy is None or self.immune(SPADES):
+        if self.enemy is None:
             return 0
-        return sum(p.value for p in self.plays if SPADES in p.suits)
+        total = 0
+        for p in self.plays:
+            if SPADES not in p.suits:
+                continue
+            if p.jester or not self.immune(SPADES, [self.cards[c] for c in p.card_ids]):
+                total += p.value
+        return total
 
     @property
     def enemy_attack(self) -> int:
@@ -352,7 +370,7 @@ class Game:
         me = self.active
         suits = self.play_suits(cards)
         value = self.rules.play_value(self, cards)
-        play = Play(me, [c.id for c in cards], value, suits)
+        play = Play(me, [c.id for c in cards], value, suits, jester=bool(self.extra.get("jester_attack")))
         self.plays.append(play)
         self.last_action[me] = "played"
         self._event("play", player=me, cards=[c.id for c in cards], value=value, kind=kind)
@@ -446,6 +464,15 @@ class Game:
         self._event("add_to_play", player=player, cards=ids, play_index=play_index, value=play.value)
         self.rules.on_cards_played(self, [self.cards[c] for c in ids])
         return play
+
+    def resume_defeat(self) -> None:
+        """Leave the decide phase and finish the enemy-defeated steps the decision paused."""
+        decision = self.decision
+        if decision is None or decision.get("resume") != "defeat":
+            raise IllegalAction("No defeat is pending.")
+        self.decision = None
+        self.phase = PHASE_PLAY
+        self._defeat_enemy(bool(decision.get("exact")), resumed=True)
 
     def resolve_pending_attack(self) -> None:
         """Leave the decide phase and resolve the attack the decision was about (step 2 on)."""
@@ -669,9 +696,21 @@ class Game:
         else:
             self._enter_suffer()
 
-    def _defeat_enemy(self, exact: bool) -> None:
+    def _defeat_enemy(self, exact: bool, resumed: bool = False) -> None:
         enemy = self.enemy
         assert enemy is not None
+        if not resumed:
+            decision = self.rules.before_defeat(self, exact)
+            if decision is not None:
+                # The mission's enemy-defeated steps need a choice first (e.g. which mission
+                # zone card to rescue). The defeat continues via ``resume_defeat``.
+                decision = dict(decision)
+                decision["exact"] = exact
+                decision["resume"] = "defeat"
+                self.decision = decision
+                self.phase = PHASE_DECIDE
+                self._event("decide", **decision)
+                return
         plan = self.rules.defeat_plan(self, exact)
         played = [self.cards[c] for p in self.plays for c in p.card_ids]
         if self.rules.solo_jester_mode(self) == "attack":
@@ -696,6 +735,15 @@ class Game:
             self.banished.append(enemy.card_id)
         elif dest == "castle_bottom":
             self.castle.append(enemy.card_id)
+        zone_to = plan.get("zone_to")
+        if zone_to and self.mission_zone:
+            zone = list(self.mission_zone)
+            self.mission_zone = []
+            if zone_to == "banish":
+                self.banished.extend(zone)
+            elif zone_to == "discard":
+                self._discard_cards([self.cards[c] for c in zone])
+            self._event("zone_cleared", cards=zone, to=zone_to)
         self.plays = []
         self.immunity_cancelled = False
         self.enemy = None
@@ -874,7 +922,11 @@ def _suit_sort_key(s: str) -> int:
     return order.index(s) if s in order else 99
 
 
-def _action_key(action: dict) -> Tuple[str, Tuple[str, ...]]:
-    """What identifies a decision action: its type and the (order-free) cards it names."""
+def _action_key(action: dict) -> Tuple[str, Tuple[str, ...], str]:
+    """What identifies a decision action: its type, the (order-free) cards it names and
+    the single card or option it picks."""
     cards = action.get("card_ids") or action.get("cards") or []
-    return str(action.get("type")), tuple(sorted(str(c) for c in cards))
+    single = action.get("card")
+    if single is None:
+        single = action.get("option", "")
+    return str(action.get("type")), tuple(sorted(str(c) for c in cards)), str(single)

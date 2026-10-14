@@ -139,6 +139,10 @@ class CampaignState:
             raise RuntimeError("the campaign is complete")
         number = self.mission
         rng = self._rng()
+        if self.attempts_on(number) == 0:
+            # the mission's setup cards (permanent changes before the first attempt)
+            for step in M.start_steps(self, number):
+                self.log.append(M.apply_step(self, step, rng))
         extra = M.build_setup(self, number, rng)
         cfg = GameConfig(players=self.players, names=tuple(self.names), rules_id=M.mission(number)["rules_id"],
                          extra=extra)

@@ -15,7 +15,7 @@ import ui  # noqa: E402
 from regicide.bots import greedy_policy, min_waste_discard  # noqa: E402
 from regicide.engine import PHASE_CHOOSE_NEXT, PHASE_DECIDE, PHASE_PLAY, PHASE_SUFFER  # noqa: E402
 from regicide.rules import GameConfig  # noqa: E402
-from helpers import set_enemy, set_hand  # noqa: E402
+from helpers import set_enemy, set_hand, set_tavern_top  # noqa: E402
 
 
 @pytest.fixture
@@ -550,3 +550,46 @@ def test_swap_button_only_when_a_same_cost_alternative_exists(app):
     camp.swaps_allowed = False  # swaps close once an attempt starts
     app.show(MercenaryScreen(app))
     assert not ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Swap")
+
+
+def test_mission3_zone_strip_and_exact_kill_pick_overlay(app):
+    from app.screens import PickOverlay
+    from regicide.campaign import missions as M
+    from regicide.campaign import party as P
+    from regicide.engine import PHASE_DECIDE
+    app.new_campaign(1, ["Solo"])
+    camp = app.campaign
+    camp.mission = 3
+    camp.completed = [1, 2]
+    P.add_card(camp.party, dict(M.HIGH_ARCANA))
+    app.save_campaign()
+    app.show(__import__("app.screens", fromlist=["CampaignScreen"]).CampaignScreen(app))
+    assert ui.button(app, "Next mission: start")
+    _tap_button(app, "Next mission: start")
+    gs = _game_screen(app)
+    g = app.game
+    assert "ARC25" not in g.cards and g.enemy.name == "Instructor"
+    assert not gs.zone.hidden and gs.zone.title.startswith("Mission zone")
+    set_hand(g, ["9S", "8H", "7D", "5C", "6D"])
+    set_tavern_top(g, ["4H", "3S", "2D"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["9S"])
+    _tap_button(app, "Play")
+    gs.hand.set_selection(["7D"])
+    _tap_button(app, "Discard")
+    assert g.mission_zone == ["4H"] and "immune to Clerics" in gs.zone.title
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert any("mission zone" in t for t in texts)
+    # exact kill: the pick overlay offers each zone card
+    g.enemy.hp = 10
+    set_hand(g, ["5C", "2D", "AS"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["5C"])
+    _tap_button(app, "Play")
+    assert g.phase == PHASE_DECIDE and isinstance(gs.overlay, PickOverlay)
+    assert ui.render(app).size[0] > 0
+    btns = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Rescue"))]
+    assert [b.title for b in btns] == ["Rescue 4♥ to the discard pile"]
+    ui.tap(app, *ui.root_point(app, btns[0]))
+    assert g.phase == "play" and g.enemies_defeated == 1 and "4H" in g.discard and gs.overlay is None
+    assert g.mission_zone == [] and "(empty)" in gs.zone.title

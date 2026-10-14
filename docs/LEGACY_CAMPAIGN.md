@@ -376,6 +376,48 @@ this mission. The app keeps him until a later card says otherwise.
 screen (each class once, never a card's own class). If all four revealed cards share the
 same single class no assignment is possible, so the app reshuffles and reveals again.
 
+## Mission 3, Lessons in Flames (confirmed, transcribed from the owner's photos)
+
+**Location card:** Magic Academy (towers under a swirling moon, QR code; map piece on the
+back with the route ending at a castle marked with a cross).
+
+**Setup card (story side, then):** "Remove the High Arcana from your party. Store the card
+in mission box 3." So the High Arcana leaves at the start of mission 3, not after
+mission 2.
+
+**Enemy stats card:** Instructors 10 / 30 (four), Professors 15 / 45 (two), Dean 20 / 60
+(one); every enemy is of the Mage class (flame icon), so immune to mage abilities.
+
+**Mission rules card (front).** *End of turn:* put the top card of the reserve deck face
+up into the mission zone if able. Enemies have immunity to the classes of every card in
+the mission zone. *Enemy defeated:* banish the enemy (put it in the banished pile) along
+with all cards in the mission zone. If the enemy was dealt exact damage, put one card
+from the mission zone into the discard pile before banishing the mission zone. The card
+says "continued": the back ("Rules continued") has not been photographed yet.
+
+**Rules summary card:** Enemies have immunity to classes in the mission zone. End of
+turn: put top card of reserve deck into the mission zone. Enemy defeated: banish enemy
+and cards in the mission zone. Remember to skip end of turn effects. Exact kill (skull):
+discard one card from the mission zone.
+
+**Story cards:** intro (the Academy's towers, Mānuka the honey badger, students strapped
+to tables) and outcome (the Head Prefect, "that's where the Arcana went"); texts in the
+private lore overlay only.
+
+**Reward cards, in order:**
+1. "Open pack C and corrupt another character in your party." Player's choice.
+2. "A party member takes Tōtara aside for a chat. Open pack F." Pack F's contents are
+   not read yet. The fan transcription says the Mage class deck (A to 10) joins the party
+   permanently after this mission; the app assumes that until the pack is photographed.
+
+**Engine status:** mission 3 is playable and its rules are marked verified. The reserve
+card enters the zone at the end of every turn that is not a kill (end-of-turn effects
+are skipped when an enemy is defeated, p.19), immunities follow the zone, paladins
+already played stop reducing the enemy's strength when a paladin enters the zone unless
+they ignore immunity (corrupted, or part of a claimed-Jester attack), the zone is
+banished with the enemy, and an exact kill asks the current player which zone card to
+rescue to the discard pile.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
@@ -455,12 +497,13 @@ Numbers are attack / health.
    pack C and corrupt another character (player's choice); reveal the first 3, 5, 7 and 9
    from the shuffled party and give each one class sticker (each class once, never the
    card's own class; the player assigns). No card removes the High Arcana here.
-3. **Lessons in Flames** (fan name: The Mage Tower; Magic Academy) — 4 Mages 10/30, 2 Wizards 15/45, 1 Grand Wizard 20/60, all ★.
-   End of each turn (not on a kill): top tavern card to the mission zone. Enemies are
-   immune to every suit present in the mission zone (shields are recalculated when ♠
-   immunity appears or disappears). On a kill the mission zone is banished; perfect
-   kill: rescue one zone card to the discard first. Reward: A–10★ join permanently;
-   corrupt a card.
+3. **Lessons in Flames** (Magic Academy; fan name: The Mage Tower) — **confirmed:** the
+   High Arcana leaves first. 4 Instructors 10/30, 2 Professors 15/45, 1 Dean 20/60, all
+   Mages. End of each turn (skipped on a kill): top reserve card face up into the
+   mission zone. Enemies are immune to every class in the zone. Enemy defeated: banish it
+   with the whole zone; exact kill: rescue one zone card to the discard pile first.
+   Rewards: open pack C and corrupt another character (player's choice); open pack F
+   (contents to be read; assumed to be the Mage class deck A to 10).
 4. **Fusion of Darkness** (fan name: The Gauntlet; Biology Laboratory) — standard 12 royals, all corrupted. Enemy attack + value of the top
    discard card. Reward: Goran joins, Scarlet Whistle, corrupt a card, Beast picks begin.
 5. **High and Mighty** (fan name: The Siege) — 4 enemies 10/40 and 4 enemies 15/60 (one per suit per tier). Reavers

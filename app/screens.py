@@ -412,6 +412,8 @@ class GameScreen(Screen):
         self.menu_btn = make_button("Menu", self._menu, (0, 0, 70, 30), False, 14)
         self.enemy = EnemyPanel()
         self.strip = CardStrip()
+        self.zone = CardStrip()
+        self.zone.hidden = True
         self.message = make_label("", (0, 0, 10, 10), 14, False, T.TEXT, ui.ALIGN_CENTER, lines=3)
         self.hand = HandGrid()
         self.hand.on_change = self._selection_changed
@@ -424,7 +426,7 @@ class GameScreen(Screen):
         self.toast.background_color = T.ACCENT
         self.toast.corner_radius = 8
         self.toast.hidden = True
-        for v in (self.status, self.menu_btn, self.enemy, self.strip, self.message, self.hand,
+        for v in (self.status, self.menu_btn, self.enemy, self.strip, self.zone, self.message, self.hand,
                   self.left_btn, self.mid_btn, self.right_btn, self.special_btn, self.toast):
             self.add_subview(v)
 
@@ -444,6 +446,9 @@ class GameScreen(Screen):
         self.strip.frame = (m, y, w - 2 * m - 90, 64)
         self.special_btn.frame = (w - m - 84, y + 14, 84, 36)
         y += 70
+        if not self.zone.hidden:
+            self.zone.frame = (m, y, w - 2 * m, 64)
+            y += 70
         self.message.frame = (m, y, w - 2 * m, 56)
         y += 60
         bar_h = 48
@@ -477,6 +482,20 @@ class GameScreen(Screen):
         played = [g.card(c) for p in g.plays for c in p.card_ids]
         self.strip.set_cards(played, "Played against this enemy")
         self.strip.set_needs_display()
+        uses_zone = bool(g.mission_zone) or getattr(g.rules, "uses_mission_zone", False)
+        if uses_zone != (not self.zone.hidden):
+            self.zone.hidden = not uses_zone
+            self.layout()
+        if uses_zone:
+            zone_cards = [g.card(c) for c in g.mission_zone]
+            imm = [s for s in g.rules.immune_suits(g) if g.enemy is not None and s not in g.enemy.suits]
+            title = "Mission zone"
+            if imm:
+                title += " · immune to " + " / ".join(CLASS_NAME.get(s, s) + "s" for s in imm)
+            elif not zone_cards:
+                title += " (empty)"
+            self.zone.set_cards(zone_cards, title)
+            self.zone.set_needs_display()
         if g.is_over:
             if self.app.in_campaign:
                 if not hasattr(self, "campaign_result"):
@@ -487,6 +506,10 @@ class GameScreen(Screen):
             return
         if g.phase == PHASE_CHOOSE_NEXT:
             self._show_overlay(ChooseNextOverlay(self))
+            return
+        if g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") != "flute_add":
+            # a decision of the current player's own (e.g. which mission zone card to rescue)
+            self._show_overlay(PickOverlay(self))
             return
         # The seat whose hand is shown: the attacker, or whoever must decide (Kinfolk Flute).
         seat = g.deciding
@@ -665,6 +688,10 @@ class GameScreen(Screen):
         g = self.game
         self._act(lambda: g.choose_next(player))
 
+    def decide(self, action: dict) -> None:
+        g = self.game
+        self._act(lambda: g.decide(action))
+
     def _menu(self, sender) -> None:
         self._show_overlay(GameMenuOverlay(self))
 
@@ -754,6 +781,29 @@ class DecisionOverlay(Overlay):
         items.append(make_label("Kinfolk Flute: you may add %ss from your hand as long as the whole attack stays "
                                 "at 10 or less, or pass." % d.get("strength"), (0, 0, 10, 60), 13, False, T.TEXT, ui.ALIGN_CENTER, 3))
         items.append(make_button("Show my hand", lambda s: self.screen.reveal_hand(), (0, 0, 10, 50)))
+        return items
+
+
+class PickOverlay(Overlay):
+    """A decision for the current player with a short list of options (one button each),
+    e.g. mission 3's exact kill: which mission zone card goes to the discard pile."""
+
+    TEXTS = {
+        "zone_rescue": ("Exact kill!", "Choose one mission zone card to rescue to the discard pile. "
+                                       "The enemy and the rest of the zone are banished."),
+    }
+
+    def build(self) -> List[ui.View]:
+        g = self.screen.game
+        d = g.decision or {}
+        title, text = self.TEXTS.get(str(d.get("kind")), ("Your choice", "Choose one option."))
+        items: List[ui.View] = [
+            make_label(title, (0, 0, 10, 36), 24, True, T.ACCENT, ui.ALIGN_CENTER),
+            make_label(text, (0, 0, 10, 60), 14, False, T.TEXT, ui.ALIGN_CENTER, 3),
+        ]
+        for a in g.legal_actions():
+            items.append(make_button(a.get("label", a["type"]),
+                                     (lambda act: lambda s: self.screen.decide(act))(a), (0, 0, 10, 46)))
         return items
 
 
@@ -1421,6 +1471,15 @@ def describe_events(g: Game) -> str:
                 g.players[int(ev["player"])].name, " + ".join(g.card(c).label() for c in ev["cards"]), ev["value"]))
         elif t == "flute_pass":
             parts.append("%s adds nothing." % g.players[int(ev["player"])].name)
+        elif t == "zone_add":
+            parts.append("%s goes into the mission zone." % g.card(ev["card"]).label())
+        elif t == "decide" and ev.get("kind") == "zone_rescue":
+            parts.append("Exact kill: choose a mission zone card to rescue.")
+        elif t == "zone_rescue":
+            parts.append("%s rescued to the discard pile." % g.card(ev["card"]).label())
+        elif t == "zone_cleared":
+            parts.append("Mission zone %s (%d card%s)." % (
+                "banished" if ev.get("to") == "banish" else "discarded", len(ev["cards"]), "" if len(ev["cards"]) == 1 else "s"))
     return " ".join(parts)
 
 

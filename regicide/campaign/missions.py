@@ -32,6 +32,18 @@ def _royal_castle(rng: random.Random, corrupted: bool = False) -> List[dict]:
     return tiers[0] + tiers[1] + tiers[2]
 
 
+def _academy_castle(rng: random.Random) -> List[dict]:
+    """Mission 3's enemy stat card: four Instructors 10/30, two Professors 15/45 and the
+    Dean 20/60, all of the Mage class."""
+    tiers = []
+    for rank, name, n, atk, hp in (("J", "Instructor", 4, 10, 30), ("Q", "Professor", 2, 15, 45), ("K", "Dean", 1, 20, 60)):
+        tier = [{"id": "AC%s%d" % (rank, i + 1), "rank": rank, "suits": ["M"], "value": RANK_VALUE[rank],
+                 "name": name, "attack": atk, "health": hp, "flags": []} for i in range(n)]
+        rng.shuffle(tier)
+        tiers.append(tier)
+    return tiers[0] + tiers[1] + tiers[2]
+
+
 def _hydra_castle(rng: random.Random) -> List[dict]:
     hydras = []
     for i, (a, b) in enumerate(itertools.combinations(BASIC_SUITS, 2)):
@@ -63,10 +75,13 @@ MISSIONS: List[Dict[str, Any]] = [
                         "never a class the card already has.",
     },
     {"number": 3, "title": "Lessons in Flames", "fan_title": "The Mage Tower", "location": "Magic Academy",
-     "rules_id": "legacy_m3", "playable": False, "verified": False,
-     "summary": "Four Mages (10/30), two Wizards (15/45) and a Grand Wizard (20/60), all of the Mage class. "
-                "Each turn a reserve card is trapped in the mission zone and enemies become immune to every "
-                "class present there.", "rewards_text": "The Mage class (A–10) joins the party."},
+     "rules_id": "legacy_m3", "playable": True, "verified": True,
+     "summary": "The High Arcana is gone. Four Instructors (10/30), two Professors (15/45) and the Dean "
+                "(20/60), all Mages. End of turn: the top reserve card goes face up into the mission zone. "
+                "Enemies are immune to the classes of every card in the zone. A defeated enemy is banished "
+                "with the whole zone; on exact damage one zone card is rescued to the discard pile first.",
+     "rewards_text": "Open pack C and corrupt another character in your party. Open pack F (contents still "
+                     "to be read: the app assumes the Mage class deck joins the party)."},
     {"number": 4, "title": "Fusion of Darkness", "fan_title": "The Gauntlet", "location": "Biology Laboratory",
      "rules_id": "legacy_m4", "playable": False, "verified": False,
      "summary": "The twelve royals return, corrupted. Their strength grows by the top card of the discard pile.",
@@ -117,6 +132,8 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
         castle = _royal_castle(rng)
     elif number == 2:
         castle = _hydra_castle(rng)
+    elif number == 3:
+        castle = _academy_castle(rng)
     else:
         raise NotImplementedError("Mission %d is not implemented yet (see PLAN.md stage ladder)." % number)
     # mercenaries hired for this mission
@@ -137,6 +154,17 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
     }
 
 
+# --------------------------------------------------------------------------- mission start
+def start_steps(camp, number: int) -> List[Step]:
+    """Permanent changes a mission's setup cards make before its first attempt."""
+    steps: List[Step] = []
+    if number == 3 and P.find(camp.party, HIGH_ARCANA["id"]) is not None:
+        # Card (confirmed): "Remove the High Arcana from your party. Store the card in mission box 3."
+        steps.append({"kind": "remove_card", "card_id": HIGH_ARCANA["id"],
+                      "label": "The High Arcana is nowhere to be seen: he leaves the party"})
+    return steps
+
+
 # --------------------------------------------------------------------------- rewards
 def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
     """Reward steps for completing ``number``; 'auto' steps apply at once, 'choice'
@@ -154,7 +182,20 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         # mission 2 card removes the High Arcana; mission 3's cards will say when he leaves.
         steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
         steps.append(_class_sticker_choice(camp, rng))
+    elif number == 3:
+        # Reward cards (confirmed): "Open pack C and corrupt another character in your party";
+        # "Open pack F". Pack F's contents are not read yet: the fan transcription says the
+        # Mage class deck (A to 10) joins the party permanently, so that is assumed.
+        steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
+        steps.append({"kind": "add_cards", "cards": MAGE_DECK,
+                      "label": "Open pack F: the Mage class deck joins the party (unverified)"})
     return steps
+
+
+MAGE_DECK: List[Dict[str, Any]] = [
+    {"id": "%sM" % r, "rank": r, "suits": ["M"], "value": RANK_VALUE[r], "flags": []}
+    for r in ("A", "2", "3", "4", "5", "6", "7", "8", "9", "10")
+]
 
 
 HIGH_ARCANA: Dict[str, Any] = {"id": "ARC25", "rank": "25", "suits": [], "value": 25, "name": "High Arcana",
@@ -218,6 +259,13 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
     if kind == "remove_card":
         c = P.remove_card(camp.party, step["card_id"])
         return "%s leaves the party." % ((c or {}).get("name") or step["card_id"])
+    if kind == "add_cards":
+        added = []
+        for card in step["cards"]:
+            if P.find(camp.party, str(card["id"])) is None:
+                P.add_card(camp.party, dict(card))
+                added.append(P.to_card(card).label())
+        return "%s join the party: %s." % (step.get("label", "New cards"), ", ".join(added)) if added else "Nothing new joins."
     if kind == "choice_classes":
         cards = [str(x) for x in step.get("cards", [])]
         classes = [str(x) for x in step.get("classes", [])]

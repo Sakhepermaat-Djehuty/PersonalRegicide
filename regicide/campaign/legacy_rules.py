@@ -5,7 +5,7 @@ import itertools
 import random
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from ..cards import BASIC_SUITS, SUIT_NAME, Card, jester_card
+from ..cards import BASIC_SUITS, CLASS_NAME, SUIT_NAME, Card, jester_card
 from ..rules import BaseRules, classify_combo, register_rules
 from ..rules import HAND_SIZE, JESTERS_IN_DECK
 
@@ -47,7 +47,7 @@ class LegacyRules(BaseRules):
 
     # ------------------------------------------------------------------ queries
     def immune(self, game, suit: str, cards: Sequence[Card] = ()) -> bool:
-        if not super().immune(game, suit, cards):
+        if suit not in self.immune_suits(game):
             return False
         for c in cards:
             if suit in c.suits and (c.has("corrupted") or c.has("restored") or c.has("ignores_immunity")):
@@ -205,6 +205,10 @@ class LegacyRules(BaseRules):
 
     def decision_actions(self, game) -> List[Dict[str, Any]]:
         d = game.decision
+        if d and d.get("kind") == "zone_rescue":
+            return [{"type": "zone_rescue", "player": int(d["player"]), "card": cid,
+                     "label": "Rescue %s to the discard pile" % game.cards[cid].label()}
+                    for cid in game.mission_zone]
         if not d or d.get("kind") != "flute_add":
             return []
         play = game.plays[int(d["play_index"])]
@@ -223,6 +227,17 @@ class LegacyRules(BaseRules):
 
     def decide(self, game, action: Dict[str, Any]) -> None:
         d = game.decision
+        if d and d.get("kind") == "zone_rescue":
+            # Exact kill with a mission zone: one zone card goes to the discard pile
+            # instead of being banished with the rest (missions 3 onward).
+            cid = str(action["card"])
+            game.mission_zone.remove(cid)
+            game.discard.insert(0, cid)
+            game._event("zone_rescue", card=cid, player=int(d["player"]))
+            game._say("%s rescues %s from the mission zone to the discard pile." % (
+                game.players[int(d["player"])].name, game.cards[cid].label()))
+            game.resume_defeat()
+            return
         if not d or d.get("kind") != "flute_add":
             raise NotImplementedError(action)
         player = int(d["player"])
@@ -284,6 +299,59 @@ class LegacyRules(BaseRules):
 class Mission1Rules(LegacyRules):
     id = "legacy_m1"
     mission = 1
+
+
+@register_rules
+class Mission3Rules(LegacyRules):
+    """Lessons in Flames (confirmed from the cards). End of turn: the top card of the
+    reserve deck goes face up into the mission zone if able. Enemies are immune to the
+    classes of every card in the mission zone. Enemy defeated: banish the enemy along with
+    all cards in the mission zone; on exact damage put one card from the mission zone
+    into the discard pile first. End-of-turn effects are skipped when an enemy is defeated
+    (rulebook p.19)."""
+
+    id = "legacy_m3"
+    mission = 3
+    uses_mission_zone = True
+
+    def zone_suits(self, game) -> Tuple[str, ...]:
+        suits: List[str] = []
+        for cid in game.mission_zone:
+            for s in game.cards[cid].suits:
+                if s not in suits:
+                    suits.append(s)
+        return tuple(suits)
+
+    def immune_suits(self, game) -> Tuple[str, ...]:
+        base = list(super().immune_suits(game))
+        if game.enemy is None:
+            return tuple(base)
+        for s in self.zone_suits(game):
+            if s not in base:
+                base.append(s)
+        return tuple(base)
+
+    def on_turn_end(self, game) -> None:
+        if game.is_over or not game.tavern:
+            return
+        before = self.immune_suits(game)
+        cid = game.tavern.pop(0)
+        game.mission_zone.append(cid)
+        game._event("zone_add", card=cid, zone=list(game.mission_zone))
+        card = game.cards[cid]
+        game._say("End of turn: %s goes into the mission zone." % card.label())
+        gained = [s for s in self.immune_suits(game) if s not in before]
+        if gained and game.enemy is not None:
+            game._say("%s is now immune to %s." % (
+                game.enemy.name, " / ".join(CLASS_NAME.get(s, s) + "s" for s in gained)))
+
+    def defeat_plan(self, game, exact: bool) -> Dict[str, Any]:
+        return {"enemy_to": "banish", "played_to": "discard", "zone_to": "banish"}
+
+    def before_defeat(self, game, exact: bool) -> Optional[Dict[str, Any]]:
+        if exact and game.mission_zone:
+            return {"kind": "zone_rescue", "player": game.active, "options": list(game.mission_zone)}
+        return None
 
 
 @register_rules
