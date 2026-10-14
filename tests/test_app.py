@@ -1833,7 +1833,7 @@ def test_finding_17_ui_declarations_use_pick_buttons(app):
     _assert_nothing_cut(gs.overlay)
     assert ui.render(app).size[0] > 0
     _tap_button(app, "♠ Paladin")
-    assert g.decision is None and g.plays[-1].suits == ("D", "S") and "Bristle" in gs.message_text
+    assert g.decision is None and g.plays[-1].suits == ("D", "S") and "Wild Animal is a Paladin" in gs.message_text
     # a 2/5 alone
     for play in g.plays:
         g.discard.extend(play.card_ids)
