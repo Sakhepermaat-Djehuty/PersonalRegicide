@@ -108,6 +108,21 @@ def _edge_castle(rng: random.Random) -> List[dict]:
     return tiers[0] + tiers[1]
 
 
+def _temple_castle(rng: random.Random) -> List[dict]:
+    """Mission 9's enemy stat card: four Loreguards 15/30 and four Lorekeepers 20/40, one
+    of each class per tier, then Myla 20/80 (bard and paladin; her immunity can never be
+    ignored)."""
+    tiers = []
+    for rank, name, atk, hp in (("Q", "Loreguard", 15, 30), ("K", "Lorekeeper", 20, 40)):
+        tier = [{"id": "TT%s%s" % (rank, s), "rank": rank, "suits": [s], "value": RANK_VALUE[rank],
+                 "name": name, "attack": atk, "health": hp, "flags": []} for s in BASIC_SUITS]
+        rng.shuffle(tier)
+        tiers.append(tier)
+    boss = {"id": "MYLA_BOSS", "rank": "K", "suits": ["D", "S"], "value": 20, "name": "Myla",
+            "attack": 20, "health": 80, "flags": ["fixed_immunity"]}
+    return tiers[0] + tiers[1] + [boss]
+
+
 def _hydra_castle(rng: random.Random) -> List[dict]:
     hydras = []
     for i, (a, b) in enumerate(itertools.combinations(BASIC_SUITS, 2)):
@@ -202,9 +217,18 @@ MISSIONS: List[Dict[str, Any]] = [
                      "(2 Warrior) or Wicket (2 Paladin) to gain the Chanter class. The puppy goes back in "
                      "the box."},
     {"number": 9, "title": "Hope From Ashes", "fan_title": "The Rescue", "location": "Twinseed Temple",
-     "rules_id": "legacy_m9", "playable": False, "verified": False,
-     "summary": "Thirty party cards are captured in three piles. Eight enemies, then Myla (20/80).",
-     "rewards_text": "A Mage Beast; Goran ignores immunity; Evergreen Mother."},
+     "rules_id": "legacy_m9", "playable": False, "verified": True,
+     "summary": "Gøran, your beast, Jesters and mercenaries are set aside; thirty of the remaining party "
+                "cards are dealt into three captured piles in the mission zone, top cards face up; the "
+                "pilgrims and the set-aside cards are shuffled into the rest of the reserve. Four "
+                "Loreguards (15/30), four Lorekeepers (20/40), then Myla (20/80), immune to bards and "
+                "paladins in a way nothing can ignore. End of turn: banish a card from hand to rescue the "
+                "top card of one pile to the discard pile, or rotate every pile. Enemy defeated: banish it; "
+                "on exact damage a pile's top card may go on top of the reserve deck.",
+     "rewards_text": "Acquire the Evergreen Mother (corrupt relic). Gøran is renewed: the old card leaves "
+                     "and the Evergreen Gøran (8, all four classes, ignores immunity) joins. Choose dwarves "
+                     "(4) or feltrix (8): the first unstickered one revealed from the shuffled party gains "
+                     "the Mage class. Ash, Myla's beast (Mage), joins the party."},
     {"number": 10, "title": "Pride to Fall", "fan_title": "The Corruption", "location": "Twinseed Temple Ruins",
      "rules_id": "legacy_m10", "playable": False, "verified": False,
      "summary": "Your corrupted party members are the enemies.", "rewards_text": "They return; Goran is lost."},
@@ -243,6 +267,8 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
         castle = _well_castle(rng)
     elif number == 8:
         castle = _edge_castle(rng)
+    elif number == 9:
+        castle = _temple_castle(rng)
     else:
         raise NotImplementedError("Mission %d is not implemented yet (see PLAN.md stage ladder)." % number)
     banished_start: List[dict] = []
@@ -266,6 +292,15 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
         # pack P and shuffle the pilgrims into the reserve deck."
         zone_start.append(dict(PUPPY))
         pilgrims_in_reserve = [dict(c) for c in PILGRIMS if c["id"] != PUPPY["id"]]
+    capture: Dict[str, Any] = {}
+    if number == 9:
+        # Mission rules (confirmed): set Gøran, the chosen beast and any Jesters or
+        # mercenaries aside; shuffle the rest of the reserve and deal 30 cards face down
+        # into three captured piles of 10 in the mission zone, top cards face up; shuffle
+        # the pilgrims and the set-aside cards into the remaining reserve deck. (The puppy
+        # went back into the mission 8 box.)
+        pilgrims_in_reserve = [dict(c) for c in PILGRIMS if c["id"] != PUPPY["id"]]
+        capture = {"piles": 3, "size": 10, "exempt": []}  # exempt ids filled in below
     # Gøran's beast chosen for this attempt (reward of mission 4)
     if camp.beast and camp.flags.get("beasts"):
         beast = beast_by_id(camp.beast)
@@ -282,11 +317,16 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
             continue
         if P.find(party, str(card["id"])) is None:
             party.append(card)
+    if capture:
+        # Gøran, the chosen beast, mercenaries (and Jesters, which the rules add) are never
+        # captured; Ash, a party beast, is set aside too ("your chosen beast" and beasts alike).
+        capture["exempt"] = [str(c["id"]) for c in party
+                             if c.get("name") == "Gøran" or "beast" in c.get("flags", []) or "mercenary" in c.get("flags", [])]
     return {
         "party": party, "castle": castle, "relics": list(camp.relics),
         "extra_jesters": extra_jesters, "discard_low_to_high": bool(camp.flags.get("discard_low_to_high")),
         "mission": number, "banished_start": banished_start, "zone_start": zone_start,
-        "pilgrims": pilgrims, "pilgrims_in_reserve": pilgrims_in_reserve,
+        "pilgrims": pilgrims, "pilgrims_in_reserve": pilgrims_in_reserve, "capture": capture,
     }
 
 
@@ -466,7 +506,32 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
                       "label": "A song or two: Sprinkle (Cleric), Dinky (Warrior) or Wicket (Paladin) gains the Chanter class"})
         steps.append({"kind": "set_flag", "flag": "puppy_boxed", "value": True,
                       "label": "The puppy stays at Heaven's Edge (back in the mission 8 box)"})
+    elif number == 9:
+        # Reward cards (confirmed, in order): "Acquire the new relic" (Evergreen Mother,
+        # corrupt relic); "Remove Gøran from your party. Add the new, renewed Gøran (8,
+        # evergreen) to your party"; "Choose either dwarves (4) or feltrix (8). Flip cards
+        # from your reserve until you reveal one of the chosen race (except Gøran or a mage)
+        # that has no stickers on them. Put a Mage sticker on them"; "Add Ash (B, Mage) to
+        # your party."
+        steps.append({"kind": "relic", "relic": "mother", "label": "Relic: Evergreen Mother (corrupt)"})
+        steps.append({"kind": "remove_card", "card_id": GORAN["id"], "label": "Gøran reaches into the Mother's soul"})
+        steps.append({"kind": "add_card", "card": GORAN_RENEWED,
+                      "label": "The renewed Gøran (8, Evergreen: all four classes, ignores immunity) joins the party"})
+        steps.append({"kind": "choice_mage_student", "options": ["4", "8"],
+                      "label": "A new student: choose dwarves (4) or feltrix (8); the first unstickered one revealed gains the Mage class"})
+        steps.append({"kind": "add_card", "card": ASH, "label": "Ash, Myla's beast (Mage), joins the party"})
     return steps
+
+
+# The renewed Gøran (mission 9 reward): the Evergreen icon stands for cleric, bard,
+# warrior and paladin at once, ignoring immunity to those four (rulebook p.15).
+GORAN_RENEWED: Dict[str, Any] = {"id": "GOR8E", "rank": "8", "suits": ["H", "D", "C", "S"], "value": 8, "name": "Gøran",
+                                 "subtitle": "Feltrix Evergreen", "flags": ["evergreen", "ignores_immunity"]}
+
+# Ash (mission 9 reward): Myla's beast, Mage class, a permanent party member. Beasts pair
+# with one other card and copy its strength; alone they are worth 0.
+ASH: Dict[str, Any] = {"id": "B_ASH", "rank": "B", "suits": ["M"], "value": 0, "name": "Ash", "subtitle": "Beast",
+                       "flags": ["beast"]}
 
 
 GORAN: Dict[str, Any] = {"id": "GOR8", "rank": "8", "suits": [], "value": 8, "name": "Gøran",
@@ -572,6 +637,23 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
             raise ValueError("%s is not one of the choices" % option)
         P.add_suit(camp.party, str(option), str(step["suit"]))
         return "%s gains the %s class." % (P.to_card(P.find(camp.party, str(option))).label(), CLASS_NAME[str(step["suit"])])
+    if kind == "choice_mage_student":
+        options = [str(x) for x in step.get("options", ["4", "8"])]
+        if option is None:
+            raise ValueError("choose dwarves (4) or feltrix (8)")
+        if str(option) not in options:
+            raise ValueError("%s is not one of the choices" % option)
+        # "Flip cards from your reserve until you reveal one of the chosen race (except
+        # Gøran or a mage) that has no stickers on them": a random card of that strength
+        # with its single original class, no class sticker and (assumed) no corruption.
+        pool = sorted(str(c["id"]) for c in camp.party
+                      if c["rank"] == str(option) and not c.get("name") and len(c.get("suits", [])) == 1
+                      and c["suits"][0] in BASIC_SUITS and "corrupted" not in c.get("flags", []))
+        if not pool:
+            return "No unstickered %s left in the party: the mages find no student." % option
+        target = rng.choice(pool)
+        P.add_suit(camp.party, target, "M")
+        return "%s takes up the mages' studies: gains the Mage class." % P.to_card(P.find(camp.party, target)).label()
     if kind == "set_flag":
         camp.flags[str(step["flag"])] = step.get("value", True)
         return str(step.get("label", "Flag %s set." % step["flag"]))

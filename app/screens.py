@@ -1249,9 +1249,29 @@ class ChoiceScreen(Screen):
         self.confirm_btn = make_button("Confirm", lambda s: self._confirm(), (m, h - T.BOTTOM_INSET - 50, w - 2 * m, 46))
         if step["kind"] == "choice_classes":
             self._layout_classes(step, y)
+        elif step["kind"] == "choice_mage_student":
+            self._layout_options(step, y, {"4": "Dwarves (the 4s)", "8": "Feltrix (the 8s)"})
         else:
             self._layout_pick(step, y)
         self.add_subview(self.confirm_btn)
+
+    # -- pick one option from a short list ----------------------------------
+    def _layout_options(self, step: dict, y: float, titles: dict) -> None:
+        w = self.width
+        m = T.MARGIN
+        self.add_subview(make_label("The first unstickered card of the chosen strength revealed from the shuffled party "
+                                    "gains the Mage class (never Gøran or a mage).", (m, y, w - 2 * m, 56), 12, False, T.MUTED, lines=3))
+        y += 60
+        options = [str(o) for o in step.get("options", [])]
+        for o in options:
+            b = make_button(titles.get(o, o), (lambda opt: lambda s: self._pick_option(opt))(o), (m, y, w - 2 * m, 44), self.chosen == o)
+            self.add_subview(b)
+            y += 52
+        set_enabled(self.confirm_btn, self.chosen in options)
+
+    def _pick_option(self, opt: str) -> None:
+        self.chosen = opt
+        self.layout()
 
     # -- pick one card ------------------------------------------------------
     def _layout_pick(self, step: dict, y: float) -> None:
@@ -1360,7 +1380,7 @@ class ChoiceScreen(Screen):
                     camp.pending.pop(0)
                     camp.log.append("%s: no card qualified." % step.get("label", "reward"))
             elif step.get("options"):
-                camp.resolve_choice(self.chosen)
+                camp.resolve_choice(self.chosen)  # one card id, or "4" / "8" for the mage student
             else:
                 camp.pending.pop(0)
                 camp.log.append("%s: nothing qualified." % step.get("label", "reward"))

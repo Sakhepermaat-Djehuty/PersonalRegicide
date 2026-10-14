@@ -692,6 +692,71 @@ zone, pilgrims in the reserve as playable classless cards, the ascending move-to
 choice, the 10 bonus with its banish-any-discards choice, the exact-kill discard pick)
 and the Chanter ability are to be built.
 
+## Mission 9, Hope From Ashes (confirmed, transcribed from the owner's photos)
+
+**Location card:** Twinseed Temple (a vast tree in sunlight, QR code; map piece on the
+back with the temple at the tree's roots marked by a cross).
+
+**Enemy stats card:** Loreguards 15 / 30 (four, one per class), Lorekeepers 20 / 40
+(four, one per class), then Myla 20 / 80, bard and paladin.
+
+**Mission rules card (front).** *Setup:* set Gøran, your chosen beast and any Jesters or
+mercenaries in your reserve deck aside. Shuffle the remainder of your reserve deck, deal
+30 cards face down into three "captured piles" in the mission zone with 10 cards in
+each, then flip over the top card of each pile. Shuffle the pilgrims and the cards you
+set aside into your remaining reserve deck. *End of turn:* you may banish a card from
+hand and put a card from the top of one captured pile into the discard pile, then flip
+the next card in that pile face up. If you choose not to banish a card, put the top
+card of each captured pile on the bottom of its pile and flip the top card of each
+captured pile face up. Myla's immunity to bards and paladins can never be ignored (e.g.
+via corruption and jesters).
+
+**Rules continued.** *Enemy defeated:* banish the enemy. If you defeated the enemy with
+exact damage, you may move a card from the top of one captured pile to the top of the
+reserve deck, then flip the next card in that pile face up. *Remember:* skip end of turn
+effects when you defeat an enemy (i.e. you can't banish a card from your hand).
+*Example:* piles showing Bite (8, feltrix paladin), Duck (A, animal bard) and Eragar (9,
+drakonid cleric): at end of turn the player banishes a card from hand and rescues Eragar
+to the discard pile.
+
+**Rules summary card:** Myla's immunity to paladins and bards cannot be ignored. End of
+turn: you may banish a card from hand to put a captured card in the discard pile; if
+you don't, put the top of all captured piles on the bottom. Enemy defeated: banish
+enemy; remember to skip end of turn effects; exact kill: may put a card from a captured
+pile on top of the reserve deck.
+
+**Story cards:** intro (the Winter Wastes, the Dreamfields, the Rootmarsh; the temple
+set ablaze; Myla's lorekeepers; the Syndicate cut in two) and outcome (Gøran steps on
+Myla's back; her last breath; the pilgrims must depart); texts in the private lore
+overlay only.
+
+**Reward cards, in order:**
+1. "Acquire the new relic." Evergreen Mother, corrupt relic. *Solo:* "Whenever a
+   corrupted card enters play, if the discard pile is not empty, you may choose to
+   banish a card from the top of the discard pile instead of the reserve deck." *Two or
+   more players:* "Whenever a corrupted card enters play, instead of banishing a card
+   from the top of the reserve deck, another player must banish a card from their hand.
+   If all other players' hands are empty, do not banish any card."
+2. "Remove Gøran from your party. Add the new, renewed Gøran (8, Evergreen) to your
+   party." The renewed card: 8, Feltrix Evergreen, holographic, a single Evergreen icon
+   (rulebook p.15: cleric, bard, warrior and paladin at once, ignoring immunity to those
+   four).
+3. "Choose either dwarves (4) or feltrix (8). Flip cards from your reserve until you
+   reveal one of the chosen race (except Gøran or a mage) that has no stickers on them.
+   Put a Mage sticker on them." Player chooses the strength; the card is random.
+4. "Add Ash (B, Mage) to your party." Ash: B, Beast, Mage class, a permanent party
+   member (not one of Gøran's four).
+
+**Open questions.** "No stickers" for the mage student: the app excludes cards with a
+class sticker and also corrupted cards, assuming corruption is a sticker (pack C still
+to be read). The outcome card says the pilgrims depart; no reward card returns pack P,
+so the app keeps the pilgrims in the pack until a later mission says otherwise.
+
+**Engine status:** data, setup description and rewards are in; the mission rules (the
+three captured piles, the end-of-turn banish-to-rescue or rotate choice, the exact-kill
+pile pick, Myla's unignorable immunity), beasts and the Evergreen Mother on both sides
+are to be built.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
@@ -716,11 +781,12 @@ and the Chanter ability are to be built.
     on top of the reserve deck; once per attack even if a mage adds another mage. Solo:
     when resolving a mage ability, after selecting the card to add, you may put one of
     the other cards you looked at on top of the reserve deck before discarding the rest.
-  * Evergreen Mother, corrupted (from M9): the fan engine banishes from the discard
-    pile instead of the reserve; the owner remembers it banishing a card from another
-    player's hand instead. VERIFY from the card (photo pending). Replaced in M12 by
-    Evergreen Mother, restored: restored cards that would be banished go under the
-    reserve deck instead. VERIFY.
+  * Evergreen Mother, corrupt relic (after M9): **confirmed, both sides.** Solo: when a
+    corrupted card enters play you may banish the top card of the discard pile instead
+    of the reserve deck (if the discard pile is not empty). 2+ players: another player
+    must banish a card from hand instead of the reserve deck; if all other hands are
+    empty nothing is banished. Replaced in M12 by Evergreen Mother, restored: restored
+    cards that would be banished go under the reserve deck instead. VERIFY.
 * **New suits / classes** (each has 3/5/7/9 cards that join temporarily, one stays):
   * ★ Mages (M3, permanent A–10★ added): reveal N cards from the tavern, pick one to add
     to the combo (its suits and value join), discard the rest; a picked Mage chains.
@@ -831,14 +897,17 @@ Numbers are attack / health.
    Rewards: Gøran gains Bard; corrupt another character (player's choice); Druldox (9
    Chanter) stays, the other Chanters leave; Sprinkle, Dinky or Wicket (the 2s) gains
    Chanter (player's choice); the puppy goes back in the box.
-9. **Hope From Ashes** (fan name: The Rescue; Twinseed Temple) — gain Evergreen Mother (corrupted). Goran, the chosen Beast and any
-   mercenaries are set aside; 30 random party cards form three captured piles of 10;
-   the pilgrim deck, the rest of the party and the set-aside cards form the tavern.
-   Enemies: 4 at 15/30, 4 at 20/40, then Myla 20/80 (♠♦, immunity cannot be cancelled).
-   End of turn: either banish a hand card and take a pile's top card to the discard, or
-   rotate all three piles. Perfect kill: a pile's top card to the top of the tavern.
-   Reward: permanent ★ Beast; choose "4" or "8" and a random card of that rank gains ★;
-   Goran ignores immunities; the pilgrim deck is gone.
+9. **Hope From Ashes** (Twinseed Temple; fan name: The Rescue) — **confirmed:** Gøran, the
+   chosen beast, Jesters and mercenaries are set aside; 30 of the remaining party cards
+   are dealt into three captured piles of 10 in the mission zone, tops face up; the
+   pilgrims and the set-aside cards are shuffled into the rest of the reserve. 4
+   Loreguards 15/30, 4 Lorekeepers 20/40, then Myla 20/80 (bard and paladin, immunity
+   never ignorable). End of turn: banish a hand card to rescue a pile's top card to the
+   discard pile, or rotate every pile. Enemy defeated: banish it; exact kill: a pile's
+   top card may go on top of the reserve. Rewards: Evergreen Mother (corrupt relic, both
+   sides confirmed); Gøran renewed (8, Evergreen: all four classes, ignores immunity);
+   the first unstickered 4 or 8 revealed (player picks the strength) gains Mage; Ash
+   (B, Mage beast) joins permanently.
 10. **Pride to Fall** (fan name: The Corruption; Twinseed Temple Ruins) — your corrupted cards leave the party and become the enemies:
     health 5 × value, attack value + mission zone total, and a suit ability (♣ doubles
     its total attack, ♠ reduces incoming damage by its value, ♥ moves the top discard to

@@ -1046,3 +1046,62 @@ def test_mission8_setup_and_rewards_follow_the_cards():
     assert step["kind"] == "choice_suit" and step["options"] == ["2H", "2C", "2S"]
     c.resolve_choice("2C")
     assert P.find(c.party, "2C")["suits"] == ["C", "T"] and not c.pending
+
+
+def test_mission9_setup_and_rewards_follow_the_cards():
+    c = CampaignState.new(1, ["Solo"], seed=110)
+    c.mission = 9
+    c.completed = [1, 2, 3, 4, 5, 6, 7, 8]
+    P.add_card(c.party, dict(M.GORAN))
+    for s in ("C", "S", "H", "D"):
+        P.add_suit(c.party, "GOR8", s)
+    c.flags["beasts"] = True
+    c.beast = "B_H"
+    c.m_box_opened = True
+    c.coins = 5
+    c.hire("merc_12H")
+    P.add_suit(c.party, "4D", "U")       # Glamelyn has a Druid sticker
+    P.add_flag(c.party, "8H", "corrupted")
+    rng = random.Random(6)
+    assert M.start_steps(c, 9) == []
+    extra = M.build_setup(c, 9, rng)
+    enemies = extra["castle"]
+    assert [e["name"] for e in enemies] == ["Loreguard"] * 4 + ["Lorekeeper"] * 4 + ["Myla"]
+    assert enemies[-1]["attack"] == 20 and enemies[-1]["health"] == 80 and sorted(enemies[-1]["suits"]) == ["D", "S"]
+    assert "fixed_immunity" in enemies[-1]["flags"]
+    assert len(extra["pilgrims_in_reserve"]) == 24 and extra["zone_start"] == []
+    cap = extra["capture"]
+    assert cap["piles"] == 3 and cap["size"] == 10
+    assert set(cap["exempt"]) == {"GOR8", "B_H", "M12H"}
+    steps = M.reward_steps(c, 9, rng)
+    assert [s["kind"] for s in steps] == ["relic", "remove_card", "add_card", "choice_mage_student", "add_card"]
+    for s in steps:
+        if s["kind"].startswith("choice"):
+            c.pending.append(s)
+        else:
+            M.apply_step(c, s, rng)
+    assert "mother" in c.relics
+    assert P.find(c.party, "GOR8") is None
+    new = P.find(c.party, "GOR8E")
+    assert new["name"] == "Gøran" and sorted(new["suits"]) == ["C", "D", "H", "S"] and "ignores_immunity" in new["flags"]
+    ash = P.find(c.party, "B_ASH")
+    assert ash["suits"] == ["M"] and "beast" in ash["flags"] and ash["value"] == 0
+    step = c.pending_choice()
+    assert step["kind"] == "choice_mage_student" and step["options"] == ["4", "8"]
+    with pytest.raises(ValueError):
+        c.resolve_choice("6")
+    line = c.resolve_choice("4")
+    assert "Mage" in line
+    stickered = [x for x in c.party if x["rank"] == "4" and "M" in x.get("suits", [])]
+    assert len(stickered) == 1 and stickered[0]["id"] != "4D"  # Glamelyn already has a sticker
+    assert not c.pending
+    # feltrix: the renewed Gøran (an 8) and a corrupted 8 are never chosen
+    c2 = CampaignState.new(1, ["Solo"], seed=111)
+    P.add_card(c2.party, dict(M.GORAN_RENEWED))
+    for s in ("H", "D", "C"):
+        P.add_flag(c2.party, "8" + s, "corrupted")
+    c2.pending.append({"kind": "choice_mage_student", "options": ["4", "8"], "label": "x"})
+    line = c2.resolve_choice("8")
+    assert "8" in line and P.find(c2.party, "8S")["suits"] == ["S", "M"]
+    c2.pending.append({"kind": "choice_mage_student", "options": ["4", "8"], "label": "x"})
+    assert "no student" in c2.resolve_choice("8")
