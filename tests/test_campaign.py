@@ -4,12 +4,14 @@ import random
 
 import pytest
 
-from regicide.bots import apply_action, greedy_policy, play_out
+from regicide.bots import apply_action, greedy_policy, min_waste_discard, play_out, random_policy
 from regicide.campaign import CampaignState
 from regicide.campaign import party as P
 from regicide.campaign.missions import MISSIONS
-from regicide.engine import PHASE_CHOOSE_NEXT, PHASE_LOST, PHASE_PLAY, PHASE_SUFFER, PHASE_WON, Game, IllegalAction
-from regicide.rules import GameConfig
+from regicide.cards import make_card
+from regicide.engine import (PHASE_CHOOSE_NEXT, PHASE_DECIDE, PHASE_LOST, PHASE_PLAY, PHASE_SUFFER, PHASE_WON,
+                             Game, IllegalAction)
+from regicide.rules import GameConfig, classify_combo
 from helpers import set_enemy, set_hand
 
 
@@ -296,6 +298,272 @@ def test_kinfolk_flute_store_and_play():
     d = json.loads(json.dumps(g.to_dict()))
     g2 = Game.from_dict(d)
     assert g2.extra == g.extra
+
+
+# ---------------------------------------------------------------- Kinfolk Flute, 2+ players
+def _flute_game(players=2, seed=20):
+    names = ["Ana", "Ben", "Cy", "Dee"][:players]
+    c = CampaignState.new(players, names, seed=seed)
+    c.relics.append("flute")
+    g = c.start_attempt(seed=seed)
+    set_enemy(g, "J", "H")
+    return c, g
+
+
+def _adds(g):
+    return sorted(tuple(sorted(a["card_ids"])) for a in g.legal_actions() if a["type"] == "flute_add")
+
+
+def test_flute_other_player_adds_a_kinfolk_card_and_abilities_resolve_on_the_total():
+    c, g = _flute_game()
+    set_hand(g, ["3C", "9S", "8S"], player=0)
+    set_hand(g, ["3D", "3H", "7C", "AS"], player=1)
+    g.play(["3C"])
+    # step 1 is done, step 2 waits for Ben; Ana stays the active player
+    assert g.phase == PHASE_DECIDE and g.active == 0 and g.deciding == 1
+    assert g.decision == {"kind": "flute_add", "player": 1, "play_index": 0, "strength": 3, "queue": []}
+    assert g.enemy.hp == 20 and g.plays[0].card_ids == ["3C"]
+    assert any(ev["t"] == "decide" for ev in g.last_events)
+    assert _adds(g) == [("3D",), ("3D", "3H"), ("3H",)]
+    acts = g.legal_actions()
+    assert [a for a in acts if a["type"] == "flute_pass" and a.get("skip")]
+    assert all(a["type"] in ("flute_add", "flute_pass") for a in acts)
+    # nothing else is possible meanwhile
+    assert g.legal_plays() == [] and not g.can_yield()
+    with pytest.raises(IllegalAction):
+        g.play(["9S"])
+    with pytest.raises(IllegalAction):
+        g.flute_add(["7C"])          # wrong strength
+    with pytest.raises(IllegalAction):
+        g.flute_add(["AS"])          # companions never join a kinfolk attack
+    with pytest.raises(IllegalAction):
+        g.flute_add([])
+    g.flute_add(["3D"])
+    assert g.decision is None and g.phase == PHASE_SUFFER and g.active == 0
+    play = g.plays[0]
+    assert play.card_ids == ["3C", "3D"] and play.value == 6 and set(play.suits) == {"C", "D"}
+    assert g.enemy.hp == 20 - 12                       # clubs double the combined strength
+    assert "3D" not in g.players[1].hand
+    # diamonds drew 6 for the combined strength, round robin from the attacker
+    assert len(g.players[0].hand) == 2 + 3 and len(g.players[1].hand) == 3 + 3
+    assert g.pending_damage == 10                      # the attacker alone suffers
+    g.suffer(min_waste_discard(g))
+    assert g.phase == PHASE_PLAY and g.active == 1
+    # at clean-up the added card leaves with the rest of the attack
+    g.enemy.hp = 1
+    g.play([g.players[1].hand[0]])
+    assert "3C" in g.discard and "3D" in g.discard
+
+
+def test_flute_pass_resolves_the_attack_as_formed():
+    c, g = _flute_game()
+    set_hand(g, ["3C", "9S", "8S"], player=0)
+    set_hand(g, ["3D", "7C"], player=1)
+    g.play(["3C"])
+    assert g.phase == PHASE_DECIDE
+    g.flute_pass()
+    assert g.phase == PHASE_SUFFER and g.decision is None
+    assert g.enemy.hp == 14 and g.plays[0].card_ids == ["3C"] and "3D" in g.players[1].hand
+    assert any(ev["t"] == "flute_pass" for ev in g.last_events)
+
+
+def test_flute_is_skipped_when_nobody_can_add():
+    # no card of that strength in any other hand
+    c, g = _flute_game()
+    set_hand(g, ["3C", "9S", "8S"], player=0)
+    set_hand(g, ["4D", "7C", "AS"], player=1)
+    g.play(["3C"])
+    assert g.phase == PHASE_SUFFER and g.decision is None and g.enemy.hp == 14
+    # the attack is already at the cap (5 + 5 = 10; doubled it kills the Justicar outright)
+    c, g = _flute_game(seed=21)
+    set_hand(g, ["5C", "5S", "9S", "8S"], player=0)
+    set_hand(g, ["5D", "5H"], player=1)
+    g.play(["5C", "5S"])
+    assert g.decision is None and g.enemies_defeated == 1 and g.players[1].hand == ["5D", "5H"]
+    # a 6 cannot grow into a kinfolk attack (6 + 6 > 10)
+    c, g = _flute_game(seed=22)
+    set_hand(g, ["6C", "9S", "8S"], player=0)
+    set_hand(g, ["6D"], player=1)
+    g.play(["6C"])
+    assert g.phase == PHASE_SUFFER and g.decision is None
+    # animal attacks are not kinfolk attacks, whatever the others hold
+    c, g = _flute_game(seed=23)
+    set_hand(g, ["AS", "5C", "9S", "8S"], player=0)
+    set_hand(g, ["5D", "AH"], player=1)
+    g.play(["AS", "5C"])
+    assert g.phase == PHASE_SUFFER and g.decision is None
+    g2 = c.start_attempt(seed=24)
+    set_enemy(g2, "J", "H")
+    set_hand(g2, ["AS", "9S", "8S"], player=0)
+    set_hand(g2, ["AH", "AD"], player=1)
+    g2.play(["AS"])
+    assert g2.phase == PHASE_SUFFER and g2.decision is None
+    # without the relic nothing happens either
+    c = CampaignState.new(2, ["Ana", "Ben"], seed=25)
+    g = c.start_attempt(seed=25)
+    set_enemy(g, "J", "H")
+    set_hand(g, ["3C", "9S", "8S"], player=0)
+    set_hand(g, ["3D"], player=1)
+    g.play(["3C"])
+    assert g.phase == PHASE_SUFFER and g.decision is None
+
+
+def test_flute_subsets_respect_the_ten_cap_and_jesters_never_join():
+    c, g = _flute_game(players=3, seed=26)   # three players: one Jester in the reserve
+    jester = [x for x in g.cards if g.cards[x].is_jester][0]
+    set_hand(g, ["5C", "9S", "8S"], player=0)
+    set_hand(g, ["5D", "5H", jester], player=1)
+    set_hand(g, ["7C"], player=2)
+    g.play(["5C"])
+    # Cy stays queued: whether he can add is only known once Ben has decided
+    assert g.phase == PHASE_DECIDE and g.deciding == 1 and g.decision["queue"] == [2]
+    assert _adds(g) == [("5D",), ("5H",)]  # 5 + 5 + 5 would be 15
+    with pytest.raises(IllegalAction):
+        g.flute_add(["5D", "5H"])
+    with pytest.raises(IllegalAction):
+        g.flute_add([jester])
+    g.flute_add(["5H"])
+    # 5♣ + 5♥ = 10, doubled = 20: the Justicar (20) dies exactly and goes on the reserve;
+    # Cy (no 5) was skipped and Ana, who defeated it, plays on
+    assert g.decision is None and g.enemies_defeated == 1 and g.tavern[0] == "JH"
+    assert g.phase == PHASE_PLAY and g.active == 0 and "5H" in g.discard and "5C" in g.discard
+
+
+def test_flute_asks_players_clockwise_and_skips_those_who_cannot_add():
+    c, g = _flute_game(players=3, seed=27)
+    set_hand(g, ["3C", "9S", "8S"], player=0)
+    set_hand(g, ["7C", "AS"], player=1)              # Ben has no 3: skipped
+    set_hand(g, ["3D", "3H", "4S"], player=2)
+    g.play(["3C"])
+    assert g.phase == PHASE_DECIDE and g.deciding == 2 and g.decision["queue"] == []
+    g.flute_add(["3D", "3H"])
+    assert g.phase == PHASE_SUFFER and g.plays[0].value == 9 and g.enemy.hp == 20 - 18
+    # everyone eligible is asked in turn; the queue shrinks as totals grow
+    c, g = _flute_game(players=3, seed=28)
+    set_hand(g, ["2C", "9S", "8S"], player=0)
+    set_hand(g, ["2D", "7C"], player=1)
+    set_hand(g, ["2H", "2S", "4S"], player=2)
+    g.play(["2C"])
+    assert g.deciding == 1 and g.decision["queue"] == [2]
+    g.flute_add(["2D"])
+    assert g.phase == PHASE_DECIDE and g.deciding == 2 and g.decision["queue"] == []
+    assert g.plays[0].value == 4 and _adds(g) == [("2H",), ("2H", "2S"), ("2S",)]
+    g.flute_pass()
+    assert g.phase == PHASE_SUFFER and g.plays[0].card_ids == ["2C", "2D"] and g.enemy.hp == 20 - 8
+    # a later player drops out of the queue once the cap is reached
+    c, g = _flute_game(players=3, seed=29)
+    set_hand(g, ["3C", "9S", "8S"], player=0)
+    set_hand(g, ["3D", "3H"], player=1)
+    set_hand(g, ["3S", "4S"], player=2)
+    g.play(["3C"])
+    assert g.deciding == 1 and g.decision["queue"] == [2]
+    g.flute_add(["3D", "3H"])                         # 9: a fourth 3 would make 12
+    assert g.phase == PHASE_SUFFER and g.decision is None and "3S" in g.players[2].hand
+
+
+def test_flute_decision_survives_a_save_round_trip():
+    c, g = _flute_game(players=3, seed=30)
+    set_hand(g, ["3C", "9S", "8S"], player=0)
+    set_hand(g, ["3D", "7C"], player=1)
+    set_hand(g, ["3S", "4S"], player=2)
+    g.play(["3C"])
+    d = json.loads(json.dumps(g.to_dict()))
+    assert d["phase"] == PHASE_DECIDE and d["decision"]["player"] == 1 and d["decision"]["queue"] == [2]
+    g2 = Game.from_dict(d)
+    assert g2.phase == PHASE_DECIDE and g2.decision == g.decision and g2.deciding == 1
+    assert g2.legal_actions() == g.legal_actions()
+    assert sorted(g2.all_card_ids()) == sorted(g2.cards)
+    g2.flute_add(["3D"])
+    g.flute_add(["3D"])
+    assert g2.deciding == 2 and g2.to_dict() == g.to_dict()
+    g2.flute_add(["3S"])
+    assert g2.phase == PHASE_SUFFER and g2.plays[0].value == 9
+    # old saves without the field load as "no decision pending"
+    d.pop("decision")
+    d["phase"] = PHASE_PLAY
+    assert Game.from_dict(d).decision is None
+
+
+def test_flute_added_corrupted_card_banishes_and_ignores_immunity():
+    c = CampaignState.new(2, ["Ana", "Ben"], seed=31)
+    c.relics.append("flute")
+    P.add_flag(c.party, "3D", "corrupted")
+    g = c.start_attempt(seed=31)
+    set_enemy(g, "J", "D")                           # immune to diamonds
+    set_hand(g, ["3C", "9S", "8S"], player=0)
+    set_hand(g, ["3D", "7C"], player=1)
+    g.play(["3C"])
+    assert g.phase == PHASE_DECIDE and g.banished == []
+    top = g.tavern[0]
+    g.flute_add(["3D"])
+    assert g.banished == [top]                        # corrupted newcomer banishes on entering play
+    assert any(ev["t"] == "corrupt_banish" for ev in g.last_events)
+    drawn = [ev for ev in g.last_events if ev["t"] == "power" and ev["suit"] == "D"]
+    assert drawn and not drawn[0].get("immune") and len(drawn[0]["drawn"]) == 6
+    assert g.enemy.hp == 20 - 12
+
+
+def test_flute_preview_assumes_nobody_adds():
+    c, g = _flute_game(seed=32)
+    set_hand(g, ["3C", "9S", "8S"], player=0)
+    set_hand(g, ["3D", "7C"], player=1)
+    pv = g.preview_play(["3C"])
+    assert pv["ok"] and pv["decision"] and pv["damage"] == 6 and pv["enemy_hp_after"] == 14
+    assert pv["phase_after"] == PHASE_SUFFER
+    assert g.phase == PHASE_PLAY and g.decision is None   # the preview did not touch the game
+    pv2 = g.preview_play(["9S"])
+    assert pv2["ok"] and not pv2["decision"] and pv2["damage"] == 9
+
+
+def test_legacy_kinfolk_is_any_number_of_equal_strength_cards():
+    twos = [make_card("2", s) for s in "HDCS"] + [make_card("2", "H", id="M25H", name="2/5", flags=("twofive",))]
+    assert classify_combo(twos)[0] == ""                                   # base game: at most four
+    assert classify_combo(twos, strength=lambda c: 2 if c.has("twofive") else c.value, max_cards=None) == ("set", None)
+    c = CampaignState.new(1, ["Solo"], seed=33)
+    c.m_box_opened = True
+    c.coins = 1
+    c.hire("merc_25H")
+    g = c.start_attempt(seed=33)
+    set_enemy(g, "J", "H")
+    set_hand(g, ["2C", "2D", "2H", "2S", "M25H", "9S", "8S", "7S"])
+    five = ["2C", "2D", "2H", "2S", "M25H"]
+    assert g.check_play(five) == (True, "set")
+    assert sorted(five) in [sorted(p) for p in g.legal_plays()]
+    assert g.check_play(["3C", "M25H"])[0] is False                       # 3 and 2 differ in strength
+    g.play(five)
+    played = [ev for ev in g.last_events if ev["t"] == "play"][0]
+    assert played["value"] == 10 and played["kind"] == "set"
+    assert g.enemies_defeated == 1 and g.tavern[0] == "JH"                 # 10 doubled: exact kill
+
+
+@pytest.mark.parametrize("players", [2, 3])
+def test_bots_play_out_legacy_games_with_the_flute(players):
+    offered = 0
+    added = 0
+    rng = random.Random(players)
+    for seed in range(8):
+        c = CampaignState.new(players, seed=seed)
+        c.relics.append("flute")
+        g = c.start_attempt(seed=seed)
+        play_out(g, greedy_policy if seed % 2 == 0 else random_policy, rng)
+        assert g.is_over and g.decision is None
+        assert sorted(g.all_card_ids()) == sorted(g.cards)
+        offered += sum(1 for line in g.log if line.startswith("Kinfolk Flute:"))
+        added += sum(1 for line in g.log if "(Kinfolk Flute)" in line)
+    assert offered > 0 and added > 0
+
+
+def test_greedy_bot_adds_to_the_flute_attack_only_to_finish_the_enemy():
+    c, g = _flute_game(seed=34)
+    set_hand(g, ["3C", "9S", "8S"], player=0)
+    set_hand(g, ["3D", "3H", "7C"], player=1)
+    g.play(["3C"])
+    assert greedy_policy(g)["type"] == "flute_pass"           # 12 or 18 damage: the Justicar survives
+    g.enemy.hp = 12
+    act = greedy_policy(g)
+    assert act["type"] == "flute_add" and act["card_ids"] == ["3D"]   # one 3 kills it exactly
+    apply_action(g, act)
+    assert g.enemies_defeated == 1 and g.tavern[0] == "JH"
 
 
 def test_campaign_roundtrip_and_bot_can_play_attempts():

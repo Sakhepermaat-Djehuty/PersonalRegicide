@@ -319,8 +319,14 @@ private lore overlay described in regicide/campaign/lore.py.
 
 **Engine status:** mission 1 is marked verified. The corruption is a player choice in the
 app (candidates still follow the fan constraints until pack C is read). The flute's
-multiplayer side is recorded but not implemented yet; the fan "store a 2–5 on the flute"
-mechanic is kept for solo play only, pending the solo side of the card.
+multiplayer side is implemented as the engine's first "decide" phase: after the active
+player forms an attack that could be kinfolk (equal strengths, no companion, beast or
+Jester) the other players are asked in clockwise order from the attacker's left; each may
+add any cards of that strength from hand as long as the whole attack stays at 10 or less,
+or pass; players with nothing to add are skipped. The combined attack then resolves as one
+kinfolk attack (abilities at the total, corrupted newcomers banish, everything to the
+discard at clean-up) and only the attacker suffers damage. The fan "store a 2–5 on the
+flute" mechanic is kept for solo play only, pending the solo side of the card.
 
 ## Permanent mechanics (as transcribed)
 
@@ -331,9 +337,10 @@ mechanic is kept for solo play only, pending the solo side of the card.
   some missions).
 * **Mission zone**: a mission-specific area on the playmat that several missions fill.
 * **Relics** (persist between missions):
-  * Kinfolk Flute (after M1): **confirmed (2+ players side):** after the active player
-    forms an attack, before step 2, other players may add cards from hand that form a
-    valid kinfolk attack with it; no animal companions. Solo side: VERIFY (the fan
+  * Kinfolk Flute (after M1): **confirmed and implemented (2+ players side):** after the
+    active player forms an attack, before step 2, other players (clockwise from the
+    attacker's left) may add cards from hand that form a valid kinfolk attack with it
+    (same strength, total at most 10); no animal companions. Solo side: VERIFY (the fan
     engine stores one 2–5 per turn on the flute to play in a later kinfolk attack).
   * Scarlet Whistle (after M4): play an Ace or Beast together with the top card of the
     discard pile as a pair. VERIFY.

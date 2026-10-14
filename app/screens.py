@@ -13,8 +13,8 @@ from regicide.campaign import lore as L
 from regicide.campaign import party as P
 from regicide.campaign.missions import MISSIONS, mission as mission_info
 from regicide.cards import BASIC_SUITS, CLASS_NAME, SUIT_NAME, SUIT_SYMBOL, Card
-from regicide.engine import (PHASE_CHOOSE_NEXT, PHASE_LOST, PHASE_PLAY, PHASE_SUFFER, PHASE_WON,
-                             Game, IllegalAction)
+from regicide.engine import (PHASE_CHOOSE_NEXT, PHASE_DECIDE, PHASE_LOST, PHASE_PLAY, PHASE_SUFFER,
+                             PHASE_WON, Game, IllegalAction)
 from regicide.rules import GameConfig
 
 from . import store
@@ -488,16 +488,23 @@ class GameScreen(Screen):
         if g.phase == PHASE_CHOOSE_NEXT:
             self._show_overlay(ChooseNextOverlay(self))
             return
-        needs_handover = (g.n_players > 1 and not g.config.open_hands and self.shown_player != g.active)
+        # The seat whose hand is shown: the attacker, or whoever must decide (Kinfolk Flute).
+        seat = g.deciding
+        needs_handover = (g.n_players > 1 and self.shown_player != seat
+                          and (not g.config.open_hands or g.phase == PHASE_DECIDE))
         if needs_handover:
             self.hand.set_cards([])
-            self._show_overlay(HandoverOverlay(self))
+            self._show_overlay(DecisionOverlay(self) if g.phase == PHASE_DECIDE else HandoverOverlay(self))
             return
         self._hide_overlay()
-        self.shown_player = g.active
-        flute = list(g.extra.get("flute", []))
-        self.hand.badges = dict((cid, "flute") for cid in flute)
-        self.hand.set_cards(g.hand() + [g.card(c) for c in flute], keep_selection=False)
+        self.shown_player = seat
+        if g.phase == PHASE_DECIDE:
+            self.hand.badges = {}
+            self.hand.set_cards(g.hand(seat), keep_selection=False)
+        else:
+            flute = list(g.extra.get("flute", []))
+            self.hand.badges = dict((cid, "flute") for cid in flute)
+            self.hand.set_cards(g.hand() + [g.card(c) for c in flute], keep_selection=False)
         specials = g.rules.special_actions(g)
         self.special_btn.hidden = not specials
         if specials:
@@ -505,7 +512,7 @@ class GameScreen(Screen):
         self._update_controls()
 
     def reveal_hand(self) -> None:
-        self.shown_player = self.game.active
+        self.shown_player = self.game.deciding
         self.refresh(after_action=False)
 
     def _update_controls(self) -> None:
@@ -560,6 +567,34 @@ class GameScreen(Screen):
                 self.message.text += " Your hand is short: use the Jester power."
             elif feign:
                 self.message.text += " At the hand limit you may feign death: discard everything."
+        elif g.phase == PHASE_DECIDE:
+            # Kinfolk Flute: the shown hand belongs to the deciding player; only cards that
+            # keep the attack a valid kinfolk attack may be selected.
+            acts = g.legal_actions()
+            adds = [a for a in acts if a["type"] == "flute_add"]
+            eligible = set(cid for a in adds for cid in a["card_ids"])
+            self.hand.selectable = lambda c: c.id in eligible
+            self.hand.refresh_dim()
+            self.left_btn.title = "Pass"
+            set_enabled(self.left_btn, True, False)
+            self.mid_btn.hidden = True
+            self.right_btn.title = "Add"
+            legal = bool(sel) and any(sorted(a["card_ids"]) == sorted(sel) for a in adds)
+            set_enabled(self.right_btn, legal)
+            d = g.decision or {}
+            play = g.plays[int(d.get("play_index", len(g.plays) - 1))]
+            attacker = g.players[play.player].name
+            attack = " + ".join(g.card(c).label() for c in play.card_ids)
+            who = g.players[g.deciding].name
+            if legal:
+                pv = g.preview_decision({"type": "flute_add", "card_ids": sel})
+                self.message.text = "%s adds %s (attack %d): %s" % (
+                    who, " + ".join(g.card(c).label() for c in sel), pv.get("attack", 0), describe_preview(g, pv))
+            elif sel:
+                self.message.text = "Only %ss may join, and the attack must stay at 10 or less." % d.get("strength")
+            else:
+                self.message.text = "%s: add to %s's %s attack? Select %ss (total at most 10) and tap Add, or Pass." % (
+                    who, attacker, attack, d.get("strength"))
         self.message.set_needs_display()
 
     def _selection_changed(self) -> None:
@@ -596,6 +631,8 @@ class GameScreen(Screen):
                 self.hand.set_selection(list(g.active_player.hand))
             else:
                 self.hand.set_selection(min_waste_discard(g))
+        elif g.phase == PHASE_DECIDE:
+            self._act(g.flute_pass)
 
     def _special(self, sender) -> None:
         self._show_overlay(SpecialOverlay(self))
@@ -621,6 +658,8 @@ class GameScreen(Screen):
             self._act(lambda: g.play(sel))
         elif g.phase == PHASE_SUFFER:
             self._act(lambda: g.suffer(sel))
+        elif g.phase == PHASE_DECIDE:
+            self._act(lambda: g.flute_add(sel))
 
     def choose_next(self, player: int) -> None:
         g = self.game
@@ -696,6 +735,28 @@ class HandoverOverlay(Overlay):
         ]
 
 
+class DecisionOverlay(Overlay):
+    """Kinfolk Flute: another player may add to the attack on the table. Names the
+    deciding player and the attack, then reveals that player's hand on request."""
+
+    def build(self) -> List[ui.View]:
+        g = self.screen.game
+        d = g.decision or {}
+        who = g.players[g.deciding].name
+        play = g.plays[int(d.get("play_index", len(g.plays) - 1))]
+        attacker = g.players[play.player].name
+        attack = " + ".join(g.card(c).label() for c in play.card_ids)
+        items: List[ui.View] = []
+        if not g.config.open_hands:
+            items.append(make_label("Pass the phone to", (0, 0, 10, 24), 15, False, T.MUTED, ui.ALIGN_CENTER))
+        items.append(make_label(who, (0, 0, 10, 40), 28, True, T.ACCENT, ui.ALIGN_CENTER))
+        items.append(make_label("%s: add to %s's %s attack?" % (who, attacker, attack), (0, 0, 10, 44), 16, True, T.TEXT, ui.ALIGN_CENTER, 2))
+        items.append(make_label("Kinfolk Flute: you may add %ss from your hand as long as the whole attack stays "
+                                "at 10 or less, or pass." % d.get("strength"), (0, 0, 10, 60), 13, False, T.TEXT, ui.ALIGN_CENTER, 3))
+        items.append(make_button("Show my hand", lambda s: self.screen.reveal_hand(), (0, 0, 10, 50)))
+        return items
+
+
 class ChooseNextOverlay(Overlay):
     def build(self) -> List[ui.View]:
         g = self.screen.game
@@ -755,7 +816,7 @@ class GameMenuOverlay(Overlay):
     def _undo(self, sender) -> None:
         app = self.screen.app
         if app.undo():
-            self.screen.shown_player = None if (app.game.n_players > 1 and not app.game.config.open_hands) else app.game.active
+            self.screen.shown_player = None if (app.game.n_players > 1 and not app.game.config.open_hands) else app.game.deciding
             self.screen.message_text = "Undone."
             self.screen.refresh(after_action=False)
 
@@ -1251,6 +1312,8 @@ def describe_preview(g: Game, pv: dict) -> str:
         s += " (%d left), then suffer %d" % (pv["enemy_hp_after"], pv["enemy_attack_after"])
     if parts:
         s = ", ".join(parts) + ". " + s
+    if pv.get("decision"):
+        s = "If nobody adds (Kinfolk Flute): " + s
     return s
 
 
@@ -1286,6 +1349,13 @@ def describe_events(g: Game) -> str:
             parts.append("Discarded %d to suffer %d." % (ev["paid"], ev["damage"]))
         elif t == "no_damage":
             parts.append("No damage to suffer.")
+        elif t == "decide" and ev.get("kind") == "flute_add":
+            parts.append("Kinfolk Flute: %s may add %ss." % (g.players[int(ev["player"])].name, ev.get("strength")))
+        elif t == "add_to_play":
+            parts.append("%s adds %s (attack %d)." % (
+                g.players[int(ev["player"])].name, " + ".join(g.card(c).label() for c in ev["cards"]), ev["value"]))
+        elif t == "flute_pass":
+            parts.append("%s adds nothing." % g.players[int(ev["player"])].name)
     return " ".join(parts)
 
 

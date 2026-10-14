@@ -13,8 +13,9 @@ fakeui.install()
 import ui  # noqa: E402
 
 from regicide.bots import greedy_policy, min_waste_discard  # noqa: E402
-from regicide.engine import PHASE_CHOOSE_NEXT, PHASE_PLAY, PHASE_SUFFER  # noqa: E402
+from regicide.engine import PHASE_CHOOSE_NEXT, PHASE_DECIDE, PHASE_PLAY, PHASE_SUFFER  # noqa: E402
 from regicide.rules import GameConfig  # noqa: E402
+from helpers import set_enemy, set_hand  # noqa: E402
 
 
 @pytest.fixture
@@ -289,6 +290,98 @@ def test_solo_jester_class_choice_overlay(app):
     _tap_button(app, "♣ Warrior")
     assert app.game.solo_jesters == 1
     assert any("X1" in p.card_ids for p in app.game.plays)
+
+
+def _flute_attempt(app, names=("Ana", "Ben")):
+    app.new_campaign(len(names), list(names))
+    app.campaign.relics.append("flute")
+    app.start_attempt()
+    gs = _game_screen(app)
+    g = app.game
+    set_enemy(g, "J", "H")
+    set_hand(g, ["3C", "9S", "8S"], player=0)
+    set_hand(g, ["3D", "3H", "7C", "AS"], player=1)
+    gs.reveal_hand()
+    return gs, g
+
+
+def test_kinfolk_flute_decision_overlay_add(app, tmp_path):
+    from app import store
+    from app.screens import DecisionOverlay, HandoverOverlay
+    gs, g = _flute_attempt(app)
+    gs.hand.set_selection(["3C"])
+    assert "Kinfolk Flute" in gs.message.text and "6 damage" in gs.message.text
+    _tap_button(app, "Play")
+    assert g.phase == PHASE_DECIDE and g.deciding == 1
+    # a handover-style overlay names the deciding player and the attack; the hand stays hidden
+    assert isinstance(gs.overlay, DecisionOverlay) and gs.hand.cards == []
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert any("Ben: add to Ana's 3♣ attack?" in t for t in texts)
+    assert ui.render(app).size[0] > 0
+    assert store.load_attempt(app.campaign.slot).phase == PHASE_DECIDE   # autosaved mid-decision
+    _tap_button(app, "Show my hand")
+    assert gs.overlay is None and [c.id for c in gs.hand.cards] == ["3D", "3H", "7C", "AS"]
+    assert gs.left_btn.title == "Pass" and gs.left_btn.enabled
+    assert gs.right_btn.title == "Add" and not gs.right_btn.enabled
+    assert gs.mid_btn.hidden
+    assert "Ben: add to Ana's 3♣ attack?" in gs.message.text
+    # only 3s are selectable
+    assert gs.hand.views["7C"].dimmed and gs.hand.views["AS"].dimmed and not gs.hand.views["3D"].dimmed
+    _tap_card(app, gs, "7C")
+    assert gs.hand.selected == [] and not gs.right_btn.enabled
+    _tap_card(app, gs, "3D")
+    assert gs.hand.selected == ["3D"] and gs.right_btn.enabled
+    assert "12 damage" in gs.message.text
+    _tap_card(app, gs, "3H")
+    assert gs.right_btn.enabled and "18 damage" in gs.message.text  # 3 + 3 + 3 = 9, doubled
+    _tap_card(app, gs, "3H")
+    _tap_button(app, "Add")
+    assert g.phase == PHASE_SUFFER and g.active == 0 and g.enemy.hp == 8
+    assert g.plays[0].card_ids == ["3C", "3D"] and "3D" not in g.players[1].hand
+    # back to the attacker, whose hand is hidden again until the phone is passed
+    assert isinstance(gs.overlay, HandoverOverlay) and ui.button(app, "Show my hand")
+    assert store.load_attempt(app.campaign.slot).to_dict() == g.to_dict()
+    _tap_button(app, "Show my hand")
+    assert "Ben adds 3♦ (attack 6)" in gs.message_text and gs.right_btn.title == "Discard"
+    assert "suffers 10 damage" in gs.message.text
+
+
+def test_kinfolk_flute_decision_overlay_pass_and_undo(app):
+    gs, g = _flute_attempt(app)
+    before = g.to_dict()
+    gs.hand.set_selection(["3C"])
+    _tap_button(app, "Play")
+    _tap_button(app, "Show my hand")
+    _tap_button(app, "Pass")
+    assert g.phase == PHASE_SUFFER and g.enemy.hp == 14 and g.plays[0].card_ids == ["3C"]
+    assert "3D" in g.players[1].hand
+    # undo steps back into the decision, then to before the play
+    _tap_button(app, "Show my hand")
+    _tap_button(app, "Menu")
+    _tap_button(app, "Undo last action")
+    assert app.game.phase == PHASE_DECIDE and app.game.deciding == 1
+    _tap_button(app, "Show my hand")
+    assert gs.right_btn.title == "Add"
+    _tap_button(app, "Menu")
+    _tap_button(app, "Undo last action")
+    assert app.game.to_dict() == before
+
+
+def test_kinfolk_flute_open_hands_shows_the_decision_overlay_once(app):
+    gs, g = _flute_attempt(app)
+    g.config.open_hands = True
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["3C"])
+    _tap_button(app, "Play")
+    assert g.phase == PHASE_DECIDE
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert any("Ben: add to Ana's 3♣ attack?" in t for t in texts)
+    assert not any(t == "Pass the phone to" for t in texts)
+    _tap_button(app, "Show my hand")
+    gs.hand.set_selection(["3D"])
+    _tap_button(app, "Add")
+    # open hands: no handover, straight to Ana's damage
+    assert g.phase == PHASE_SUFFER and gs.overlay is None and gs.right_btn.title == "Discard"
 
 
 def test_campaign_screens_render(app):

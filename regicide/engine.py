@@ -4,9 +4,14 @@ Design notes
 * All state is plain data (ids, ints, lists) so a game can be saved as JSON after
   every action and resumed on another device.
 * ``Game`` methods that change state are the *actions*: ``play``, ``yield_turn``,
-  ``use_solo_jester``, ``suffer``, ``choose_next``. Each validates, mutates, and appends
-  structured events to ``last_events`` (for the UI to animate) and lines to ``log``.
+  ``use_solo_jester``, ``suffer``, ``choose_next``, ``decide``. Each validates, mutates,
+  and appends structured events to ``last_events`` (for the UI to animate) and lines to
+  ``log``.
 * Rule variations (Legacy missions) are injected through ``rules.BaseRules`` hooks.
+* Mid-turn choices by other players (Legacy: the Kinfolk Flute, later Mage picks and the
+  like) pause the game in the ``decide`` phase with a serialisable ``decision`` dict: the
+  rules object produces the decision, lists its legal actions and applies them; the
+  engine stores it and resolves the paused attack afterwards.
 * Pile convention: index 0 is the TOP of a face-down deck (tavern, castle) and the top
   of the discard pile.
 """
@@ -16,7 +21,7 @@ import copy
 import itertools
 import random
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .cards import (BASIC_SUITS, CLUBS, DIAMONDS, HEARTS, SPADES, SUIT_NAME, SUIT_SYMBOL,
                     Card)
@@ -25,6 +30,7 @@ from .rules import BaseRules, GameConfig, get_rules
 PHASE_PLAY = "play"
 PHASE_SUFFER = "suffer"
 PHASE_CHOOSE_NEXT = "choose_next"
+PHASE_DECIDE = "decide"          # another player decides something before an attack resolves
 PHASE_WON = "won"
 PHASE_LOST = "lost"
 
@@ -106,6 +112,9 @@ class Game:
         self.active = 0
         self.phase = PHASE_PLAY
         self.pending_damage = 0
+        # The pending mid-turn choice while phase == PHASE_DECIDE (see rules.after_attack_formed):
+        # plain data, saved with the game. ``active`` stays the attacking player throughout.
+        self.decision: Optional[Dict[str, Any]] = None
         # Each player's last turn action: "played", "yielded" or None. The official yield
         # rule reads "every other player has yielded on their last turn".
         self.last_action: List[Optional[str]] = [None] * config.players
@@ -226,16 +235,18 @@ class Game:
                 if other.is_ace and other.id < a.id:
                     continue  # count Ace+Ace once
                 plays.append([a.id, other.id])
-        by_rank: Dict[str, List[Card]] = {}
+        # Sets: grouped by single-card strength (the rank in the base game; Legacy's 2/5
+        # cards count as 2). Sizes and mixes the rules reject are vetoed below.
+        by_strength: Dict[int, List[Card]] = {}
         for c in hand:
             if c.is_number and not c.is_ace:
-                by_rank.setdefault(c.rank, []).append(c)
-        for rank, group in by_rank.items():
-            if len(group) < 2 or group[0].value * 2 > 10:
+                by_strength.setdefault(self.rules.play_value(self, [c]), []).append(c)
+        for strength, group in by_strength.items():
+            if len(group) < 2 or strength * 2 > 10:
                 continue
-            for n in (2, 3, 4):
-                if n > len(group) or group[0].value * n > 10:
-                    continue
+            for n in range(2, len(group) + 1):
+                if strength * n > 10:
+                    break
                 for combo in itertools.combinations(group, n):
                     plays.append([c.id for c in combo])
         plays.extend(self.rules.extra_plays(self, hand))
@@ -272,27 +283,58 @@ class Game:
                 if i == self.active and not self.config.jester_may_choose_self:
                     continue
                 acts.append({"type": "choose_next", "player": i})
+        if self.phase == PHASE_DECIDE:
+            acts.extend(self.rules.decision_actions(self))
         return acts
+
+    @property
+    def deciding(self) -> int:
+        """Index of the player who must act now: the decider in the decide phase."""
+        if self.phase == PHASE_DECIDE and self.decision is not None:
+            return int(self.decision["player"])
+        return self.active
 
     def preview_play(self, card_ids: Sequence[str]) -> dict:
         """Simulate a play on a copy and report what would happen (for UI forecasts)."""
         ok, info = self.check_play(card_ids)
         if not ok:
             return {"ok": False, "reason": info}
+        return self._forecast(info, lambda g: g.play(card_ids))
+
+    def preview_decision(self, action: dict) -> dict:
+        """Simulate a decision (e.g. a Kinfolk Flute addition) the way ``preview_play`` does."""
+        if self.phase != PHASE_DECIDE:
+            return {"ok": False, "reason": "No decision pending."}
+        return self._forecast(str(action.get("type")), lambda g: g.decide(action))
+
+    def _forecast(self, kind: str, act: Callable[["Game"], None]) -> dict:
+        """Run ``act`` on a copy and summarise its events for a UI forecast."""
         g = copy.deepcopy(self)
         enemy_hp_before = g.enemy.hp if g.enemy else 0
-        g.play(card_ids)
+        try:
+            act(g)
+        except IllegalAction as e:
+            return {"ok": False, "reason": str(e)}
+        events = list(g.last_events)
+        decision = g.phase == PHASE_DECIDE
+        # Other players may still change the attack (Kinfolk Flute): forecast as if they
+        # all declined.
+        while g.phase == PHASE_DECIDE and g.skip_decision():
+            events.extend(g.last_events)
         damage = 0
+        attack = 0
         powers: Dict[str, Any] = {}
-        for ev in g.last_events:
+        for ev in events:
             if ev["t"] == "damage":
                 damage = ev["amount"]
+            if ev["t"] in ("play", "add_to_play"):
+                attack = ev["value"]
             if ev["t"] == "power":
                 powers[ev["suit"]] = ev
-        defeated = any(ev["t"] == "defeat" for ev in g.last_events)
-        exact = any(ev["t"] == "defeat" and ev["exact"] for ev in g.last_events)
-        return {"ok": True, "kind": info, "damage": damage, "powers": powers,
-                "defeats": defeated, "exact": exact,
+        defeated = any(ev["t"] == "defeat" for ev in events)
+        exact = any(ev["t"] == "defeat" and ev["exact"] for ev in events)
+        return {"ok": True, "kind": kind, "attack": attack, "damage": damage, "powers": powers,
+                "defeats": defeated, "exact": exact, "decision": decision,
                 "enemy_hp_after": max(0, enemy_hp_before - damage),
                 "enemy_attack_after": g.enemy_attack if not defeated else 0,
                 "phase_after": g.phase}
@@ -308,9 +350,10 @@ class Game:
         for c in cards:
             self.rules.remove_played(self, c.id)
         me = self.active
-        suits = tuple(sorted(set(s for c in cards for s in c.suits), key=_suit_sort_key))
+        suits = self.play_suits(cards)
         value = self.rules.play_value(self, cards)
-        self.plays.append(Play(me, [c.id for c in cards], value, suits))
+        play = Play(me, [c.id for c in cards], value, suits)
+        self.plays.append(play)
         self.last_action[me] = "played"
         self._event("play", player=me, cards=[c.id for c in cards], value=value, kind=kind)
         self._say("%s plays %s." % (self.players[me].name, " + ".join(c.label() for c in cards)))
@@ -337,7 +380,83 @@ class Game:
             return
 
         self.rules.on_cards_played(self, cards)
+        decision = self.rules.after_attack_formed(self, play)
+        if decision is not None:
+            # Step 1 is done; someone else acts before step 2 (e.g. adds kinfolk cards).
+            decision = dict(decision)
+            decision["play_index"] = len(self.plays) - 1
+            if choice is not None:
+                decision["choice"] = choice
+            self.decision = decision
+            self.phase = PHASE_DECIDE
+            self._event("decide", **decision)
+            return
         self._resolve_attack(cards, suits, value, choice)
+
+    def play_suits(self, cards: Sequence[Card]) -> Tuple[str, ...]:
+        """The suits of an attack, each once, in resolution order."""
+        return tuple(sorted(set(s for c in cards for s in c.suits), key=_suit_sort_key))
+
+    # --- decisions (decide phase) ------------------------------------------------
+    def decide(self, action: dict) -> None:
+        """Apply the deciding player's choice (one of ``rules.decision_actions``)."""
+        self.last_events = []
+        if self.phase != PHASE_DECIDE or self.decision is None:
+            raise IllegalAction("No decision pending.")
+        wanted = _action_key(action)
+        if wanted not in [_action_key(a) for a in self.rules.decision_actions(self)]:
+            raise IllegalAction("That choice is not available.")
+        self.rules.decide(self, action)
+
+    def skip_decision(self) -> bool:
+        """Take the decision's "do nothing" option if there is one (forecasts, bots)."""
+        for a in self.legal_actions():
+            if a.get("skip"):
+                self.decide(a)
+                return True
+        return False
+
+    def flute_add(self, card_ids: Sequence[str]) -> None:
+        """Kinfolk Flute: the deciding player adds these hand cards to the pending attack."""
+        self.decide({"type": "flute_add", "card_ids": list(card_ids)})
+
+    def flute_pass(self) -> None:
+        """Kinfolk Flute: the deciding player adds nothing."""
+        self.decide({"type": "flute_pass"})
+
+    def add_cards_to_play(self, play_index: int, player: int, card_ids: Sequence[str]) -> Play:
+        """Move cards from ``player``'s hand into an attack already on the table.
+
+        Value and suits are recomputed over the whole attack and ``on_cards_played`` runs
+        for the newcomers (corrupted / restored effects). The caller resolves the attack."""
+        play = self.plays[play_index]
+        hand = self.players[player].hand
+        ids = list(card_ids)
+        if len(set(ids)) != len(ids):
+            raise IllegalAction("Duplicate card.")
+        for cid in ids:
+            if cid not in hand:
+                raise IllegalAction("Card %s is not in hand." % cid)
+        for cid in ids:
+            hand.remove(cid)
+        play.card_ids.extend(ids)
+        cards = [self.cards[c] for c in play.card_ids]
+        play.value = self.rules.play_value(self, cards)
+        play.suits = self.play_suits(cards)
+        self._event("add_to_play", player=player, cards=ids, play_index=play_index, value=play.value)
+        self.rules.on_cards_played(self, [self.cards[c] for c in ids])
+        return play
+
+    def resolve_pending_attack(self) -> None:
+        """Leave the decide phase and resolve the attack the decision was about (step 2 on)."""
+        decision = self.decision
+        if decision is None:
+            raise IllegalAction("No decision pending.")
+        play = self.plays[int(decision["play_index"])]
+        self.decision = None
+        self.phase = PHASE_PLAY
+        cards = [self.cards[c] for c in play.card_ids]
+        self._resolve_attack(cards, play.suits, play.value, decision.get("choice"))
 
     def _resolve_attack(self, cards: List[Card], suits: Tuple[str, ...], value: int,
                         choice: Optional[dict] = None) -> None:
@@ -684,6 +803,7 @@ class Game:
             "immunity_cancelled": self.immunity_cancelled,
             "active": self.active, "phase": self.phase,
             "pending_damage": self.pending_damage,
+            "decision": copy.deepcopy(self.decision),
             "last_action": list(self.last_action),
             "solo_jesters": self.solo_jesters, "solo_jesters_used": self.solo_jesters_used,
             "turn": self.turn, "enemies_defeated": self.enemies_defeated,
@@ -712,6 +832,7 @@ class Game:
         g.immunity_cancelled = bool(d.get("immunity_cancelled", False))
         g.active = int(d["active"]); g.phase = d["phase"]
         g.pending_damage = int(d.get("pending_damage", 0))
+        g.decision = copy.deepcopy(d.get("decision")) or None
         g.last_action = list(d.get("last_action", [None] * config.players))
         g.solo_jesters = int(d.get("solo_jesters", 0))
         g.solo_jesters_used = int(d.get("solo_jesters_used", 0))
@@ -751,3 +872,9 @@ class Game:
 def _suit_sort_key(s: str) -> int:
     order = list(BASIC_SUITS) + ["M", "R", "G", "U", "T"]
     return order.index(s) if s in order else 99
+
+
+def _action_key(action: dict) -> Tuple[str, Tuple[str, ...]]:
+    """What identifies a decision action: its type and the (order-free) cards it names."""
+    cards = action.get("card_ids") or action.get("cards") or []
+    return str(action.get("type")), tuple(sorted(str(c) for c in cards))

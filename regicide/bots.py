@@ -11,7 +11,8 @@ import itertools
 from typing import Callable, Dict, List, Optional, Sequence
 
 from .cards import CLUBS, DIAMONDS, HEARTS, SPADES
-from .engine import PHASE_CHOOSE_NEXT, PHASE_LOST, PHASE_PLAY, PHASE_SUFFER, PHASE_WON, Game
+from .engine import (PHASE_CHOOSE_NEXT, PHASE_DECIDE, PHASE_LOST, PHASE_PLAY, PHASE_SUFFER, PHASE_WON,
+                     Game)
 
 
 # --------------------------------------------------------------------------- helpers
@@ -100,9 +101,14 @@ def evaluate(game: Game) -> float:
 
 
 def _simulate_turn(game: Game, action: dict) -> Game:
-    """Apply an action on a copy and, if damage follows, pay it with the cheapest cover."""
+    """Apply an action on a copy and, if damage follows, pay it with the cheapest cover.
+
+    A play that pauses for other players' decisions (Kinfolk Flute) is forecast as if they
+    all declined."""
     g = copy.deepcopy(game)
     apply_action(g, action)
+    while g.phase == PHASE_DECIDE and g.skip_decision():
+        pass
     if g.phase == PHASE_SUFFER and g.active == game.active:
         if g.hand_defence_value() >= g.pending_damage:
             g.suffer(min_waste_discard(g))
@@ -131,6 +137,8 @@ def greedy_policy(game: Game, rng=None) -> dict:
         choices = [a["player"] for a in game.legal_actions() if a["type"] == "choose_next"]
         return {"type": "choose_next",
                 "player": max(choices, key=lambda i: sum(c.value for c in game.hand(i)))}
+    if game.phase == PHASE_DECIDE:
+        return decision_policy(game)
     if game.phase != PHASE_PLAY:
         raise RuntimeError("game over")
     candidates: List[dict] = [a for a in game.legal_actions() if a["type"] != "suffer"]
@@ -153,6 +161,37 @@ def greedy_policy(game: Game, rng=None) -> dict:
     return best
 
 
+def decision_policy(game: Game) -> dict:
+    """Kinfolk Flute and similar: join the attack only when that finishes the enemy.
+
+    Among the additions that defeat the enemy, prefer an exact kill (the enemy joins the
+    tavern deck), then the fewest cards; otherwise keep the cards and pass."""
+    acts = game.legal_actions()
+    skip = [a for a in acts if a.get("skip")]
+    best: Optional[dict] = None
+    best_key = None
+    for act in acts:
+        if act.get("skip"):
+            continue
+        g = copy.deepcopy(game)
+        apply_action(g, act)
+        while g.phase == PHASE_DECIDE and g.skip_decision():
+            pass
+        defeated = g.enemies_defeated > game.enemies_defeated
+        if not defeated:
+            continue
+        exact = any(ev["t"] == "defeat" and ev.get("exact") for ev in g.last_events)
+        key = (0 if exact else 1, len(act.get("card_ids") or []))
+        if best_key is None or key < best_key:
+            best_key = key
+            best = act
+    if best is not None:
+        return best
+    if skip:
+        return skip[0]
+    return acts[0]
+
+
 def apply_action(game: Game, action: dict) -> None:
     t = action["type"]
     if t == "play":
@@ -167,6 +206,12 @@ def apply_action(game: Game, action: dict) -> None:
         game.choose_next(action["player"])
     elif t == "special":
         game.special(action)
+    elif t == "flute_add":
+        game.flute_add(action["card_ids"])
+    elif t == "flute_pass":
+        game.flute_pass()
+    elif game.phase == PHASE_DECIDE:
+        game.decide(action)
     else:
         raise ValueError("unknown action %r" % (t,))
 

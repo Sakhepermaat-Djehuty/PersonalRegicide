@@ -9,7 +9,7 @@ unchanged; missions subclass it (see ``regicide/campaign``).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, TYPE_CHECKING
 
 from .cards import CLUBS, DIAMONDS, HEARTS, SPADES, Card
 
@@ -173,6 +173,27 @@ class BaseRules:
         """Return (kind, error). Kinds: single, jester, companion, set."""
         return classify_combo(cards)
 
+    def after_attack_formed(self, game: "Game", play: Any) -> Optional[Dict[str, Any]]:
+        """Called after a non-Jester play is recorded and before its abilities resolve.
+
+        Return a serialisable decision dict to pause the game in the decide phase (another
+        player gets to act first, e.g. the Kinfolk Flute), or None to resolve at once.
+        The dict must carry ``kind`` and the index of the deciding ``player``; the engine
+        adds the ``play_index`` of the attack it concerns and stores it as ``game.decision``."""
+        return None
+
+    def decision_actions(self, game: "Game") -> List[Dict[str, Any]]:
+        """Legal actions for the deciding player while ``game.decision`` is pending.
+
+        Each action is a dict with a ``type``; exactly one may be marked ``"skip": True``
+        (the "do nothing" choice, used by forecasts and the one-ply bot)."""
+        return []
+
+    def decide(self, game: "Game", action: Dict[str, Any]) -> None:
+        """Apply one of ``decision_actions``. Must end by advancing the decision or by
+        calling ``game.resolve_pending_attack()``."""
+        raise NotImplementedError("no decisions in these rules")
+
     def play_value(self, game: "Game", cards: Sequence[Card]) -> int:
         """Attack value of a play (Legacy beasts copy their partner's value)."""
         return sum(c.value for c in cards)
@@ -207,10 +228,15 @@ class BaseRules:
 # Combo classification (shared by rules and bots)
 # ---------------------------------------------------------------------------
 
-def classify_combo(cards: Sequence[Card]) -> Tuple[str, Optional[str]]:
-    """Classify a set of cards as a legal base-game play.
+def classify_combo(cards: Sequence[Card], strength: Optional[Callable[[Card], int]] = None,
+                   max_cards: Optional[int] = 4) -> Tuple[str, Optional[str]]:
+    """Classify a set of cards as a legal play.
 
-    Returns ``(kind, None)`` or ``("", reason)``.
+    Returns ``(kind, None)`` or ``("", reason)``. With the defaults this is the base game:
+    a set is two to four cards of the same number totalling at most 10. ``strength``
+    (card -> int) makes a set a matter of equal *strength* rather than rank and sums with
+    it (Legacy kinfolk, where a 2/5 card counts as a 2); ``max_cards=None`` lifts the
+    four-card cap (Legacy allows five 2s).
     """
     if not cards:
         return "", "Pick at least one card."
@@ -230,12 +256,17 @@ def classify_combo(cards: Sequence[Card]) -> Tuple[str, Optional[str]]:
         return "companion", None
     if aces:
         return "", "An Animal Companion pairs with exactly one other card."
-    ranks = set(c.rank for c in cards)
-    if len(ranks) != 1:
+    if strength is None:
+        same = len(set(c.rank for c in cards)) == 1
+        total = sum(c.value for c in cards)
+    else:
+        values = [strength(c) for c in cards]
+        same = len(set(values)) == 1
+        total = sum(values)
+    if not same:
         return "", "Combos need cards of the same number, or an Ace with one other card."
-    if len(cards) > 4:
-        return "", "A combo has at most four cards."
-    total = sum(c.value for c in cards)
+    if max_cards is not None and len(cards) > max_cards:
+        return "", "A combo has at most %s cards." % ("four" if max_cards == 4 else max_cards)
     if total > 10:
         return "", "A combo's total must be 10 or less."
     return "set", None
