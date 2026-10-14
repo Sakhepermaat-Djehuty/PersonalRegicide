@@ -1140,3 +1140,50 @@ def test_mission10_corrupted_party_members_form_the_enemy_deck_and_return():
     assert P.find(c.party, "GOR8E") is None and c.away == []
     assert sorted(P.corrupted_ids(c.party)) == ["2S", "3H", "4D", "5C", "6C", "7S", "8H", "9D"]
     assert P.find(c.party, "4D")["suits"] == ["D", "U"]
+
+
+def test_mission11_rip_up_choice_beast_deck_and_reborn_evergreen():
+    c = CampaignState.new(1, ["Solo"], seed=130)
+    c.mission = 11
+    c.completed = list(range(1, 11))
+    P.add_card(c.party, dict(M.ASH))
+    c.flags["beasts"] = True
+    c.beast = "B_D"
+    for cid in ("2S", "3H", "4D", "5C", "6C", "7S", "8H", "9D"):
+        P.add_flag(c.party, cid, "corrupted")
+        c.corrupted.append(cid)
+    rng = random.Random(8)
+    # the setup card needs a choice: Esme (6C) is the known cloaked member
+    with pytest.raises(RuntimeError):
+        c.start_attempt(seed=131)
+    step = c.pending_choice()
+    assert step["kind"] == "choice_rip" and step["phase"] == "setup" and step["options"] == ["6C"]
+    assert c.prepare_mission() and len(c.pending) == 1   # not queued twice
+    with pytest.raises(ValueError):
+        c.resolve_choice("2S")
+    line = c.resolve_choice("6C")
+    assert "ripped up" in line and P.find(c.party, "6C") is None and "6C" not in c.corrupted
+    assert c.flags["vine_ripped"] is True and not c.prepare_mission()
+    assert M.start_steps(c, 11) == []                       # retries ask nothing more
+    extra = M.build_setup(c, 11, rng)
+    enemies = extra["castle"]
+    assert [e["name"] for e in enemies] == ["Justicar"] * 4 + ["Corrupted Evergreen"]
+    assert (enemies[0]["attack"], enemies[0]["health"], enemies[-1]["attack"], enemies[-1]["health"]) == (10, 30, 20, 90)
+    assert all(e["suits"] == [] for e in enemies)
+    assert sorted(b["id"] for b in extra["beast_deck"]) == ["B_C", "B_D", "B_H", "B_S"]
+    ids = [d["id"] for d in extra["party"]]
+    assert "B_D" not in ids and "B_ASH" in ids             # no chosen beast this mission; Ash stays
+    assert P.find(c.party, "6C") is None
+    for s in M.reward_steps(c, 11, rng):
+        M.apply_step(c, s, rng)
+    esme = P.find(c.party, "ESME6E")
+    assert esme is not None and esme["value"] == 6 and sorted(esme["suits"]) == ["C", "D", "H", "S"]
+    assert "ignores_immunity" in esme["flags"] and "corrupted" not in esme["flags"]
+    assert len(c.corrupted) == 7
+    # without Esme corrupted, every corrupted card is offered
+    c2 = CampaignState.new(1, ["Solo"], seed=133)
+    c2.mission = 11
+    for cid in ("2S", "3H"):
+        P.add_flag(c2.party, cid, "corrupted")
+        c2.corrupted.append(cid)
+    assert c2.prepare_mission() and sorted(c2.pending_choice()["options"]) == ["2S", "3H"]

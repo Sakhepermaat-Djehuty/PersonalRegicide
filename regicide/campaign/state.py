@@ -141,6 +141,8 @@ class CampaignState:
         if self.finished:
             raise RuntimeError("the campaign is complete")
         number = self.mission
+        if self.prepare_mission():
+            raise RuntimeError("resolve the mission's setup choices first")
         rng = self._rng()
         if self.attempts_on(number) == 0:
             # the mission's setup cards (permanent changes before the first attempt)
@@ -155,6 +157,17 @@ class CampaignState:
         self.reveal_lore("m%d_intro" % number)
         g = Game.new(cfg, seed=seed if seed is not None else rng.randrange(2 ** 31))
         return g
+
+    def prepare_mission(self) -> bool:
+        """Queue the current mission's setup choices (cards read before the first attempt
+        that need a decision, e.g. mission 11's rip-up). Returns True when a choice is now
+        pending, so the caller shows the choice screen before starting the attempt."""
+        if self.finished or self.attempts_on(self.mission) > 0:
+            return bool(self.pending)
+        for step in M.start_steps(self, self.mission):
+            if step["kind"].startswith("choice") and step not in self.pending:
+                self.pending.append(step)
+        return bool(self.pending)
 
     def finish_attempt(self, game: Game) -> dict:
         """Record a finished attempt. Returns a summary dict for the UI."""

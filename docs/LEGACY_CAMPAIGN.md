@@ -817,6 +817,69 @@ new "away" list in the campaign save for the mission and return afterwards); the
 mission rules (five-times health, zone strength, the four enemy powers, the discard or
 banish of the zone) are to be built.
 
+## Mission 11, Descent Into Darkness (confirmed, transcribed from the owner's photos)
+
+**Location card:** Caverns of Decay (a crystal cavern with dark tendrils, QR code; map
+piece on the back with the cross at the tree's roots below the ruins).
+
+**Setup card.** "From your corrupted party members, choose one of them that has a cloak
+of the Eternal Vine. Rip up the chosen card." (A green cloak is pictured.) The reward is
+Esme reborn, so Esme, the 6 of warriors, is the cloaked member; which other characters
+wear the cloak is not visible on the cards photographed.
+
+**Enemy stats card:** Justicars 10 / 30 (four) and the Corrupted Evergreen 20 / 90, all
+marked with a dark gem icon rather than a class icon.
+
+**Mission rules card (front).** *Setup:* take all four of Gøran's Beasts, shuffle them
+and form a face-down beast deck in the mission zone. *Start of turn:* reveal the top
+card of the beast deck and do the following depending on the class revealed: warrior:
+put the top card of the discard pile into the banished pile; paladin: put the top card
+of the reserve deck into the discard pile; cleric: the current player puts a card from
+hand into the discard pile; bard: the current player puts a card from hand into the
+banished pile. After carrying out the class effect, place the revealed beast card into
+a separate face-up pile in the mission zone.
+
+**Rules continued (1).** *Note:* when starting the game, perform the first start of
+turn effect (reveal a beast), then when a player decides to go first, they must carry
+out the beast effect. *Remember:* you can't include any of Gøran's Beasts in your
+reserve deck for this mission (but you can keep Ash in your deck since he's in your
+party). *Mission success:* when you successfully complete the mission, return Gøran's
+Beasts to the box by your party and you may include one of them in your reserve deck
+for each mission attempt, as normal.
+
+**Rules continued (2).** When all four beasts are in the face-up pile in the mission
+zone, shuffle them and place them face down in the mission zone to reform the beast
+deck. Each enemy has immunity to the classes of the cards on the top of the discard
+pile and banished pile. Each enemy has additional strength equal to the combined
+strength of the cards on top of the discard pile and banished pile. *Remember:* beasts
+in the mission zone don't grant any immunity to the enemy. *Enemy defeated:* banish the
+enemy. If the enemy was dealt exact damage, do not reveal a card from the beast deck at
+the start of the next turn.
+
+**Rules summary card:** Start of turn, reveal effect card: bard: banish a card from
+hand; cleric: discard a card from hand; warrior: banish the top card of the discard
+pile; paladin: discard the top card of the reserve deck. Top of discard and banished
+pile grant strength and immunity to the enemy. Enemy defeated: banish enemy; exact
+kill: don't reveal an effect card next turn.
+
+**Story cards:** intro (the grand cavern, Gøran strapped to the machine, the justicars,
+the shackled beasts, "Welcome to the Veil of Decay"), setup (a dozen dart to save him;
+one dies, wearing the green cloak; a corrupted Evergreen lumbers towards the Syndicate)
+and outcome (the machine explodes, Gøran lies dead, a radiant light, "Who is that?");
+texts in the private lore overlay only.
+
+**Reward card:** "Add the reborn Evergreen to your party." Esme: 6, Human Evergreen,
+holographic, the Evergreen icon (all four basic classes, ignoring immunity, p.15).
+
+**Open questions.** The dark gem icon on the enemies: the app treats it as no innate
+class, so their immunities come only from the pile tops. Whether a player with an empty
+hand simply skips the cleric or bard effect (the app assumes yes). If the top of the
+discard pile is a beast or a classless card it grants strength but no immunity.
+
+**Engine status:** data, the setup choice (queued before the first attempt as a
+"Mission setup" screen) and the reward are in; the mission rules (beast deck and its
+four effects, pile-top strength and immunity, exact-kill skip) are to be built.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
@@ -977,12 +1040,17 @@ Numbers are attack / health.
     into the zone at end of turn. Enemy defeated: banish the zone, discard the enemy;
     exact kill: discard the zone instead. Rewards: Gøran is lost; the corrupted
     characters return (still corrupted).
-11. **Descent Into Darkness** (fan name: The Beast Hunt; Caverns of Decay) — Esme (6♣) is removed. 4 suitless enemies 10/30 then Evil Goran
-    20/90. Enemies are immune to the suits on top of the banished and discard piles and
-    gain attack equal to those two cards' values. Start of turn: a random basic-suit
-    Beast enters the zone and triggers (♣ top discard → banished, ♠ top tavern →
-    discard, ♥ you discard a hand card, ♦ you banish a hand card). Perfect kill: skip the
-    next Beast. Reward: Esme returns with all four suits.
+11. **Descent Into Darkness** (Caverns of Decay; fan name: The Beast Hunt) —
+    **confirmed:** a corrupted member of the Eternal Vine (Esme, the 6 of warriors) is
+    ripped up at setup. Gøran's four beasts form a face-down beast deck in the mission
+    zone (none in the reserve; Ash stays). Start of turn: reveal a beast and apply its
+    class (warrior: top discard banished; paladin: top reserve card discarded; cleric:
+    discard a hand card; bard: banish a hand card); revealed beasts pile face up and
+    reform the deck when all four are out. 4 Justicars 10/30 then the Corrupted
+    Evergreen 20/90, no innate class; each enemy is immune to the classes of, and gains
+    the strength of, the top cards of the discard and banished piles (beasts grant no
+    immunity). Enemy defeated: banish it; exact kill: no beast revealed next turn.
+    Reward: the reborn Evergreen, Esme (6, Evergreen); the beasts return to the box.
 12. **Decay to Growth** (fan name: The Final Stand; Throne of Corruption) — all corrupted cards become restored; Evergreen Mother
     restored. 4 Q 15/30, 4 K 20/40, then the High Arcana 25/120. Enemy attack + zone
     total; immune to every suit in the zone. Start of turn: top banished card to the

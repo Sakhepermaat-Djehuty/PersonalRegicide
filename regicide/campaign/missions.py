@@ -142,6 +142,19 @@ def _ruins_castle(camp) -> List[dict]:
     return enemies
 
 
+def _caverns_castle(rng: random.Random) -> List[dict]:
+    """Mission 11's enemy stat card: four Justicars 10/30, then the Corrupted Evergreen
+    20/90. Both carry a dark gem icon rather than a class; the app reads it as no innate
+    class, so their immunities come only from the tops of the discard and banished piles
+    as the mission rules say."""
+    tier = [{"id": "CV_J%d" % (i + 1), "rank": "J", "suits": [], "value": 10, "name": "Justicar",
+             "attack": 10, "health": 30, "flags": []} for i in range(4)]
+    rng.shuffle(tier)
+    boss = {"id": "CV_EVERGREEN", "rank": "K", "suits": [], "value": 20, "name": "Corrupted Evergreen",
+            "attack": 20, "health": 90, "flags": []}
+    return tier + [boss]
+
+
 def _hydra_castle(rng: random.Random) -> List[dict]:
     hydras = []
     for i, (a, b) in enumerate(itertools.combinations(BASIC_SUITS, 2)):
@@ -259,9 +272,17 @@ MISSIONS: List[Dict[str, Any]] = [
                 "the zone is discarded instead.",
      "rewards_text": "Gøran is lost. The corrupted characters return to the party."},
     {"number": 11, "title": "Descent Into Darkness", "fan_title": "The Beast Hunt", "location": "Caverns of Decay",
-     "rules_id": "legacy_m11", "playable": False, "verified": False,
-     "summary": "Four classless enemies (10/30), then Evil Goran (20/90). Beasts shape the battlefield.",
-     "rewards_text": "Esme returns with every class."},
+     "rules_id": "legacy_m11", "playable": False, "verified": True,
+     "summary": "One corrupted member of the Eternal Vine dies at the machine and is torn up for good. "
+                "Gøran's four beasts form a face-down beast deck in the mission zone (none may join the "
+                "reserve; Ash may). Start of turn: reveal a beast and apply its class: warrior banishes the "
+                "top discard, paladin discards the top reserve card, cleric makes you discard a hand card, "
+                "bard makes you banish one; revealed beasts pile up face up and reform the deck when all "
+                "four are out. Four Justicars (10/30), then the Corrupted Evergreen (20/90); each enemy is "
+                "immune to the classes of, and gains the strength of, the top cards of the discard and "
+                "banished piles. Enemy defeated: banish it; on exact damage no beast is revealed next turn.",
+     "rewards_text": "The reborn Evergreen joins the party: Esme (6, Evergreen: all four classes, ignores "
+                     "immunity). Gøran's beasts return to the box beside the party."},
     {"number": 12, "title": "Decay to Growth", "fan_title": "The Final Stand", "location": "Throne of Corruption",
      "rules_id": "legacy_m12", "playable": False, "verified": False,
      "summary": "Four Queens, four Kings and the High Arcana (25/120). Corrupted cards are restored.",
@@ -297,6 +318,8 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
         castle = _temple_castle(rng)
     elif number == 10:
         castle = _ruins_castle(camp)
+    elif number == 11:
+        castle = _caverns_castle(rng)
     else:
         raise NotImplementedError("Mission %d is not implemented yet (see PLAN.md stage ladder)." % number)
     banished_start: List[dict] = []
@@ -329,8 +352,15 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
         # went back into the mission 8 box.)
         pilgrims_in_reserve = [dict(c) for c in PILGRIMS if c["id"] != PUPPY["id"]]
         capture = {"piles": 3, "size": 10, "exempt": []}  # exempt ids filled in below
+    beast_deck: List[dict] = []
+    if number == 11:
+        # Mission rules (confirmed): all four of Gøran's beasts, shuffled, form a face-down
+        # beast deck in the mission zone; none may be in the reserve deck (Ash may, he is in
+        # the party). After the mission they go back to the box beside the party.
+        beast_deck = [dict(b) for b in BEASTS]
+        rng.shuffle(beast_deck)
     # Gøran's beast chosen for this attempt (reward of mission 4)
-    if camp.beast and camp.flags.get("beasts"):
+    if camp.beast and camp.flags.get("beasts") and number != 11:
         beast = beast_by_id(camp.beast)
         if beast is not None and P.find(party, str(beast["id"])) is None:
             party.append(dict(beast))
@@ -355,6 +385,7 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
         "extra_jesters": extra_jesters, "discard_low_to_high": bool(camp.flags.get("discard_low_to_high")),
         "mission": number, "banished_start": banished_start, "zone_start": zone_start,
         "pilgrims": pilgrims, "pilgrims_in_reserve": pilgrims_in_reserve, "capture": capture,
+        "beast_deck": beast_deck,
     }
 
 
@@ -387,6 +418,15 @@ def start_steps(camp, number: int) -> List[Step]:
         # Card (confirmed): "Remove the corrupted characters from your party. For this
         # mission they will form the enemy deck."
         steps.append({"kind": "corrupted_leave", "label": "Friends turned foe: the corrupted characters leave the party"})
+    if number == 11 and not camp.flags.get("vine_ripped"):
+        # Card (confirmed): "From your corrupted party members, choose one of them that has
+        # a cloak of the Eternal Vine. Rip up the chosen card." The reborn Evergreen is Esme
+        # (6), so Esme, the 6 of warriors, is the cloaked member the app knows; if she is
+        # not corrupted every corrupted card is offered and the player picks the cloaked one.
+        corrupted = P.corrupted_ids(camp.party)
+        options = ["6C"] if "6C" in corrupted else corrupted
+        steps.append({"kind": "choice_rip", "phase": "setup", "options": options,
+                      "label": "A member of the Eternal Vine dies at the machine: rip up one corrupted character"})
     return steps
 
 
@@ -559,7 +599,18 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         steps.append({"kind": "remove_card", "card_id": GORAN_RENEWED["id"],
                       "label": "The floor decays to dust: Gøran and the Arcana fall into the darkness"})
         steps.append({"kind": "away_return", "label": "The infected members return to themselves, corruption halted but not cured"})
+    elif number == 11:
+        # Reward card (confirmed): "Add the reborn Evergreen to your party." Esme, 6, Human
+        # Evergreen (holographic): the Evergreen icon, so all four basic classes, ignoring
+        # immunity. The mission rules add: Gøran's beasts return to the box by the party.
+        steps.append({"kind": "add_card", "card": ESME_REBORN,
+                      "label": "The reborn Evergreen touches down: Esme (6, Evergreen) joins the party"})
     return steps
+
+
+# The reborn Evergreen (mission 11 reward).
+ESME_REBORN: Dict[str, Any] = {"id": "ESME6E", "rank": "6", "suits": ["H", "D", "C", "S"], "value": 6, "name": "Esme",
+                               "subtitle": "Human Evergreen", "flags": ["evergreen", "ignores_immunity"]}
 
 
 # The renewed Gøran (mission 9 reward): the Evergreen icon stands for cleric, bard,
@@ -693,6 +744,20 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
         target = rng.choice(pool)
         P.add_suit(camp.party, target, "M")
         return "%s takes up the mages' studies: gains the Mage class." % P.to_card(P.find(camp.party, target)).label()
+    if kind == "choice_rip":
+        options = [str(x) for x in step.get("options", [])]
+        if not options:
+            camp.flags["vine_ripped"] = True
+            return "No corrupted character wears a cloak of the Eternal Vine; nothing is ripped up."
+        if option is None:
+            raise ValueError("choose the character to rip up")
+        if option not in options:
+            raise ValueError("%s is not one of the choices" % option)
+        c = P.remove_card(camp.party, str(option))
+        if str(option) in camp.corrupted:
+            camp.corrupted.remove(str(option))
+        camp.flags["vine_ripped"] = True
+        return "%s dies at the machine: the card is ripped up." % (P.to_card(c).label() if c else option)
     if kind == "corrupted_leave":
         moved = []
         for cid in P.corrupted_ids(camp.party):
