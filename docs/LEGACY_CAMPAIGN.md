@@ -309,8 +309,8 @@ and three reward cards. The card texts are kept out of this public repository; s
 private lore overlay described in regicide/campaign/lore.py.
 
 **Reward cards, in order:**
-1. "Open pack C and corrupt a character in your party." The player chooses the
-   character; the rules of pack C (which characters qualify) are still to be read.
+1. "Open pack C and corrupt a character in your party." Random in the app (pack C
+   section).
 2. "Add the High Arcana to your party." The High Arcana: strength 25, subtitle "Elf
    Mage", no class icon on the card (so no class ability; to be confirmed).
 3. "Acquire the new relic." Kinfolk Flute, relic, two sides. *Two or more players:*
@@ -322,8 +322,8 @@ private lore overlay described in regicide/campaign/lore.py.
    While forming a Kinfolk Attack you may play cards from here as though they were from
    your hand."
 
-**Engine status:** mission 1 is marked verified. The corruption is a player choice in the
-app (candidates still follow the fan constraints until pack C is read). The flute's
+**Engine status:** mission 1 is marked verified. The corruption is random (pack C in a
+themeless deck, see the Pack C section). The flute's
 multiplayer side is implemented as the engine's first "decide" phase: after the active
 player forms an attack that could be kinfolk (equal strengths, no companion, beast or
 Jester) the other players are asked in clockwise order from the attacker's left; each may
@@ -931,6 +931,33 @@ in; the mission rules (banished-top into the zone, zone strength and immunity, b
 zone + enemy + discard pile, exact-kill skip, the restored relic and the corrupted-card
 rule) are to be built. All twelve missions' cards are now transcribed.
 
+## Pack C, corruption (confirmed, transcribed from the owner's photos)
+
+**C card:** story text ("Corruption is as old as the land itself...").
+
+**Corruption rules card.** To corrupt a card: 1. Take the race cards in this box,
+shuffle them and reveal one. Set aside all characters from your party with that race.
+2. Take the feature cards in this box, shuffle them and reveal one. From the characters
+you set aside in 1, choose one that has the feature in their image. 3. Take the chosen
+character, remove its sleeve and put it in a corrupted sleeve. This is now a corrupted
+card. 4. Since the selected race and feature cards can't be used again, do not return
+them to the corruption box. Return the rest of the unselected race and feature cards to
+the corruption box.
+
+**Race cards** ("First, find all the Dwarves..."): one per race, and races go by
+strength (gnomes 2, halflings 3, dwarves 4, avions 5, humans 6, elves 7, feltrix 8,
+drakonids 9), so the eight corruptions of the campaign are one of each strength 2 to 9,
+as mission 10's enemy stat card shows. **Feature cards** ("Then corrupt one that has a
+badge"): a picture detail that narrows the set-aside characters to one or a few.
+
+**Owner's decision:** the app plays a themeless deck, so corruption is simply random:
+a random strength among 2 to 9 not yet corrupted, then a random eligible card of that
+strength. Eligible cards have a class, are not corrupted or restored, are not special
+characters (Gøran, Myla, the Evergreens, beasts, pilgrims, mercenaries) and are not
+class-deck visitors that leave after the mission. Corruption is a sleeve, not a sticker,
+so a corrupted card still counts as "no stickers" for mission 9's mage student. Mission
+11's rip-up takes the corrupted 6, whatever its class, since the reborn Evergreen is a 6.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
@@ -1016,7 +1043,7 @@ Numbers are attack / health.
 2. **Shadow and Mist** (Umbra Cavern; fan name: The Hydra Assault) — **confirmed:** 6
    Hydra Heads 10/20, each with a distinct pair of classes (immune to both). Imperfect
    kill: face down to the bottom of the enemy deck. Exact kill: banished. Rewards: open
-   pack C and corrupt another character (player's choice); reveal the first 3, 5, 7 and 9
+   pack C and corrupt another character (random); reveal the first 3, 5, 7 and 9
    from the shuffled party and give each one class sticker (each class once, never the
    card's own class; the player assigns). No card removes the High Arcana here.
 3. **Lessons in Flames** (Magic Academy; fan name: The Mage Tower) — **confirmed:** the
@@ -1024,7 +1051,7 @@ Numbers are attack / health.
    Mages. End of each turn (skipped on a kill): top reserve card face up into the
    mission zone. Enemies are immune to every class in the zone. Enemy defeated: banish it
    with the whole zone; exact kill: rescue one zone card to the discard pile first.
-   Rewards: open pack C and corrupt another character (player's choice); open pack F
+   Rewards: open pack C and corrupt another character (random); open pack F
    (contents to be read; assumed to be the Mage class deck A to 10).
 4. **Fusion of Darkness** (Biology Laboratory; fan name: The Gauntlet) — **confirmed:**
    twelve corrupted experiments, Phase I 10/20, Phase II 15/30, Phase III 20/40, one per
@@ -1050,7 +1077,7 @@ Numbers are attack / health.
    play into the zone; exact kill: one zone card except Myla to the discard pile; then
    team damage equal to the zone's strength (Myla's 7 included), discarded one card at a
    time by any players; a Guardian in the killing attack prevents it. Rewards: Gøran
-   gains Paladin; corrupt another character (player's choice); Azure Emblem; Bronze,
+   gains Paladin; corrupt another character (random); Azure Emblem; Bronze,
    Snow or Shadow (the 8s of cleric, bard, warrior) gains Guardian (player's choice);
    Runo (3 Guardian) stays, the other Guardians leave.
 7. **Tales of Rebirth** (Well of Tears; fan name: The Pilgrimage) — **confirmed:** four
@@ -1060,7 +1087,7 @@ Numbers are attack / health.
    the same strength (once per card). Pilgrims never leave players' hands. Enemy
    defeated: discard reserve cards equal to the zone's total strength, discard the zone,
    banish the enemy; exact kill: banish one zone card first. Rewards: Gøran gains
-   Cleric; corrupt another character (player's choice); Alantha (7 Druid) stays, the
+   Cleric; corrupt another character (random); Alantha (7 Druid) stays, the
    other Druids leave; Glamelyn, Herbod or Dhonatir (the 4s) gains Druid (player's
    choice). Pack P contents still to be read (fan: 4 × 2 to 7 plus one Ace).
 8. **Winds of Chaos** (Heaven's Edge; fan name: The Troll Bridge) — **confirmed:** four
@@ -1071,7 +1098,7 @@ Numbers are attack / health.
    a time, each exactly one higher than the zone's highest; a 10 clears the zone to the
    discard pile, lets you banish any discards, and heals the rest under the reserve (no
    more moves afterwards). Exact kill: any discard pile card to the top of the reserve.
-   Rewards: Gøran gains Bard; corrupt another character (player's choice); Druldox (9
+   Rewards: Gøran gains Bard; corrupt another character (random); Druldox (9
    Chanter) stays, the other Chanters leave; Sprinkle, Dinky or Wicket (the 2s) gains
    Chanter (player's choice); the puppy goes back in the box.
 9. **Hope From Ashes** (Twinseed Temple; fan name: The Rescue) — **confirmed:** Gøran, the

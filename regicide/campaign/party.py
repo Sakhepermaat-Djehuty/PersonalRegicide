@@ -76,46 +76,43 @@ def restored_ids(party: Sequence[CardDict]) -> List[str]:
     return [str(c["id"]) for c in party if "restored" in c.get("flags", [])]
 
 
-def corruption_candidates(party: Sequence[CardDict]) -> List[str]:
-    """Party cards that may be corrupted now (the reward card says "corrupt a character
-    in your party": the player chooses).
+TEMPORARY_IDS = ("3R", "7R", "9R", "5G", "7G", "9G", "3U", "5U", "9U", "3T", "5T", "7T")
 
-    The constraints follow the fan implementation until pack C's corruption rules card
-    is read: basic cards of strength 2–9 only, never repeat a strength, never the same
-    class more than twice, and the 6 is always Esme, the 6 of Warriors (clubs), with one
-    clubs slot kept free for her until she is corrupted.
+
+def corruption_candidates(party: Sequence[CardDict]) -> List[str]:
+    """Party cards that may be corrupted now.
+
+    Pack C (confirmed): a race card is drawn (races go by strength: gnomes 2, halflings
+    3, dwarves 4, avions 5, humans 6, elves 7, feltrix 8, drakonids 9) and discarded, then
+    a feature card picks one character of that race. The owner plays a themeless deck, so
+    the app simply corrupts a random card: one strength among 2 to 9 that has not been
+    corrupted yet, then a random card of that strength. Eligible cards have a class, are
+    not already corrupted or restored, are not special characters (Gøran, Myla, the
+    Evergreens, beasts, pilgrims, mercenaries) and are not class-deck visitors that leave
+    after the mission.
     """
-    used_ranks = set()
-    suit_count: Dict[str, int] = {}
-    for c in party:
-        if "corrupted" in c.get("flags", []):
-            used_ranks.add(c["rank"])
-            for s in c.get("suits", []):
-                suit_count[s] = suit_count.get(s, 0) + 1
-    six_done = "6" in used_ranks
+    used_ranks = set(c["rank"] for c in party if "corrupted" in c.get("flags", []))
     candidates = []
     for c in party:
-        if c.get("name") or "corrupted" in c.get("flags", []):
+        flags = c.get("flags", [])
+        if c["rank"] not in ("2", "3", "4", "5", "6", "7", "8", "9") or c["rank"] in used_ranks:
             continue
-        if c["rank"] not in ("2", "3", "4", "5", "6", "7", "8", "9"):
+        if not c.get("suits") or str(c["id"]) in TEMPORARY_IDS:
             continue
-        suits = c.get("suits", [])
-        if not suits or suits[0] not in BASIC_SUITS:
-            continue
-        if c["rank"] in used_ranks:
-            continue
-        if c["rank"] == "6" and suits[0] != CLUBS:
-            continue
-        limit = 1 if (suits[0] == CLUBS and not six_done and c["rank"] != "6") else 2
-        if suit_count.get(suits[0], 0) >= limit:
+        if any(f in flags for f in ("corrupted", "restored", "evergreen", "beast", "pilgrim", "mercenary")):
             continue
         candidates.append(str(c["id"]))
     return sorted(candidates)
 
 
 def pick_corruption_target(party: Sequence[CardDict], rng: random.Random) -> Optional[str]:
-    """A random corruption candidate (used by tests and bots); None when nothing qualifies."""
+    """A random corruption: first a strength (the race card), then a card of that strength
+    (the feature card). None when nothing qualifies."""
     candidates = corruption_candidates(party)
     if not candidates:
         return None
-    return rng.choice(candidates)
+    by_rank: Dict[str, List[str]] = {}
+    for cid in candidates:
+        by_rank.setdefault(find(party, cid)["rank"], []).append(cid)
+    rank = rng.choice(sorted(by_rank))
+    return rng.choice(sorted(by_rank[rank]))

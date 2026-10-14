@@ -8,6 +8,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 
 import fakeui  # noqa: E402
+from regicide.campaign import party as P  # noqa: E402
 
 fakeui.install()
 import ui  # noqa: E402
@@ -210,24 +211,9 @@ def test_campaign_flow_win_then_mission2(app):
     assert app.campaign.mission == 2 and "flute" in app.campaign.relics
     assert "m1_outcome" in app.campaign.lore_seen and "m2_intro" not in app.campaign.lore_seen
     _tap_button(app, "Game menu")
-    # the corruption is a player choice: it blocks the next mission until made
-    with pytest.raises(KeyError):
-        ui.button(app, "Next mission: start")
-    reward = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Reward:"))]
-    assert reward and "corrupt" in reward[0].title
-    ui.tap(app, *ui.root_point(app, reward[0]))
-    from app.widgets import CardView
-    confirm = ui.button(app, "Confirm")
-    assert confirm and not confirm.enabled
-    cards = ui.find(app, lambda v: isinstance(v, CardView))
-    options = app.campaign.pending_choice()["options"]
-    assert {v.card.id for v in cards} == set(options)
-    ui.tap(app, *ui.root_point(app, cards[0]))
-    assert ui.button(app, "Confirm").enabled
-    chosen = cards[0].card.id
-    _tap_button(app, "Confirm")
-    assert app.campaign.corrupted == [chosen] and not app.campaign.pending
-    assert store.load_campaign(app.campaign.slot).corrupted == [chosen]
+    # the corruption is random (pack C in a themeless deck): no choice blocks the next mission
+    assert len(app.campaign.corrupted) == 1 and not app.campaign.pending
+    assert store.load_campaign(app.campaign.slot).corrupted == app.campaign.corrupted
     assert ui.button(app, "Next mission: start")
     _tap_button(app, "Next mission: start")
     assert "m2_intro" in app.campaign.lore_seen
@@ -464,7 +450,6 @@ def test_mission2_class_sticker_assignment_screen(app):
     g.enemy.hp = g.enemy.max_hp = 1
     g.play([g.active_player.hand[0]])
     camp.finish_attempt(g)
-    camp.resolve_choice(camp.pending_choice()["options"][0])
     g = camp.start_attempt(seed=32)
     g.castle = []
     for cid in list(g.active_player.hand):
@@ -477,16 +462,9 @@ def test_mission2_class_sticker_assignment_screen(app):
     camp.finish_attempt(g)
     app.save_campaign()
     app.show(CampaignScreen(app))
-    # first the corruption choice
-    reward = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Reward:"))]
-    assert reward and "corrupt" in reward[0].title
-    ui.tap(app, *ui.root_point(app, reward[0]))
+    assert len(app.campaign.corrupted) == 2      # both corruptions were random, no choice
     from app.widgets import CardView
-    cards = ui.find(app, lambda v: isinstance(v, CardView))
-    ui.tap(app, *ui.root_point(app, cards[0]))
-    _tap_button(app, "Confirm")
-    assert len(app.campaign.corrupted) == 2
-    # then the class stickers
+    # the class stickers
     reward = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Reward:"))]
     assert reward and "stickers" in reward[0].title
     ui.tap(app, *ui.root_point(app, reward[0]))
@@ -730,34 +708,40 @@ def test_emblem_place_handover_flow_for_two_players(app):
     assert g.enemies_defeated == 1 and "5M" in g.banished and "7C" in g.banished
     assert g.phase == PHASE_PLAY and g.active == 0 and gs.overlay is None
 
-def test_mission11_setup_choice_shows_before_the_first_attempt(app, monkeypatch):
+def test_mission_setup_choices_are_offered_before_the_first_attempt(app, monkeypatch):
+    """Setup cards that need a decision appear as a 'Mission setup' step (none of the
+    twelve missions needs one now that corruption is random, so a fake step is queued)."""
     from app.screens import CampaignScreen
-    from regicide.campaign import party as P
+    from regicide.campaign import missions as M
     from regicide.campaign.missions import mission as mission_info
-    monkeypatch.setitem(mission_info(11), "playable", True)   # setup choices are queued for playable missions
+    monkeypatch.setitem(mission_info(11), "playable", True)
+    real = M.start_steps
+
+    def fake_steps(camp, number):
+        steps = real(camp, number)
+        if number == 11 and not camp.flags.get("fake_done"):
+            steps.append({"kind": "choice_suit", "phase": "setup", "suit": "M", "options": ["2H", "2S"],
+                          "label": "test: a setup sticker"})
+        return steps
+    monkeypatch.setattr(M, "start_steps", fake_steps)
     app.new_campaign(1, ["Solo"])
     camp = app.campaign
     camp.mission = 11
     camp.completed = list(range(1, 11))
-    for cid in ("2S", "6C"):
-        P.add_flag(camp.party, cid, "corrupted")
-        camp.corrupted.append(cid)
     app.save_campaign()
     app.show(CampaignScreen(app))
-    # the setup card's choice is queued and offered instead of the start button
     with pytest.raises(KeyError):
         ui.button(app, "Next mission: start")
     setup = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Mission setup:"))]
-    assert setup and "rip up" in setup[0].title
+    assert setup and "sticker" in setup[0].title
     ui.tap(app, *ui.root_point(app, setup[0]))
     texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
     assert any(t == "Mission setup" for t in texts)
     from app.widgets import CardView
     cards = ui.find(app, lambda v: isinstance(v, CardView))
-    assert [v.card.id for v in cards] == ["6C"]
-    ui.tap(app, *ui.root_point(app, cards[0]))
+    assert [v.card.id for v in cards] == ["2H", "2S"]
+    ui.tap(app, *ui.root_point(app, cards[1]))
+    camp.flags["fake_done"] = True       # the "card" is used up once resolved
     _tap_button(app, "Confirm")
-    assert P.find(app.campaign.party, "6C") is None and app.campaign.flags.get("vine_ripped")
-    assert not app.campaign.pending
-    # nothing is queued again: the start button is back
+    assert P.find(app.campaign.party, "2S")["suits"] == ["S", "M"] and not app.campaign.pending
     assert ui.button(app, "Next mission: start")

@@ -69,26 +69,13 @@ def test_mission1_win_applies_rewards_and_unlocks_mission2():
     assert "flute" in c.relics
     arc = P.find(c.party, "ARC25")
     assert arc is not None and arc["name"] == "High Arcana" and arc["suits"] == []
-    # reward card: "Open pack C and corrupt a character in your party" -> the player chooses
-    assert c.corrupted == [] and len(c.pending) == 1 and res["pending"][0]["kind"] == "choice_corrupt"
-    step = c.pending_choice()
-    options = step["options"]
-    assert options and all(P.find(c.party, o)["rank"] in "23456789" for o in options)
-    assert "6H" not in options and "6C" in options  # the 6 is always Esme (clubs)
-    with pytest.raises(RuntimeError):
-        c.start_attempt(seed=3)  # must choose first
-    with pytest.raises(ValueError):
-        c.resolve_choice("10S")  # not an option
-    line = c.resolve_choice("4H")
-    assert "corrupted" in line and c.corrupted == ["4H"] and "corrupted" in P.find(c.party, "4H")["flags"]
-    assert not c.pending
-    # the choice survives a save round trip while pending
-    c2 = CampaignState.new(1, ["Solo"], seed=2)
-    g2 = c2.start_attempt(seed=2)
-    win_quickly(g2)
-    c2.finish_attempt(g2)
-    c3 = CampaignState.from_dict(c2.to_dict())
-    assert c3.pending_choice()["options"] == c2.pending_choice()["options"]
+    # reward card: "Open pack C and corrupt a character in your party" -> random (pack C's
+    # race and feature draws collapse to a random strength and card in a themeless deck)
+    assert len(c.corrupted) == 1 and not c.pending
+    corrupted = P.find(c.party, c.corrupted[0])
+    assert "corrupted" in corrupted["flags"] and corrupted["rank"] in "23456789"
+    assert any("corrupted" in line for line in c.log)
+    assert res["rewards"] and any("corrupted" in line for line in res["rewards"])
 
 
 def test_mission2_hydras_recycle_on_imperfect_kill_and_banish_on_exact():
@@ -666,22 +653,31 @@ def test_mission_table_is_complete():
     assert all(m["title"] and m["summary"] for m in MISSIONS)
 
 
-def test_corruption_targets_respect_esme_and_class_limits():
+def test_corruption_is_random_one_strength_each_and_skips_special_cards():
     rng = random.Random(1)
     party = P.starting_party()
+    P.add_card(party, dict(M.GORAN))                       # no class: never corrupted
+    P.add_card(party, dict(M.ASH))                         # beast: never
+    P.add_card(party, {"id": "5R", "rank": "5", "suits": ["R"], "value": 5, "name": "Harore", "flags": []})
+    P.add_card(party, {"id": "3R", "rank": "3", "suits": ["R"], "value": 3, "name": "Oaken", "flags": []})
+    cands = P.corruption_candidates(party)
+    assert "5R" in cands and "3R" not in cands             # Harore stays, Oaken is a visitor
+    assert "GOR8" not in cands and "B_ASH" not in cands and "AH" not in cands and "10S" not in cands
     picked = []
     for _ in range(8):
-        t = P.pick_corruption_target(party, rng)
-        assert t is not None
-        P.add_flag(party, t, "corrupted")
-        picked.append(t)
-    ranks = [P.find(party, t)["rank"] for t in picked]
+        tgt = P.pick_corruption_target(party, rng)
+        assert tgt is not None
+        P.add_flag(party, tgt, "corrupted")
+        picked.append(tgt)
+    ranks = [P.find(party, x)["rank"] for x in picked]
     assert len(set(ranks)) == 8 and set(ranks) == set("23456789")
-    six = [t for t in picked if P.find(party, t)["rank"] == "6"][0]
-    assert P.find(party, six)["suits"] == ["C"]  # Esme
-    for s in "HDCS":
-        assert sum(1 for t in picked if P.find(party, t)["suits"][0] == s) <= 2
-    assert P.pick_corruption_target(party, rng) is None
+    assert P.pick_corruption_target(party, rng) is None    # one of each strength, then no more
+    # every strength is drawn with equal chance, however many cards share it
+    counts = {}
+    for seed in range(300):
+        tgt = P.pick_corruption_target(P.starting_party(), random.Random(seed))
+        counts[P.find(P.starting_party(), tgt)["rank"]] = counts.get(P.find(P.starting_party(), tgt)["rank"], 0) + 1
+    assert set(counts) == set("23456789") and min(counts.values()) > 15
 
 
 def test_mercenary_costs_match_the_cards():
@@ -706,7 +702,7 @@ def win_exactly(g: Game) -> None:
     raise AssertionError("no card can deal damage")
 
 
-def test_mission2_rewards_are_corruption_choice_and_class_sticker_assignment():
+def test_mission2_rewards_are_random_corruption_and_class_sticker_assignment():
     c = CampaignState.new(1, ["Solo"], seed=21)
     g = c.start_attempt(seed=21)
     win_quickly(g)
@@ -723,12 +719,10 @@ def test_mission2_rewards_are_corruption_choice_and_class_sticker_assignment():
     # no mission 2 card removes the High Arcana
     assert P.find(c.party, "ARC25") is not None
     kinds = [s["kind"] for s in c.pending]
-    assert kinds == ["choice_corrupt", "choice_classes"]
-    # second corruption: a different strength than the first
-    first = c.corrupted[0]
-    opts = c.pending_choice()["options"]
-    assert first not in opts and all(P.find(c.party, o)["rank"] != P.find(c.party, first)["rank"] for o in opts)
-    c.resolve_choice(opts[0])
+    assert kinds == ["choice_classes"]
+    # second corruption: random, a different strength than the first
+    assert len(c.corrupted) == 2
+    assert P.find(c.party, c.corrupted[0])["rank"] != P.find(c.party, c.corrupted[1])["rank"]
     step = c.pending_choice()
     cards = step["cards"]
     assert [P.find(c.party, x)["rank"] for x in cards] == ["3", "5", "7", "9"]
@@ -926,7 +920,7 @@ def test_mission5_setup_and_rewards_follow_the_cards():
     # rewards
     steps = M.reward_steps(c, 5, rng)
     kinds = [s["kind"] for s in steps]
-    assert kinds == ["add_suit", "add_card", "remove_card", "remove_card", "remove_card", "choice_corrupt", "choice_suit"]
+    assert kinds == ["add_suit", "add_card", "remove_card", "remove_card", "remove_card", "corrupt_random", "choice_suit"]
     for s in steps:
         if s["kind"].startswith("choice"):
             c.pending.append(s)
@@ -935,7 +929,6 @@ def test_mission5_setup_and_rewards_follow_the_cards():
     assert P.find(c.party, "GOR8")["suits"] == ["C"]
     assert P.find(c.party, "MYLA7")["name"] == "Myla" and P.find(c.party, "MYLA7")["suits"] == []
     assert P.find(c.party, "5R") is not None and all(P.find(c.party, x) is None for x in ("3R", "7R", "9R"))
-    c.resolve_choice(c.pending_choice()["options"][0])
     step = c.pending_choice()
     assert step["kind"] == "choice_suit" and step["options"] == ["6H", "6D", "6S"]
     with pytest.raises(ValueError):
@@ -963,7 +956,7 @@ def test_mission6_setup_and_rewards_follow_the_cards():
     assert [e["name"] for e in enemies] == ["Guardian Statue"] * 4 + ["Evergreen Statue"] * 4
     assert (enemies[0]["attack"], enemies[0]["health"], enemies[-1]["attack"], enemies[-1]["health"]) == (15, 30, 20, 40)
     steps = M.reward_steps(c, 6, rng)
-    assert [s["kind"] for s in steps] == ["add_suit", "choice_corrupt", "relic", "choice_suit", "remove_card", "remove_card", "remove_card"]
+    assert [s["kind"] for s in steps] == ["add_suit", "corrupt_random", "relic", "choice_suit", "remove_card", "remove_card", "remove_card"]
     for s in steps:
         if s["kind"].startswith("choice"):
             c.pending.append(s)
@@ -971,7 +964,6 @@ def test_mission6_setup_and_rewards_follow_the_cards():
             M.apply_step(c, s, rng)
     assert P.find(c.party, "GOR8")["suits"] == ["C", "S"] and "emblem" in c.relics
     assert P.find(c.party, "3G") is not None and all(P.find(c.party, x) is None for x in ("5G", "7G", "9G"))
-    c.resolve_choice(c.pending_choice()["options"][0])
     step = c.pending_choice()
     assert step["kind"] == "choice_suit" and step["options"] == ["8H", "8D", "8C"]
     c.resolve_choice("8C")
@@ -1470,7 +1462,7 @@ def test_mission7_setup_and_rewards_follow_the_cards():
     assert sorted(d["value"] for d in pil) == [1] + sorted([v for v in range(2, 8) for _ in range(4)])
     assert len({d["id"] for d in pil}) == 25
     steps = M.reward_steps(c, 7, rng)
-    assert [s["kind"] for s in steps] == ["add_suit", "choice_corrupt", "remove_card", "remove_card", "remove_card", "choice_suit"]
+    assert [s["kind"] for s in steps] == ["add_suit", "corrupt_random", "remove_card", "remove_card", "remove_card", "choice_suit"]
     for s in steps:
         if s["kind"].startswith("choice"):
             c.pending.append(s)
@@ -1478,7 +1470,6 @@ def test_mission7_setup_and_rewards_follow_the_cards():
             M.apply_step(c, s, rng)
     assert P.find(c.party, "GOR8")["suits"] == ["H"]
     assert P.find(c.party, "7U") is not None and all(P.find(c.party, x) is None for x in ("3U", "5U", "9U"))
-    c.resolve_choice(c.pending_choice()["options"][0])
     step = c.pending_choice()
     assert step["kind"] == "choice_suit" and step["options"] == ["4D", "4C", "4S"]
     c.resolve_choice("4S")
@@ -1506,7 +1497,7 @@ def test_mission8_setup_and_rewards_follow_the_cards():
     names = {d["value"]: d["name"] for d in extra["pilgrims_in_reserve"]}
     assert names[2] == "Traveller" and names[3] == "Follower" and names[4] == "Servant" and names[6] == "Acolyte"
     steps = M.reward_steps(c, 8, rng)
-    assert [s["kind"] for s in steps] == ["add_suit", "choice_corrupt", "remove_card", "remove_card", "remove_card", "choice_suit", "set_flag"]
+    assert [s["kind"] for s in steps] == ["add_suit", "corrupt_random", "remove_card", "remove_card", "remove_card", "choice_suit", "set_flag"]
     for s in steps:
         if s["kind"].startswith("choice"):
             c.pending.append(s)
@@ -1514,7 +1505,6 @@ def test_mission8_setup_and_rewards_follow_the_cards():
             M.apply_step(c, s, rng)
     assert P.find(c.party, "GOR8")["suits"] == ["D"] and c.flags.get("puppy_boxed") is True
     assert P.find(c.party, "9T") is not None and all(P.find(c.party, x) is None for x in ("3T", "5T", "7T"))
-    c.resolve_choice(c.pending_choice()["options"][0])
     step = c.pending_choice()
     assert step["kind"] == "choice_suit" and step["options"] == ["2H", "2C", "2S"]
     c.resolve_choice("2C")
@@ -1568,11 +1558,13 @@ def test_mission9_setup_and_rewards_follow_the_cards():
     stickered = [x for x in c.party if x["rank"] == "4" and "M" in x.get("suits", [])]
     assert len(stickered) == 1 and stickered[0]["id"] != "4D"  # Glamelyn already has a sticker
     assert not c.pending
-    # feltrix: the renewed Gøran (an 8) and a corrupted 8 are never chosen
+    # feltrix: the renewed Gøran (an 8) and stickered 8s are never chosen; a corrupted
+    # sleeve is not a sticker (pack C), so a corrupted 8 may be
     c2 = CampaignState.new(1, ["Solo"], seed=111)
     P.add_card(c2.party, dict(M.GORAN_RENEWED))
     for s in ("H", "D", "C"):
-        P.add_flag(c2.party, "8" + s, "corrupted")
+        P.add_suit(c2.party, "8" + s, "G")
+    P.add_flag(c2.party, "8S", "corrupted")
     c2.pending.append({"kind": "choice_mage_student", "options": ["4", "8"], "label": "x"})
     line = c2.resolve_choice("8")
     assert "8" in line and P.find(c2.party, "8S")["suits"] == ["S", "M"]
@@ -1615,29 +1607,24 @@ def test_mission10_corrupted_party_members_form_the_enemy_deck_and_return():
     assert P.find(c.party, "4D")["suits"] == ["D", "U"]
 
 
-def test_mission11_rip_up_choice_beast_deck_and_reborn_evergreen():
+def test_mission11_rips_up_the_corrupted_six_beast_deck_and_reborn_evergreen():
     c = CampaignState.new(1, ["Solo"], seed=130)
     c.mission = 11
     c.completed = list(range(1, 11))
     P.add_card(c.party, dict(M.ASH))
     c.flags["beasts"] = True
     c.beast = "B_D"
-    for cid in ("2S", "3H", "4D", "5C", "6C", "7S", "8H", "9D"):
+    for cid in ("2S", "3H", "4D", "5C", "6H", "7S", "8H", "9D"):
         P.add_flag(c.party, cid, "corrupted")
         c.corrupted.append(cid)
     rng = random.Random(8)
-    # the setup card needs a choice: Esme (6C) is the known cloaked member
-    with pytest.raises(RuntimeError):
-        c.start_attempt(seed=131)
-    step = c.pending_choice()
-    assert step["kind"] == "choice_rip" and step["phase"] == "setup" and step["options"] == ["6C"]
-    assert c.prepare_mission() and len(c.pending) == 1   # not queued twice
-    with pytest.raises(ValueError):
-        c.resolve_choice("2S")
-    line = c.resolve_choice("6C")
-    assert "ripped up" in line and P.find(c.party, "6C") is None and "6C" not in c.corrupted
-    assert c.flags["vine_ripped"] is True and not c.prepare_mission()
-    assert M.start_steps(c, 11) == []                       # retries ask nothing more
+    # the setup card: the corrupted 6 (any class, corruption is random) is ripped up
+    assert not c.prepare_mission()
+    steps = M.start_steps(c, 11)
+    assert [s["kind"] for s in steps] == ["rip_up"] and steps[0]["card_id"] == "6H"
+    line = M.apply_step(c, steps[0], rng)
+    assert "ripped up" in line and P.find(c.party, "6H") is None and "6H" not in c.corrupted
+    assert c.flags["vine_ripped"] is True and M.start_steps(c, 11) == []
     extra = M.build_setup(c, 11, rng)
     enemies = extra["castle"]
     assert [e["name"] for e in enemies] == ["Justicar"] * 4 + ["Corrupted Evergreen"]
@@ -1646,20 +1633,18 @@ def test_mission11_rip_up_choice_beast_deck_and_reborn_evergreen():
     assert sorted(b["id"] for b in extra["beast_deck"]) == ["B_C", "B_D", "B_H", "B_S"]
     ids = [d["id"] for d in extra["party"]]
     assert "B_D" not in ids and "B_ASH" in ids             # no chosen beast this mission; Ash stays
-    assert P.find(c.party, "6C") is None
     for s in M.reward_steps(c, 11, rng):
         M.apply_step(c, s, rng)
     esme = P.find(c.party, "ESME6E")
     assert esme is not None and esme["value"] == 6 and sorted(esme["suits"]) == ["C", "D", "H", "S"]
     assert "ignores_immunity" in esme["flags"] and "corrupted" not in esme["flags"]
     assert len(c.corrupted) == 7
-    # without Esme corrupted, every corrupted card is offered
+    # no corrupted 6: nothing is ripped up, the flag is still set
     c2 = CampaignState.new(1, ["Solo"], seed=133)
     c2.mission = 11
-    for cid in ("2S", "3H"):
-        P.add_flag(c2.party, cid, "corrupted")
-        c2.corrupted.append(cid)
-    assert c2.prepare_mission() and sorted(c2.pending_choice()["options"]) == ["2S", "3H"]
+    steps = M.start_steps(c2, 11)
+    assert steps[0]["card_id"] is None
+    assert "nobody" in M.apply_step(c2, steps[0], rng) and c2.flags["vine_ripped"]
 
 
 def test_mission12_setup_restores_the_party_and_swaps_the_mother_relic():
