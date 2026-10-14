@@ -643,7 +643,7 @@ def test_random_legacy_games_keep_invariants():
         P.add_flag(c.party, "7D", "corrupted")
         g = c.start_attempt(seed=seed)
         play_out(g, random_policy, rng)
-        ids = g.all_card_ids() + g.extra.get("flute", [])
+        ids = g.all_card_ids()
         assert sorted(ids) == sorted(g.cards)
         assert all(g.cards[x].is_jester for x in g.set_aside)
 
@@ -1278,7 +1278,7 @@ def test_bots_play_out_games_with_mages_and_the_emblem(players):
         g = c.start_attempt(seed=300 + seed)
         play_out(g, greedy_policy if seed % 2 == 0 else random_policy, rng)
         assert g.is_over and g.decision is None
-        assert sorted(g.all_card_ids() + g.extra.get("flute", [])) == sorted(g.cards)
+        assert sorted(g.all_card_ids()) == sorted(g.cards)
         picks += sum(1 for line in g.log if "(Mage)" in line)
         emblem += sum(1 for line in g.log if "Azure Emblem" in line)
     assert picks > 0 and emblem > 0
@@ -1931,7 +1931,7 @@ def test_whistle_decision_survives_a_save_round_trip_and_bots_play_with_it():
             c, g = _beast_game(players=players, seed=430 + seed, relics=["whistle", "flute"], beast="B_H")
             play_out(g, greedy_policy if seed % 2 == 0 else random_policy, rng)
             assert g.is_over and g.decision is None
-            assert sorted(g.all_card_ids() + g.extra.get("flute", [])) == sorted(g.cards)
+            assert sorted(g.all_card_ids()) == sorted(g.cards)
             offers += sum(1 for line in g.log if line.startswith("Scarlet Whistle:"))
     assert offers > 0
 
@@ -2457,7 +2457,7 @@ def test_bots_play_out_missions_4_to_6(number, players):
         policy = greedy_policy if seed % 2 == 0 else random_policy
         play_out(g, policy, rng)
         assert g.is_over and g.decision is None
-        ids = g.all_card_ids() + g.extra.get("flute", [])
+        ids = g.all_card_ids()
         assert len(ids) == len(set(ids)) == len(g.cards)
         for line in g.log:
             for key in ("Reaver:", "Guardian:", "team damage", "mission zone", "top of the discard pile"):
@@ -2489,7 +2489,7 @@ def test_mission3_yield_still_runs_end_of_turn_effects():
     g.yield_turn()
     # the yielding player suffers, then the end of turn puts the top reserve card in the zone
     if g.phase == "suffer":
-        g.suffer(sorted(g.active_player.hand, key=lambda x: -g.cards[x].value)[:3])
+        g.suffer(min_waste_discard(g))
     assert g.mission_zone == ["4H"] and g.active == 1
 
 
@@ -2533,7 +2533,7 @@ def _mission(number, players=1, seed=800, relics=(), beast=None, corrupted=(), e
 
 
 def _ids_everywhere(g):
-    ids = g.all_card_ids() + g.extra.get("flute", [])
+    ids = g.all_card_ids()
     assert len(ids) == len(set(ids)) == len(g.cards), (len(ids), len(set(ids)), len(g.cards))
 
 

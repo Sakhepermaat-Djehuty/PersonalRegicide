@@ -17,7 +17,7 @@ CORRUPTED = ("2S", "3H", "4D", "5C", "6C", "7S", "8H", "9D")
 
 
 def _ids_everywhere(g):
-    ids = g.all_card_ids() + g.extra.get("flute", [])
+    ids = g.all_card_ids()
     assert len(ids) == len(set(ids)) == len(g.cards), (len(ids), len(set(ids)), len(g.cards))
 
 

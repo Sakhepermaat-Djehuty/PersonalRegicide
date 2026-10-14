@@ -1303,7 +1303,8 @@ def test_mission11_beast_hand_pick_and_mission12_banish_order_overlay(app):
     gs.refresh(after_action=False)
     gs.hand.set_selection(["AS"])
     _tap_button(app, "Play")
-    gs.hand.set_selection(["9S", "8S"])
+    # 9 damage after the ace's shield: 8 then 9 is legal one at a time (9 then 8 is not)
+    gs.hand.set_selection(["8S", "9S"])
     _tap_button(app, "Discard")
     assert g.phase == PHASE_DECIDE and g.decision["kind"] == "beast_discard" and gs.overlay is None
     assert gs.right_btn.title == "Discard" and not gs.right_btn.enabled and gs.left_btn.title == "No pass" and not gs.left_btn.enabled
