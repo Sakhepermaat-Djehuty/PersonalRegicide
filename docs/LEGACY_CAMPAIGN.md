@@ -575,6 +575,60 @@ the zone, the move-to-zone choice, team damage discarded by any players, Guardia
 prevention), the Guardian ability and both sides of the Azure Emblem are being added
 with the Mage work.
 
+## Mission 7, Tales of Rebirth (confirmed, transcribed from the owner's photos)
+
+**Location card:** Well of Tears (a lake village under a great metal spider, QR code;
+map piece on the back with the well marked by a cross).
+
+**Setup card.** "Add the four Druids to your party": Tolman (3, Halfling Druid), a 5
+(Avion Druid), Alantha (7, Elf Druid) and a 9 (Drakonid Druid), all of the Druid class
+(red feather icon).
+
+**Enemy stats card:** Shoal 10 / 20, Deep 15 / 30, Abyssal 20 / 40; one pondkin of each
+class per tier, twelve enemies. (Whether they sit in corrupted sleeves was not visible on
+the stat card; an enemy card photo would settle it.)
+
+**Mission rules card (front).** *Setup:* open pack P. Shuffle the pilgrims and place
+them in a face-down pilgrim deck in the mission zone. *Start of turn:* place a card from
+the top of the pilgrim deck face up in the mission zone. When a card enters play (placed
+on your playmat), if it matches the strength of a pilgrim in the mission zone, you may
+banish that pilgrim (once per card). Pilgrims may never leave players' hands (for this
+mission only).
+
+**Rules continued.** *Enemy defeated:* put a number of cards from the top of the reserve
+deck into the discard pile equal to the total strength of all cards in the mission zone.
+Then move all cards from the mission zone to the discard pile and banish the enemy. If
+the enemy was dealt exact damage you may first choose one card in the mission zone and
+move it to the banished pile. *Example:* mission zone Follower (3, halfling pilgrim),
+Acolyte (6, human pilgrim), Follower (3), Follower (3); two 3s are played, so two
+3-strength pilgrims are banished.
+
+**Rules summary card:** Start of turn: flip pilgrim into mission zone. Banish pilgrims
+from the mission zone if they match the strength of cards you play. Pilgrims may never
+leave players' hands. Enemy defeated: discard cards from the reserve equal to total
+strength in the mission zone; discard mission zone and banish enemy; exact kill: banish
+one card in mission zone.
+
+**Pack P (pilgrims):** not yet photographed. The card example shows 3 Followers and a 6
+Acolyte; the fan transcription says 25 cards, four each of 2 to 7 plus one Ace (the
+animal pilgrim), no class. The app uses that until the pack is read.
+
+**Story cards:** intro (the driftwood village, the metal spider, trapped pilgrims, the
+pondkin) and outcome (Gøran reborn on the island, the afflicted refuse the cure, on to
+Heaven's Edge); texts in the private lore overlay only.
+
+**Reward cards, in order:**
+1. "Add a Cleric sticker to Gøran."
+2. "Open pack C and corrupt another character in your party." Player's choice.
+3. "Alantha (7 Druid) remains in your party. Remove the other three Druids from your
+   party and return them to the mission 7 box."
+4. "Choose either Glamelyn (4 bard), Herbod (4 warrior) or Dhonatir (4 paladin), then
+   put a Druid sticker on them." Player's choice.
+
+**Engine status:** data, setup steps and rewards are in; the mission rules (pilgrim
+deck, matching banishes, pilgrims stuck in hands, the reserve discard at defeat) and the
+Druid ability are to be built.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
@@ -693,13 +747,16 @@ Numbers are attack / health.
    gains Paladin; corrupt another character (player's choice); Azure Emblem; Bronze,
    Snow or Shadow (the 8s of cleric, bard, warrior) gains Guardian (player's choice);
    Runo (3 Guardian) stays, the other Guardians leave.
-7. **Tales of Rebirth** (fan name: The Pilgrimage; Well of Tears) — standard royals (corrupted). Druids 3/5/7/9 join. A 25-card
-   pilgrim deck (four each of 2–7 plus one Ace, no suits). Start of turn: top pilgrim to
-   the mission zone. Playing a card banishes a pilgrim of the same value. Pilgrims in
-   hand are dead weight this mission. Kill: move top tavern cards to the discard equal to
-   the zone's total, then the zone to the discard, banish the enemy; perfect kill: banish
-   one zone card first. Reward: Druid 7 stays; choose a 4 (♦♠♣) to get the Druid suit;
-   Goran gains ♥; corrupt a card.
+7. **Tales of Rebirth** (Well of Tears; fan name: The Pilgrimage) — **confirmed:** four
+   Druids (3, 5, 7, 9) join for the mission. 4 Shoal 10/20, 4 Deep 15/30, 4 Abyssal
+   20/40 pondkin, one per class. Pack P's pilgrims form a face-down deck in the zone;
+   start of turn: one pilgrim face up. A card entering play may banish a zone pilgrim of
+   the same strength (once per card). Pilgrims never leave players' hands. Enemy
+   defeated: discard reserve cards equal to the zone's total strength, discard the zone,
+   banish the enemy; exact kill: banish one zone card first. Rewards: Gøran gains
+   Cleric; corrupt another character (player's choice); Alantha (7 Druid) stays, the
+   other Druids leave; Glamelyn, Herbod or Dhonatir (the 4s) gains Druid (player's
+   choice). Pack P contents still to be read (fan: 4 × 2 to 7 plus one Ace).
 8. **Winds of Chaos** (fan name: The Troll Bridge; Heaven's Edge) — 6 Trolls 10/20 then 6 Wyverns 25/50, dual-suited. Drums
    3/5/7/9 join; the pilgrim Ace starts in the zone. Enemy attack + total of non-pilgrim
    zone cards. During cleanup you may move played cards into the zone in strictly

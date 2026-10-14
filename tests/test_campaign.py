@@ -976,3 +976,37 @@ def test_mission6_setup_and_rewards_follow_the_cards():
     assert step["kind"] == "choice_suit" and step["options"] == ["8H", "8D", "8C"]
     c.resolve_choice("8C")
     assert P.find(c.party, "8C")["suits"] == ["C", "G"] and not c.pending
+
+
+def test_mission7_setup_and_rewards_follow_the_cards():
+    c = CampaignState.new(1, ["Solo"], seed=90)
+    c.mission = 7
+    c.completed = [1, 2, 3, 4, 5, 6]
+    P.add_card(c.party, dict(M.GORAN))
+    rng = random.Random(4)
+    for step in M.start_steps(c, 7):
+        M.apply_step(c, step, rng)
+    assert [P.find(c.party, x)["name"] for x in ("3U", "5U", "7U", "9U")] == ["Tolman", "Avion Druid", "Alantha", "Drakonid Druid"]
+    assert M.start_steps(c, 7) == []
+    extra = M.build_setup(c, 7, rng)
+    enemies = extra["castle"]
+    assert [e["name"] for e in enemies] == ["Shoal Pondkin"] * 4 + ["Deep Pondkin"] * 4 + ["Abyssal Pondkin"] * 4
+    assert (enemies[0]["attack"], enemies[0]["health"], enemies[-1]["attack"], enemies[-1]["health"]) == (10, 20, 20, 40)
+    pil = extra["pilgrims"]
+    assert len(pil) == 25 and all("pilgrim" in d["flags"] and d["suits"] == [] for d in pil)
+    assert sorted(d["value"] for d in pil) == [1] + sorted([v for v in range(2, 8) for _ in range(4)])
+    assert len({d["id"] for d in pil}) == 25
+    steps = M.reward_steps(c, 7, rng)
+    assert [s["kind"] for s in steps] == ["add_suit", "choice_corrupt", "remove_card", "remove_card", "remove_card", "choice_suit"]
+    for s in steps:
+        if s["kind"].startswith("choice"):
+            c.pending.append(s)
+        else:
+            M.apply_step(c, s, rng)
+    assert P.find(c.party, "GOR8")["suits"] == ["H"]
+    assert P.find(c.party, "7U") is not None and all(P.find(c.party, x) is None for x in ("3U", "5U", "9U"))
+    c.resolve_choice(c.pending_choice()["options"][0])
+    step = c.pending_choice()
+    assert step["kind"] == "choice_suit" and step["options"] == ["4D", "4C", "4S"]
+    c.resolve_choice("4S")
+    assert P.find(c.party, "4S")["suits"] == ["S", "U"] and not c.pending
