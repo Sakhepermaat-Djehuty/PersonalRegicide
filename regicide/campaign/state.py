@@ -32,6 +32,7 @@ class CampaignState:
         self.losses: Dict[str, int] = {}     # mission -> losses
         self.coins = 0
         self.m_box_opened = False
+        self.beast: Optional[str] = None     # Gøran's beast chosen for the next attempt (mission 4 reward)
         self.mercenaries: List[str] = []     # hired for the current mission (kept across failed attempts)
         self.swaps_allowed = False           # same-cost swaps are allowed after a failure, until the next attempt
         self.pending: List[dict] = []        # reward steps awaiting a choice
@@ -53,7 +54,7 @@ class CampaignState:
             "mission": self.mission, "completed": list(self.completed),
             "attempts": dict(self.attempts), "losses": dict(self.losses), "coins": self.coins,
             "m_box_opened": self.m_box_opened, "mercenaries": list(self.mercenaries),
-            "swaps_allowed": self.swaps_allowed,
+            "swaps_allowed": self.swaps_allowed, "beast": self.beast,
             "pending": [dict(s) for s in self.pending], "log": list(self.log),
             "reveal_all": self.reveal_all, "seed": self.seed, "rng_calls": self.rng_calls,
             "finished": self.finished,
@@ -210,6 +211,24 @@ class CampaignState:
             self.log.append("Pack M opened: mercenaries are for hire between attempts.")
             self.reveal_lore("pack_m")
         return {"won": False, "coins": self.coins, "earned": earned, "m_box_opened_now": opened}
+
+    # ------------------------------------------------------------------ Gøran's beasts
+    def beasts_available(self) -> List[dict]:
+        """The beasts that may be included in the next attempt (after mission 4)."""
+        if not self.flags.get("beasts"):
+            return []
+        return [dict(b) for b in M.BEASTS]
+
+    def set_beast(self, beast_id: Optional[str]) -> None:
+        """Rulebook p.7: for each attempt you may choose one of Gøran's beasts and include
+        it in your reserve; after each attempt you may swap it for one of the others."""
+        if beast_id is not None:
+            if not self.flags.get("beasts"):
+                raise ValueError("Gøran's beasts are not with the party yet")
+            if M.beast_by_id(beast_id) is None:
+                raise ValueError("unknown beast %s" % beast_id)
+        self.beast = beast_id
+        self.touch()
 
     # ------------------------------------------------------------------ reward choices
     def pending_choice(self) -> Optional[dict]:
