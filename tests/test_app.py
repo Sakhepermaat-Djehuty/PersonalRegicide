@@ -270,6 +270,12 @@ def test_campaign_loss_opens_mercenary_camp(app):
     # after a failure the hired mercenary may be swapped for another of the same cost
     _tap_button(app, "Swap")
     assert ui.button(app, "Cancel")
+    assert not ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Hire")
+    # cancel returns to the camp with nothing changed
+    _tap_button(app, "Cancel")
+    assert app.campaign.mercenaries == [hired] and app.current.swapping is None
+    assert ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Hire")
+    _tap_button(app, "Swap")
     takes = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Take")]
     assert takes
     ui.tap(app, *ui.root_point(app, takes[0]))
@@ -526,3 +532,21 @@ def test_mission2_class_sticker_assignment_screen(app):
         suits = P.find(app.campaign.party, cid)["suits"]
         assert len(suits) == 2 and names[suits[1]] == title
     assert store.load_campaign(app.campaign.slot).pending == []
+
+
+def test_swap_button_only_when_a_same_cost_alternative_exists(app):
+    from app.screens import MercenaryScreen
+    app.new_campaign(1, ["Solo"])
+    camp = app.campaign
+    camp.m_box_opened = True
+    camp.coins = 20
+    camp.swaps_allowed = True
+    camp.hire("merc_jester_1")
+    camp.hire("merc_jester_2")  # both cost-5 mercenaries hired: nothing to swap them for
+    camp.hire("merc_12H")
+    app.show(MercenaryScreen(app))
+    swaps = ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Swap")
+    assert len(swaps) == 1
+    camp.swaps_allowed = False  # swaps close once an attempt starts
+    app.show(MercenaryScreen(app))
+    assert not ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Swap")

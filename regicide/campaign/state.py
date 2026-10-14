@@ -66,7 +66,29 @@ class CampaignState:
             if k == "version":
                 continue
             setattr(c, k, v)
+        if "swaps_allowed" not in d:
+            c._migrate_coin_rule()
         return c
+
+    def _migrate_coin_rule(self) -> None:
+        """Saves from before the rulebook coin rule gave coins = failures of the current
+        mission per attempt and dropped hired mercenaries. Under the rulebook each failure
+        adds its number of coins (1, 3, 6, 10 in total), so such a save undercounts. Bring
+        the balance up to the rulebook total minus the cost of whatever is hired; coins
+        already spent on mercenaries that vanished cannot be reconstructed."""
+        if self.finished:
+            return
+        losses = self.losses_on(self.mission)
+        total = losses * (losses + 1) // 2
+        spent = 0
+        for mid in self.mercenaries:
+            try:
+                spent += int(by_id(mid)["cost"])
+            except KeyError:
+                pass
+        self.coins = max(int(self.coins), total - spent)
+        if losses:
+            self.swaps_allowed = True
 
     @classmethod
     def new(cls, players: int, names: Optional[List[str]] = None, seed: Optional[int] = None,
@@ -136,7 +158,7 @@ class CampaignState:
         self.touch()
         if game.result != "loss":
             # Rulebook p.25 (sticker): on success all mercenaries return to the mercenary
-            # box and the next mission starts with none. Unspent coins go with them.
+            # box and the next mission starts with none.
             if self.mercenaries:
                 self.log.append("The mercenaries go back to their lives.")
                 self.mercenaries = []
@@ -152,6 +174,8 @@ class CampaignState:
                     line = M.apply_step(self, step, rng)
                     applied.append(line)
                     self.log.append(line)
+            # Unspent coins are dropped here too. The sticker says nothing about coins on
+            # success; this is an engine assumption the owner has not confirmed.
             self.coins = 0
             if number >= len(M.MISSIONS):
                 self.finished = True

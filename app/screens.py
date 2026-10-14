@@ -1113,9 +1113,9 @@ class MercenaryScreen(Screen):
         from regicide.campaign.mercenaries import by_id
         if self.swapping is not None and self.swapping in camp.mercenaries:
             cur = by_id(self.swapping)
-            sv.add_subview(make_label("Swap %s for:" % cur["name"], (0, yy, w - 2 * m - 90, 28), 14, True, T.OK))
-            sv.add_subview(make_button("Cancel", lambda s: self._cancel_swap(), (w - 2 * m - 80, yy - 2, 80, 32), False, 13))
-            yy += 36
+            sv.add_subview(make_label("Swap %s for:" % cur["name"], (0, yy + 2, w - 2 * m - 90, 28), 14, True, T.OK))
+            sv.add_subview(make_button("Cancel", lambda s: self._cancel_swap(), (w - 2 * m - 80, yy, 80, 32), False, 13))
+            yy += 38
             for o in camp.swappable(self.swapping):
                 lab = make_label(o["name"], (0, yy, w - 2 * m - 90, 40), 14, False, T.TEXT, lines=2)
                 sv.add_subview(lab)
@@ -1125,11 +1125,11 @@ class MercenaryScreen(Screen):
         else:
             for mid in list(camp.mercenaries):
                 mm = by_id(mid)
-                sv.add_subview(make_label("Hired: %s" % mm["name"], (0, yy, w - 2 * m - 90, 28), 14, True, T.OK))
+                sv.add_subview(make_label("Hired: %s" % mm["name"], (0, yy + 2, w - 2 * m - 90, 28), 14, True, T.OK))
                 if camp.swappable(mid):
                     sv.add_subview(make_button("Swap", (lambda hid: lambda s: self._begin_swap(hid))(mid),
-                                               (w - 2 * m - 80, yy - 2, 80, 32), False, 13))
-                yy += 36
+                                               (w - 2 * m - 80, yy, 80, 32), False, 13))
+                yy += 38
             for o in camp.hireable():
                 lab = make_label("%s — %d coin%s" % (o["name"], o["cost"], "" if o["cost"] == 1 else "s"), (0, yy, w - 2 * m - 90, 40), 14, False, T.TEXT, lines=2)
                 sv.add_subview(lab)

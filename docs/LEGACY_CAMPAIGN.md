@@ -261,7 +261,8 @@ Mercenaries hired after a failure stay for every later attempt of that mission, 
 failure *adds* coins equal to the number of failures so far (1, then 2, then 3: totals
 1, 3, 6, 10), unspent coins carry over, and after each failure any hired mercenary may be
 swapped for another of the same cost. On success all mercenaries return to the box. The
-engine implements exactly this (`CampaignState.finish_attempt`, `hire`, `swap`).
+engine implements this (`CampaignState.finish_attempt`, `hire`, `swap`) and also drops
+unspent coins on success, which the sticker does not say (unverified).
 
 ### Engine work implied by pages 20–26 (tracked for Stage 4)
 

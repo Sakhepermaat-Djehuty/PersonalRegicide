@@ -199,9 +199,28 @@ def test_mercenary_swap_same_cost_after_failure_only():
     d = c.to_dict()
     c2 = CampaignState.from_dict(d)
     assert c2.mercenaries == c.mercenaries and c2.swaps_allowed is False and c2.coins == c.coins
-    # old saves without the field default to no swaps
+    # a save from before the rulebook coin rule (no swaps_allowed field) is migrated:
+    # coins become the rulebook total (1+2+... per failure) minus what is hired, and
+    # the swap entitlement is granted when the mission has been failed
     d.pop("swaps_allowed")
-    assert CampaignState.from_dict(d).swaps_allowed is False
+    old = CampaignState.from_dict(d)
+    assert old.swaps_allowed is True and old.coins == c.coins  # already at the rulebook total
+    legacy = {"slot": "s", "name": "Old", "players": 1, "names": ["Solo"], "mission": 1, "completed": [],
+              "attempts": {"1": 3}, "losses": {"1": 2}, "coins": 2, "m_box_opened": True, "mercenaries": [],
+              "party": c.party, "relics": [], "corrupted": [], "flags": {}, "pending": [], "log": [],
+              "reveal_all": False, "seed": 1, "rng_calls": 0, "finished": False, "lore_seen": [],
+              "last_played": "", "version": 1}
+    m = CampaignState.from_dict(legacy)
+    assert m.coins == 3 and m.swaps_allowed is True  # 1 + 2 under the rulebook, nothing spent
+    legacy["mercenaries"] = ["merc_19_1"]  # cost 3 hired under the old rule
+    legacy["coins"] = 0
+    m = CampaignState.from_dict(legacy)
+    assert m.coins == 0  # 3 earned, 3 spent: never below what the save held
+    legacy["losses"] = {"1": 0}
+    legacy["attempts"] = {"1": 1}
+    legacy["mercenaries"] = []
+    m = CampaignState.from_dict(legacy)
+    assert m.coins == 0 and m.swaps_allowed is False
 
 
 def test_extra_jester_mercenary_adds_solo_power():
@@ -311,6 +330,40 @@ def test_kinfolk_flute_store_and_play():
     d = json.loads(json.dumps(g.to_dict()))
     g2 = Game.from_dict(d)
     assert g2.extra == g.extra
+
+
+def test_solo_flute_cards_only_join_kinfolk_attacks_and_store_at_any_time():
+    from regicide.engine import IllegalAction
+    c = CampaignState.new(1, ["Solo"], seed=14)
+    c.relics.append("flute")
+    g = c.start_attempt(seed=14)
+    set_enemy(g, "J", "H")
+    set_hand(g, ["4C", "9S", "7H", "6H", "2D"])
+    g.special({"type": "special", "name": "flute_store", "card": "4C"})
+    assert g.extra["flute"] == ["4C"]
+    # "While forming a Kinfolk Attack you may play cards from here": never alone
+    assert ["4C"] not in g.legal_plays()
+    with pytest.raises(IllegalAction):
+        g.play(["4C"])
+    # a 2 cannot join the flute while a 4 is there (different strength)
+    assert not [a for a in g.legal_actions() if a.get("name") == "flute_store"]
+    g.play(["9S"])
+    assert g.phase == "suffer"
+    # the flute was used this turn already: nothing more to store this turn
+    assert not [a for a in g.legal_actions() if a.get("name") == "flute_store"]
+    g.suffer(["7H"])
+    # next turn, during the suffer step ("at any time"), a 4 may still be stored
+    set_enemy(g, "J", "D")
+    set_hand(g, ["4D", "9H", "6C", "3S"])
+    g.play(["6C"])
+    assert g.phase == "suffer" and g.pending_damage == 10
+    acts = [a for a in g.legal_actions() if a.get("name") == "flute_store"]
+    assert [a["card"] for a in acts] == ["4D"]
+    g.special(acts[0])
+    assert g.extra["flute"] == ["4C", "4D"] and g.phase == "suffer"
+    g.suffer(["9H", "3S"])
+    # both flute cards may now form a kinfolk attack together (or with a 4 from hand)
+    assert sorted(["4C", "4D"]) in [sorted(p) for p in g.legal_plays()]
 
 
 # ---------------------------------------------------------------- Kinfolk Flute, 2+ players
@@ -701,3 +754,25 @@ def test_mission2_rewards_are_corruption_choice_and_class_sticker_assignment():
     # a two-class card carries both classes into the next attempt
     d = CampaignState.from_dict(c.to_dict())
     assert P.find(d.party, cards[0])["suits"] == P.find(c.party, cards[0])["suits"]
+
+
+def test_coins_accumulate_one_three_six_ten_and_hires_persist_over_several_attempts():
+    c = CampaignState.new(1, ["Solo"], seed=40)
+    totals = []
+    for seed in (41, 42, 43, 44):
+        g = c.start_attempt(seed=seed)
+        g._lose("test")
+        res = c.finish_attempt(g)
+        totals.append((res["earned"], c.coins))
+    assert totals == [(1, 1), (2, 3), (3, 6), (4, 10)]
+    c.hire("merc_12H")
+    c.hire("merc_19_1")
+    assert c.coins == 6 and c.mercenaries == ["merc_12H", "merc_19_1"]
+    for seed in (45, 46):
+        g = c.start_attempt(seed=seed)
+        assert {x for x in g.cards if x.startswith("M")} == {"M12H", "M19_1"}
+        g._lose("test")
+        c.finish_attempt(g)
+        assert c.mercenaries == ["merc_12H", "merc_19_1"]
+    assert c.coins == 6 + 5 + 6  # the 5th and 6th failures add 5 and 6
+    assert "2 mercenaries stay on." in c.log[-2] or any("2 mercenaries stay on." in line for line in c.log)

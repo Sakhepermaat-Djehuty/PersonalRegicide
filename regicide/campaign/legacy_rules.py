@@ -71,15 +71,22 @@ class LegacyRules(BaseRules):
     def validate_combo(self, game, cards: Sequence[Card]) -> Tuple[str, Optional[str]]:
         # Kinfolk (rulebook p.22): any number of cards of equal STRENGTH totalling at most
         # 10, so five 2s are legal and a 2/5 card pairs with a 2. No four-card cap.
-        return classify_combo(cards, strength=self.strength, max_cards=None)
+        kind, err = classify_combo(cards, strength=self.strength, max_cards=None)
+        if err:
+            return kind, err
+        # Solo Kinfolk Flute: "While forming a Kinfolk Attack you may play cards from here
+        # as though they were from your hand" -- so only as part of a kinfolk attack.
+        flute = game.extra.get("flute", [])
+        if flute and kind != "set" and any(c.id in flute for c in cards):
+            return kind, "cards on the Kinfolk Flute can only be played in a kinfolk attack"
+        return kind, err
 
     def play_value(self, game, cards: Sequence[Card]) -> int:
         return sum(self.strength(c) for c in cards)
 
     def playable_ids(self, game) -> List[str]:
         ids = list(game.active_player.hand)
-        if game.n_players == 1 or True:
-            ids.extend(game.extra.get("flute", []))
+        ids.extend(game.extra.get("flute", []))
         return ids
 
     def remove_played(self, game, card_id: str) -> None:
@@ -95,19 +102,23 @@ class LegacyRules(BaseRules):
 
     # ------------------------------------------------------------------ relics
     def special_actions(self, game) -> List[Dict[str, Any]]:
-        """Kinfolk Flute, solo side (unverified, from the fan implementation): once per
-        turn store one card of strength 2–5 on the flute; flute cards may later join a
-        kinfolk attack. The multiplayer side (confirmed from the card) is not a special
-        action but a decision: see ``after_attack_formed`` below."""
+        """Kinfolk Flute, solo side (card text, confirmed): "Once per turn at any time you
+        may put a 2, 3, 4 or 5 from hand here as long as there are no other cards of a
+        different strength already here. While forming a Kinfolk Attack you may play cards
+        from here as though they were from your hand." Storing is offered during the play
+        step and the suffer step (any time in the turn); ``validate_combo`` keeps flute
+        cards out of non-kinfolk attacks. The multiplayer side is not a special action but
+        a decision: see ``after_attack_formed`` below."""
         acts: List[Dict[str, Any]] = []
-        if "flute" in game.extra.get("relics", []) and game.phase == "play" and game.config.players == 1:
+        if ("flute" in game.extra.get("relics", []) and game.phase in ("play", "suffer")
+                and game.config.players == 1 and not game.is_over):
             if game.extra.get("flute_turn") != game.turn:
                 flute = game.extra.get("flute", [])
-                rank = game.cards[flute[0]].rank if flute else None
+                here = self.strength(game.cards[flute[0]]) if flute else None
                 for cid in game.active_player.hand:
                     c = game.cards[cid]
                     v = self.strength(c)
-                    if 2 <= v <= 5 and c.is_number and (rank is None or c.rank == rank) and not c.name:
+                    if 2 <= v <= 5 and c.is_number and (here is None or v == here) and not c.name:
                         acts.append({"type": "special", "name": "flute_store", "card": cid,
                                      "label": "Store %s on the Kinfolk Flute" % c.label()})
         return acts
@@ -124,7 +135,8 @@ class LegacyRules(BaseRules):
             game.extra["flute_turn"] = game.turn
             game._event("flute_store", card=cid)
             game._say("%s stores %s on the Kinfolk Flute." % (game.active_player.name, game.cards[cid].label()))
-            game._check_can_act()
+            if game.phase == "play":
+                game._check_can_act()
             return
         raise NotImplementedError(action)
 
