@@ -52,7 +52,7 @@ is won; same-cost swaps after each failure), the solo Jester text, second-editio
 Mission 6, and every mission's location, story, rules, summary, enemy stat and reward
 cards (missions 1 to 12), with all five relics on both sides, pack C, pack F and pack M.
 The owner has photographed the whole box. Small open
-points: the "Rules continued" sides of missions 3 and 12 if they exist, the fronts of
+points: the "Rules continued" side of mission 12 if it exists, the fronts of
 Gøran's four beasts, and whether mission 7's enemies are in corrupted sleeves.
 
 **G3 — answered:** progressive reveal stays on. Campaigns are save files: main menu

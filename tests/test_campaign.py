@@ -1681,3 +1681,14 @@ def test_mission12_setup_restores_the_party_and_swaps_the_mother_relic():
     assert [s["kind"] for s in steps] == ["set_flag"]
     M.apply_step(c, steps[0], rng)
     assert c.flags["pack_e_opened"] is True
+
+
+def test_mission3_yield_still_runs_end_of_turn_effects():
+    c, g = _mission3(players=2, seed=55)
+    set_tavern_top(g, ["4H", "3S"])
+    assert g.can_yield()
+    g.yield_turn()
+    # the yielding player suffers, then the end of turn puts the top reserve card in the zone
+    if g.phase == "suffer":
+        g.suffer(sorted(g.active_player.hand, key=lambda x: -g.cards[x].value)[:3])
+    assert g.mission_zone == ["4H"] and g.active == 1

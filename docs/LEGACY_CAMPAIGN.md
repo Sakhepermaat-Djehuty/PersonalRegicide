@@ -393,8 +393,14 @@ mission 2.
 up into the mission zone if able. Enemies have immunity to the classes of every card in
 the mission zone. *Enemy defeated:* banish the enemy (put it in the banished pile) along
 with all cards in the mission zone. If the enemy was dealt exact damage, put one card
-from the mission zone into the discard pile before banishing the mission zone. The card
-says "continued": the back ("Rules continued") has not been photographed yet.
+from the mission zone into the discard pile before banishing the mission zone.
+
+**Rules continued.** *Example:* Blast (10, Artifact Instructor, mage, 30 health) with
+Plates (A, animal paladin) and Pūriri (5, avion cleric) in the mission zone: Blast is
+now immune to paladins and clerics. *Remember:* skip end of turn effects when you
+defeat an enemy (i.e. don't put a card from the reserve deck into the mission zone).
+But also remember you don't skip the end of turn effects if you yield! (The engine
+already does both: yielding goes through the normal end of turn.)
 
 **Rules summary card:** Enemies have immunity to classes in the mission zone. End of
 turn: put top card of reserve deck into the mission zone. Enemy defeated: banish enemy
@@ -982,9 +988,9 @@ same two numbers on the enemy panel.
 enemy for most), every relic on both sides, packs C, F, M, P and E in full, the map and
 the mat. Not photographed and not needed: the 40 party card fronts (names are not
 wanted), the 12s' and 2/5s' names, the 5 and 7 pilgrims' names. Still open, small: the
-"Rules continued" sides of missions 3 and 12 if the cards have them, the fronts of
-Gøran's four beasts (names and classes; only Bonty the cleric is known), and whether
-mission 7's pondkin sit in corrupted sleeves.
+"Rules continued" side of mission 12 if the card has one, the fronts of Gøran's four
+beasts (names and classes; only Bonty the cleric is known), and whether mission 7's
+pondkin sit in corrupted sleeves.
 
 ## Permanent mechanics (as transcribed)
 
