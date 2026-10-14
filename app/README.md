@@ -24,9 +24,12 @@ Map, Progress, Lore (this game).
 ## What the client offers
 
 Solo and pass-and-play Regicide with full rules enforcement, play forecasts, suggested
-discards, undo, autosave, history and medals; the Legacy campaign (missions 1–2 so far)
+discards, undo, autosave, history and medals; the whole Legacy campaign (missions 1–12)
 with the party, mercenary camp, relics and a mission list that reveals missions as you
-reach them.
+reach them, then Evergreen missions from the game menu once the campaign is won.
+
+Story text: the app ships without the cards' story text. To read it in the Lore screens,
+put your private `lore_private.json` in `~/Documents/PersonalRegicide-saves/`.
 
 ## Desktop preview
 
