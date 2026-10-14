@@ -229,10 +229,13 @@ class Game:
 
     @property
     def enemy_attack(self) -> int:
-        """Effective attack: printed attack + mission bonus − shield, never below 0."""
+        """Effective attack: (printed attack + mission bonus) × mission multiplier − shield,
+        never below 0 (Legacy mission 10's warriors double their total strength and the
+        paladin shields come off afterwards)."""
         if self.enemy is None:
             return 0
-        return max(0, self.enemy.attack + self.rules.attack_bonus(self) - self.shield)
+        total = (self.enemy.attack + self.rules.attack_bonus(self)) * self.rules.attack_multiplier(self)
+        return max(0, total - self.shield)
 
     def can_yield(self) -> bool:
         return self.phase == PHASE_PLAY and self.rules.can_yield(self)
@@ -286,11 +289,12 @@ class Game:
         for c in hand:
             if c.is_number and not c.is_ace:
                 by_strength.setdefault(self.rules.play_value(self, [c]), []).append(c)
+        limit = self.rules.kinfolk_limit(self)
         for strength, group in by_strength.items():
-            if len(group) < 2 or strength * 2 > 10:
+            if len(group) < 2 or strength * 2 > limit:
                 continue
             for n in range(2, len(group) + 1):
-                if strength * n > 10:
+                if strength * n > limit:
                     break
                 for combo in itertools.combinations(group, n):
                     plays.append([c.id for c in combo])
@@ -452,7 +456,7 @@ class Game:
 
     def play_suits(self, cards: Sequence[Card]) -> Tuple[str, ...]:
         """The suits of an attack, each once, in resolution order."""
-        return tuple(sorted(set(s for c in cards for s in c.suits), key=_suit_sort_key))
+        return tuple(sorted(set(s for c in cards for s in self.rules.card_suits(self, c)), key=_suit_sort_key))
 
     # --- decisions (decide phase) ------------------------------------------------
     def decide(self, action: dict) -> None:
@@ -571,6 +575,26 @@ class Game:
         self.decision = None
         self.phase = PHASE_PLAY
         self._next_turn()
+
+    def resume_turn_start(self) -> None:
+        """Leave the decide phase after a mission's start-of-turn choice (Legacy mission
+        11's beast effects): the player may now act."""
+        decision = self.decision
+        if decision is None or decision.get("resume") != "turn_start":
+            raise IllegalAction("No start of turn is pending.")
+        self.decision = None
+        self.phase = PHASE_PLAY
+        self._check_can_act()
+
+    def resume_suffered(self) -> None:
+        """Leave the decide phase after a choice that followed the damage paid (Evergreen
+        boons): the end-of-turn effects run and the next turn starts."""
+        decision = self.decision
+        if decision is None or decision.get("resume") != "suffered":
+            raise IllegalAction("No suffered damage is pending.")
+        self.decision = None
+        self.phase = PHASE_PLAY
+        self._end_turn()
 
     def resolve_pending_attack(self) -> None:
         """Leave the decide phase and resolve the attack the decision was about (step 2 on)."""
@@ -724,14 +748,25 @@ class Game:
                     raise IllegalAction("%s is not needed to cover the damage." % c.label())
         for c in cards:
             hand.remove(c.id)
-        self._discard_cards(cards)
+        damage = self.pending_damage
+        self.rules.discard_suffered(self, cards, damage, feign)
         if feign:
-            self._event("feign_death", player=self.active, cards=ids, damage=self.pending_damage)
+            self._event("feign_death", player=self.active, cards=ids, damage=damage)
             self._say("%s feigns death, discarding the whole hand." % self.active_player.name)
-        self._event("suffer", player=self.active, cards=ids, damage=self.pending_damage, paid=total)
+        self._event("suffer", player=self.active, cards=ids, damage=damage, paid=total)
         self._say("%s discards %s to suffer %d." % (
-            self.active_player.name, " ".join(c.label() for c in cards) or "nothing", self.pending_damage))
+            self.active_player.name, " ".join(c.label() for c in cards) or "nothing", damage))
         self.pending_damage = 0
+        decision = self.rules.after_suffer(self, cards, damage, feign)
+        if decision is not None:
+            # An Evergreen boon wants a choice about the cards just discarded before the
+            # end-of-turn effects; ``resume_suffered`` then runs them.
+            decision = dict(decision)
+            decision["resume"] = "suffered"
+            self.decision = decision
+            self.phase = PHASE_DECIDE
+            self._event("decide", **decision)
+            return
         self._end_turn()
 
     def choose_next(self, player: int) -> None:
@@ -783,9 +818,52 @@ class Game:
         self.rng.shuffle(pile)
         moved, rest = pile[:n], pile[n:]
         self.discard = rest
-        self.tavern.extend(moved)  # under the tavern deck
+        for cid in moved:
+            self.to_reserve(cid, bottom=True)  # under the tavern deck
         self._event("heal", cards=moved)
         return len(moved)
+
+    # --- pile helpers that every rule set uses -----------------------------------------
+    def banish_cards(self, ids: Sequence[str], where: str = "top") -> List[str]:
+        """Put cards on the banished pile: on top in order (the last ends on top), at
+        random positions (``"shuffle"``) or at the bottom (``"bottom"``). Every banish in
+        the game goes through here so that ``rules.banish_redirect`` can send a card
+        elsewhere (Legacy mission 12's restored cards go under the reserve deck instead).
+        Returns the ids that reached the banished pile."""
+        done: List[str] = []
+        for cid in ids:
+            redirect = self.rules.banish_redirect(self, self.cards[cid])
+            if redirect == "reserve_bottom":
+                self.tavern.append(cid)
+                self._event("banish_redirect", card=cid, to="reserve_bottom")
+                self._say("%s is restored and never enters the banished pile: it goes under the reserve deck." % (
+                    self.cards[cid].label()))
+                continue
+            if where == "shuffle":
+                self.banished.insert(self.rng.randrange(len(self.banished) + 1), cid)
+            elif where == "bottom":
+                self.banished.insert(0, cid)
+            else:
+                self.banished.append(cid)
+            done.append(cid)
+        return done
+
+    def to_reserve(self, card_id: str, bottom: bool = False) -> bool:
+        """Put a card on top of (or under) the reserve deck, unless ``rules.reserve_redirect``
+        sends it elsewhere (Legacy mission 12: a corrupted card can never enter the reserve
+        deck and goes to the bottom of the banished pile). Returns True if it joined the deck."""
+        redirect = self.rules.reserve_redirect(self, self.cards[card_id])
+        if redirect == "banished_bottom":
+            self.banished.insert(0, card_id)
+            self._event("reserve_redirect", card=card_id, to="banished_bottom")
+            self._say("%s is corrupted and never enters the reserve deck: it goes to the bottom of the banished pile." % (
+                self.cards[card_id].label()))
+            return False
+        if bottom:
+            self.tavern.append(card_id)
+        else:
+            self.tavern.insert(0, card_id)
+        return True
 
     def _draw_round_robin(self, n: int, start: int) -> List[dict]:
         drawn: List[dict] = []
@@ -848,27 +926,39 @@ class Game:
             spent = [c for c in played if c.is_jester]
             played = [c for c in played if not c.is_jester]
             self.set_aside.extend(c.id for c in spent)
+        # Evergreen bane 14: the attack that dealt the final damage goes into the mission
+        # zone (after the location's enemy-defeated rules) instead of the discard pile.
+        last_ids: List[str] = []
+        if plan.get("last_play_to") == "zone" and self.plays:
+            last_ids = [c.id for c in played if c.id in self.plays[-1].card_ids]
+            played = [c for c in played if c.id not in last_ids]
+            mage_ids = [c for c in mage_ids if c not in last_ids]
         self._event("defeat", enemy=enemy.card_id, exact=exact, plan=plan, mage_banished=mage_ids)
         self._say("%s is defeated%s" % (enemy.name, (" with exact damage!" + (
             " It joins the tavern deck." if plan.get("enemy_to") == "tavern_top" else "")) if exact else "."))
         self.enemies_defeated += 1
         # Legacy p.19: step 1 moves the enemy (and the mission zone) first, step 2 then puts
         # the played cards on top of the discard pile. The base game keeps its old order
-        # (enemy on top), which changes nothing there.
+        # (enemy on top), which changes nothing there. A mission may clear the zone before
+        # moving the enemy (``zone_first``) and banish the whole discard pile (``discard_to``).
         self._reserve_to_discard(int(plan.get("reserve_to_discard", 0) or 0))
         if self.rules.played_on_top:
-            self._move_defeated_enemy(enemy.card_id, plan)
-            self._clear_zone(plan)
+            self._mission_defeat_moves(enemy.card_id, plan)
         self._cleanup_played(played, mage_ids, plan)
         if not self.rules.played_on_top:
-            self._move_defeated_enemy(enemy.card_id, plan)
-            self._clear_zone(plan)
+            self._mission_defeat_moves(enemy.card_id, plan)
+        if last_ids:
+            self.mission_zone.extend(last_ids)
+            self._event("zone_absorb", cards=last_ids, zone=list(self.mission_zone))
+            self._say("The killing attack (%s) goes into the mission zone." % " + ".join(self.cards[c].label() for c in last_ids))
         self.plays = []
         self.immunity_cancelled = False
         self.enemy = None
         if self.config.yield_reset_per_enemy:
             self.last_action = [None] * self.n_players
         decision = self.rules.after_cleanup(self, exact, plan)
+        if self.is_over:
+            return   # an Evergreen bane's team damage could not be paid
         if decision is not None:
             # The mission wants a choice once the piles are final (mission 8's exact-kill
             # pick from the discard pile); ``resume_defeat`` then reveals the next enemy.
@@ -885,6 +975,8 @@ class Game:
     def _finish_defeat(self, plan: Dict[str, Any]) -> None:
         """The end of the enemy-defeated steps: win, or reveal the next enemy (with
         mission 5's carry-over damage) and start the same player's new turn."""
+        if self.is_over:
+            return
         if not self.castle:
             self._win()
             return
@@ -923,22 +1015,44 @@ class Game:
     def _cleanup_played(self, played: List[Card], mage_ids: List[str], plan: Dict[str, Any]) -> None:
         if plan.get("played_to", "discard") == "discard":
             self._discard_cards([c for c in played if c.id not in mage_ids])
-            self.banished.extend(c.id for c in played if c.id in mage_ids)
+            self.banish_cards([c.id for c in played if c.id in mage_ids])
             if mage_ids:
                 self._say("The mage attack is banished: %s." % " + ".join(self.cards[c].label() for c in mage_ids))
         elif plan["played_to"] == "banish":
-            self.banished.extend(c.id for c in played)
+            self.banish_cards([c.id for c in played])
+
+    def _mission_defeat_moves(self, enemy_id: str, plan: Dict[str, Any]) -> None:
+        """The mission's enemy-defeated moves in the plan's order: the enemy and the zone
+        (zone first when ``zone_first``), then the whole discard pile if the mission banishes
+        it (Legacy mission 12)."""
+        if plan.get("zone_first"):
+            self._clear_zone(plan)
+            self._move_defeated_enemy(enemy_id, plan)
+        else:
+            self._move_defeated_enemy(enemy_id, plan)
+            self._clear_zone(plan)
+        if plan.get("discard_to") == "banish" and self.discard:
+            pile = list(self.discard)
+            self.discard = []
+            # the pile keeps its order: its bottom card is banished first, its top ends on top
+            self.banish_cards(list(reversed(pile)))
+            self._event("discard_banished", cards=pile)
+            self._say("The whole discard pile (%d card%s) is banished in its order." % (len(pile), "" if len(pile) == 1 else "s"))
+        if plan.get("shuffle_banished"):
+            # Evergreen's Forest and Hills: "then shuffle the banished pile"
+            self.rng.shuffle(self.banished)
+            self._event("banished_shuffled", count=len(self.banished))
 
     def _move_defeated_enemy(self, card_id: str, plan: Dict[str, Any]) -> None:
         dest = plan.get("enemy_to", "discard")
         if dest == "tavern_top":
-            self.tavern.insert(0, card_id)
+            self.to_reserve(card_id)
         elif dest == "discard":
             self.discard.insert(0, card_id)
         elif dest == "banish":
-            self.banished.append(card_id)
+            self.banish_cards([card_id])
         elif dest == "banish_shuffle":
-            self._banish_shuffled([card_id])
+            self.banish_cards([card_id], "shuffle")
         elif dest == "castle_bottom":
             self.castle.append(card_id)
 
@@ -948,17 +1062,12 @@ class Game:
             zone = list(self.mission_zone)
             self.mission_zone = []
             if zone_to == "banish":
-                self.banished.extend(zone)
+                self.banish_cards(zone)
             elif zone_to == "banish_shuffle":
-                self._banish_shuffled(zone)
+                self.banish_cards(zone, "shuffle")
             elif zone_to == "discard":
                 self._discard_cards([self.cards[c] for c in zone])
             self._event("zone_cleared", cards=zone, to=zone_to)
-
-    def _banish_shuffled(self, ids: Sequence[str]) -> None:
-        """Shuffle cards into the banished pile without looking: each goes to a random position."""
-        for cid in ids:
-            self.banished.insert(self.rng.randrange(len(self.banished) + 1), cid)
 
     def _reveal_next_enemy(self) -> None:
         cid = self.castle.pop(0)
@@ -1026,7 +1135,18 @@ class Game:
         self.pending_damage = 0
         self.extra.pop("guardian", None)   # a Guardian's protection lasts for its turn only
         self._event("turn", player=self.active, turn=self.turn)
-        self.rules.on_turn_start(self)
+        decision = self.rules.on_turn_start(self)
+        if self.is_over:
+            return
+        if decision is not None:
+            # The mission's start of turn needs a choice (mission 11: a beast makes the
+            # player discard or banish a hand card); ``resume_turn_start`` then goes on.
+            decision = dict(decision)
+            decision["resume"] = "turn_start"
+            self.decision = decision
+            self.phase = PHASE_DECIDE
+            self._event("decide", **decision)
+            return
         self._check_can_act()
 
     def _check_can_act(self) -> None:

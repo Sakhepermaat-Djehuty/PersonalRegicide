@@ -213,9 +213,11 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
         except IllegalAction as e:
             print("!", e)
         return True
-    if game.phase == PHASE_DECIDE and (game.decision or {}).get("kind") in ("chanter_discard", "discard_banish"):
+    if game.phase == PHASE_DECIDE and (game.decision or {}).get("kind") in ("chanter_discard", "discard_banish",
+                                                                             "banish_order", "zone_order"):
         # Templates filled in with a list of cards: the Chanter's discard down to the limit,
-        # mission 8's banish from the discard pile (any number, enter for none).
+        # mission 8's banish from the discard pile (any number, enter for none), the order in
+        # which a mission zone is banished (mission 12) or discarded (Evergreen's Lake).
         d = game.decision or {}
         kind = str(d.get("kind"))
         acts = game.legal_actions()
@@ -224,6 +226,9 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
         if kind == "chanter_discard":
             print("Chanter: %s holds %d cards and must discard %d:" % (
                 game.players[game.deciding].name, len(game.players[game.deciding].hand), int(template["needs"])))
+        elif kind in ("banish_order", "zone_order"):
+            print("Enemy defeated: name every mission zone card in the order it goes to the %s pile (the last ends on top):" % (
+                "banished" if kind == "banish_order" else "discard"))
         else:
             print("Mission zone filled: banish any cards from the discard pile (the rest heals under the reserve):")
         for i, c in enumerate(pool, 1):
@@ -276,6 +281,15 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
         elif d.get("kind") == "pile_rescue":
             print("End of turn: banish a card from hand to rescue a captured card, or rotate the piles. Piles: %s" % (
                 " / ".join(game.card(p[0]).label() if p else "empty" for p in game.extra.get("captured", []))))
+        elif d.get("kind") == "zone_feed":
+            print("%s must put a card from hand into the mission zone." % game.players[game.deciding].name)
+        elif d.get("kind") in ("beast_discard", "beast_banish"):
+            print("A %s beast was revealed: %s must %s a card from hand." % (
+                "cleric" if d.get("kind") == "beast_discard" else "bard", game.players[game.deciding].name,
+                "discard" if d.get("kind") == "beast_discard" else "banish"))
+        elif d.get("kind") in ("precision_strike", "restored_arrows", "close_call", "zone_discard", "zone_sibling",
+                               "zone_match", "attack_discard", "poison"):
+            print("%s: %s" % (d.get("kind").replace("_", " ").capitalize(), game.log[-1] if game.log else ""))
         acts = game.legal_actions()
         for i, a in enumerate(acts, 1):
             print("  %2d. %s" % (i, a.get("label", a["type"])))
@@ -354,7 +368,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print("bot adds %s to the attack (Scarlet Whistle)" % game.card(act["card"]).label())
             elif act["type"] == "druid_assign":
                 print("bot sorts the dealt cards (Druid)")
-            elif act["type"] in ("chanter_discard", "discard_banish"):
+            elif act["type"] in ("chanter_discard", "discard_banish", "banish_order", "zone_order"):
                 print("bot picks %s" % (" + ".join(game.card(c).label() for c in act.get("cards", [])) or "nothing"))
             else:
                 print("bot:", act.get("label", act["type"]))

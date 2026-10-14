@@ -163,7 +163,27 @@ def simple_decision(g: Game) -> Optional[dict]:
 
 NEW_KINDS = ("druid_assign", "chanter_declare", "chanter_discard", "mother_choice", "mother_banish",
              "pilgrim_banish", "zone_banish", "zone_build", "discard_banish", "discard_pick",
-             "pile_rescue", "pile_to_reserve")
+             "pile_rescue", "pile_to_reserve",
+             # missions 10 to 12
+             "zone_feed", "beast_discard", "beast_banish", "banish_order",
+             # Evergreen locations, banes and boons
+             "zone_order", "zone_discard", "attack_discard", "zone_sibling", "zone_match", "close_call",
+             "precision_strike", "restored_arrows", "poison")
+
+
+def _keep_key(g: Game, cid: str) -> tuple:
+    """How much a bot wants to keep a card: bad cards first (lowest), then by strength."""
+    c = g.cards[cid]
+    return (0 if _bad_card(g, cid) else 1, c.value)
+
+
+def _good_pick(g: Game, acts: List[dict]) -> Optional[dict]:
+    """The strongest card option that is not a Jester, corrupted or locked, else None."""
+    cards = [a for a in acts if a.get("card") and not a.get("skip")]
+    good = [a for a in cards if not _bad_card(g, a["card"])]
+    if good:
+        return max(good, key=lambda a: g.cards[a["card"]].value)
+    return None
 
 
 def _bad_card(g: Game, cid: str) -> bool:
@@ -242,6 +262,45 @@ def _mission_decision(g: Game, kind: Optional[str], acts: List[dict]) -> Optiona
         if moves:
             return max(moves, key=lambda a: g.cards[piles[int(a["pile"])][0]].value)
         return acts[0]
+    # --- missions 10 to 12 ------------------------------------------------------------------
+    if kind in ("zone_feed", "beast_discard", "beast_banish", "attack_discard"):
+        # the cheapest card leaves the hand: a Jester, a corrupted or locked card first
+        cards = [a for a in acts if a.get("card")]
+        return min(cards, key=lambda a: _keep_key(g, a["card"])) if cards else acts[0]
+    if kind in ("banish_order", "zone_order"):
+        t = [a for a in acts if "needs" in a]
+        if not t:
+            return acts[0]
+        pool = list(t[0]["pick_from"])
+        if kind == "banish_order":
+            # the last card ends on top and feeds the next mission zone: a classless or weak
+            # card there, the strong class cards underneath
+            pool.sort(key=lambda c: (1 if g.cards[c].suits else 0, g.cards[c].value), reverse=True)
+        return {"type": kind, "player": t[0]["player"], "cards": pool}
+    # --- Evergreen --------------------------------------------------------------------------
+    if kind == "zone_discard":
+        cards = [a for a in acts if a.get("card")]
+        return max(cards, key=value) if cards else acts[0]
+    if kind in ("zone_sibling", "zone_match"):
+        cards = [a for a in acts if a.get("card")]
+        return max(cards, key=value) if cards else acts[0]
+    if kind in ("close_call", "precision_strike"):
+        best = _good_pick(g, acts)
+        if best is not None:
+            return best
+        cards = [a for a in acts if a.get("card")]
+        return cards[0] if cards else acts[0]
+    if kind == "restored_arrows":
+        best = _good_pick(g, acts)
+        if best is not None and not g.cards[best["card"]].has("pilgrim"):
+            return best
+        return [a for a in acts if a.get("skip")][0]
+    if kind == "poison":
+        cards = [a for a in acts if a.get("card")]
+        skip = [a for a in acts if a.get("skip")]
+        if cards and len(g.players[int(cards[0]["player"])].hand) >= 3:
+            return min(cards, key=lambda a: _keep_key(g, a["card"]))
+        return skip[0] if skip else acts[0]
     return None
 
 

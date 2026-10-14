@@ -1,8 +1,7 @@
 """Mission definitions: enemies, setup, and reward steps.
 
-Missions 1 to 9 are playable in this build; the others carry their public description
-so the campaign screen can show what is coming once revealed (their rule sets are not
-registered yet, so starting one fails).
+All twelve missions are playable; Evergreen mode (pack E) builds its generated missions
+from the same card data (see ``evergreen.py``).
 """
 from __future__ import annotations
 
@@ -118,9 +117,20 @@ def _temple_castle(rng: random.Random) -> List[dict]:
                  "name": name, "attack": atk, "health": hp, "flags": []} for s in BASIC_SUITS]
         rng.shuffle(tier)
         tiers.append(tier)
-    boss = {"id": "MYLA_BOSS", "rank": "K", "suits": ["D", "S"], "value": 20, "name": "Myla",
-            "attack": 20, "health": 80, "flags": ["fixed_immunity"]}
-    return tiers[0] + tiers[1] + [boss]
+    return tiers[0] + tiers[1] + [dict(MYLA_BOSS)]
+
+
+# Mission 9's boss (also Evergreen bane 5): Myla, the High Arcana's apprentice, 20/80, bard
+# and paladin; her immunity can never be ignored.
+MYLA_BOSS: Dict[str, Any] = {"id": "MYLA_BOSS", "rank": "K", "suits": ["D", "S"], "value": 20, "name": "Myla",
+                             "attack": 20, "health": 80, "flags": ["fixed_immunity"]}
+
+# Mission 12's boss (also Evergreen bane 8): the High Arcana, 25/120, dark gem icon (no
+# class), in a corrupted sleeve. Bane 8 adds the ``immune_basic`` flag: immune to the
+# four base classes without carrying them as suits (a defeated enemy drawn into a hand
+# must not play as a four-class card).
+HIGH_ARCANA_BOSS: Dict[str, Any] = {"id": "TH_ARCANA", "rank": "K", "suits": [], "value": 25, "name": "High Arcana",
+                                    "attack": 25, "health": 120, "flags": ["corrupted"]}
 
 
 def _ruins_castle(camp) -> List[dict]:
@@ -167,9 +177,7 @@ def _throne_castle(rng: random.Random) -> List[dict]:
                 for s in BASIC_SUITS]
         rng.shuffle(tier)
         tiers.append(tier)
-    boss = {"id": "TH_ARCANA", "rank": "K", "suits": [], "value": 25, "name": "High Arcana",
-            "attack": 25, "health": 120, "flags": ["corrupted"]}
-    return tiers[0] + tiers[1] + [boss]
+    return tiers[0] + tiers[1] + [dict(HIGH_ARCANA_BOSS)]
 
 
 def _hydra_castle(rng: random.Random) -> List[dict]:
@@ -279,7 +287,7 @@ MISSIONS: List[Dict[str, Any]] = [
                      "(4) or feltrix (8): the first unstickered one revealed from the shuffled party gains "
                      "the Mage class. Ash, Myla's beast (Mage), joins the party."},
     {"number": 10, "title": "Pride to Fall", "fan_title": "The Corruption", "location": "Twinseed Temple Ruins",
-     "rules_id": "legacy_m10", "playable": False, "verified": True,
+     "rules_id": "legacy_m10", "playable": True, "verified": True,
      "summary": "The corrupted members leave the party and form the enemy deck, face up, 2 on top down to 9. "
                 "Each has health five times its strength and gains strength from every card in the mission "
                 "zone. Start of turn: the top reserve card goes into the zone. Warriors double their total "
@@ -289,7 +297,7 @@ MISSIONS: List[Dict[str, Any]] = [
                 "the zone is discarded instead.",
      "rewards_text": "Gøran is lost. The corrupted characters return to the party."},
     {"number": 11, "title": "Descent Into Darkness", "fan_title": "The Beast Hunt", "location": "Caverns of Decay",
-     "rules_id": "legacy_m11", "playable": False, "verified": True,
+     "rules_id": "legacy_m11", "playable": True, "verified": True,
      "summary": "One corrupted member of the Eternal Vine dies at the machine and is torn up for good. "
                 "Gøran's four beasts form a face-down beast deck in the mission zone (none may join the "
                 "reserve; Ash may). Start of turn: reveal a beast and apply its class: warrior banishes the "
@@ -301,7 +309,7 @@ MISSIONS: List[Dict[str, Any]] = [
      "rewards_text": "The reborn Evergreen joins the party: Esme (6, Evergreen: all four classes, ignores "
                      "immunity). Gøran's beasts return to the box beside the party."},
     {"number": 12, "title": "Decay to Growth", "fan_title": "The Final Stand", "location": "Throne of Corruption",
-     "rules_id": "legacy_m12", "playable": False, "verified": True,
+     "rules_id": "legacy_m12", "playable": True, "verified": True,
      "summary": "Esme's light restores every corrupted party member (and Esme herself): restored cards "
                 "ignore immunity and return the top banished card under the reserve when played, and the "
                 "restored Evergreen Mother keeps them out of the banished pile. Four Queens (15/30), four "

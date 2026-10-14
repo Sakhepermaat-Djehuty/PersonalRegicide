@@ -1,12 +1,14 @@
 """Persistent campaign state and the attempt / result flow."""
 from __future__ import annotations
 
+import copy
 import random
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..engine import Game
-from ..rules import GameConfig
+from ..rules import HAND_SIZE, GameConfig
+from . import evergreen as E
 from . import missions as M
 from . import party as P
 from .mercenaries import by_id
@@ -43,6 +45,16 @@ class CampaignState:
         self.seed = random.SystemRandom().randrange(2 ** 31)
         self.rng_calls = 0
         self.finished = False
+        # Evergreen mode (pack E, after mission 12): the current generated setup and its
+        # record. ``setup`` is the compact form (location letter, bane and boon numbers),
+        # ``options`` the two rules-card variants for the next draw, ``coins`` and
+        # ``mercenaries`` boon 24's five-coin budget for this setup only.
+        self.evergreen: Dict[str, Any] = self._fresh_evergreen()
+
+    @staticmethod
+    def _fresh_evergreen() -> Dict[str, Any]:
+        return {"setup": None, "options": {"extra_red": False, "extra_bane": False}, "attempts": 0, "losses": 0,
+                "coins": 0, "mercenaries": [], "wins": 0, "played": 0}
 
     # ------------------------------------------------------------------ persistence
     def to_dict(self) -> dict:
@@ -59,7 +71,7 @@ class CampaignState:
             "swaps_allowed": self.swaps_allowed, "beast": self.beast,
             "pending": [dict(s) for s in self.pending], "log": list(self.log),
             "reveal_all": self.reveal_all, "seed": self.seed, "rng_calls": self.rng_calls,
-            "finished": self.finished,
+            "finished": self.finished, "evergreen": copy.deepcopy(self.evergreen),
         }
 
     @classmethod
@@ -171,6 +183,8 @@ class CampaignState:
 
     def finish_attempt(self, game: Game) -> dict:
         """Record a finished attempt. Returns a summary dict for the UI."""
+        if game.config.extra.get("evergreen"):
+            return self.finish_evergreen_attempt(game)
         number = int(game.config.extra.get("mission", self.mission))
         if number != self.mission:
             raise RuntimeError("attempt is for mission %d but the campaign is at %d" % (number, self.mission))
@@ -227,6 +241,74 @@ class CampaignState:
             self.reveal_lore("pack_m")
         return {"won": False, "coins": self.coins, "earned": earned, "m_box_opened_now": opened}
 
+    # ------------------------------------------------------------------ Evergreen mode (pack E)
+    def evergreen_setup(self) -> Optional[dict]:
+        """The current Evergreen setup with its card dicts (location, banes, boons), or None."""
+        ids = self.evergreen.get("setup")
+        if not ids:
+            return None
+        return E.expand_setup(ids)
+
+    def draw_evergreen(self, extra_red: Optional[bool] = None, extra_bane: Optional[bool] = None) -> dict:
+        """Draw a new Evergreen mission (rules card: one location, two grey banes or one
+        grey and a second red, one yellow and one red bane, one grey and one yellow boon;
+        ``extra_bane`` adds one more). Replaces the current setup and its record; boon 24
+        funds five coins of mercenaries for this setup. Returns the expanded setup."""
+        if not self.finished:
+            raise RuntimeError("Evergreen mode opens when the campaign is complete")
+        options = dict(self.evergreen.get("options") or {})
+        if extra_red is not None:
+            options["extra_red"] = bool(extra_red)
+        if extra_bane is not None:
+            options["extra_bane"] = bool(extra_bane)
+        setup = E.draw_setup(self._rng(), extra_red=bool(options.get("extra_red")), extra_bane=bool(options.get("extra_bane")))
+        ids = E.setup_ids(setup)
+        record = dict(self.evergreen)
+        record.update({"setup": ids, "options": options, "attempts": 0, "losses": 0, "mercenaries": [],
+                       "coins": 5 if 24 in ids["boons"] else 0})
+        self.evergreen = record
+        self.log.append("Evergreen mission drawn: the %s, banes %s, boons %s." % (
+            setup["location"]["name"], ", ".join("%d %s" % (b["n"], b["name"]) for b in setup["banes"]),
+            ", ".join("%d %s" % (b["n"], b["name"]) for b in setup["boons"])))
+        self.touch()
+        return setup
+
+    def set_evergreen_option(self, key: str, value: bool) -> None:
+        options = dict(self.evergreen.get("options") or {})
+        options[str(key)] = bool(value)
+        self.evergreen["options"] = options
+
+    def start_evergreen_attempt(self, seed: Optional[int] = None) -> Game:
+        if not self.finished:
+            raise RuntimeError("Evergreen mode opens when the campaign is complete")
+        ids = self.evergreen.get("setup")
+        if not ids:
+            raise RuntimeError("draw an Evergreen mission first")
+        rng = self._rng()
+        extra = E.build_setup(self, ids, rng, list(self.evergreen.get("mercenaries") or []))
+        hand = HAND_SIZE[self.players] + int(extra.pop("hand_bonus", 0) or 0)
+        cfg = GameConfig(players=self.players, names=tuple(self.names), rules_id="evergreen", hand_size=hand, extra=extra)
+        self.evergreen["attempts"] = int(self.evergreen.get("attempts", 0)) + 1
+        self.touch()
+        self.reveal_lore("campaign_end")
+        return Game.new(cfg, seed=seed if seed is not None else rng.randrange(2 ** 31))
+
+    def finish_evergreen_attempt(self, game: Game) -> dict:
+        """An Evergreen mission ends: no coins, no rewards; the same setup may be retried
+        or a new one drawn."""
+        self.touch()
+        self.evergreen["played"] = int(self.evergreen.get("played", 0)) + 1
+        won = game.result != "loss"
+        if won:
+            self.evergreen["wins"] = int(self.evergreen.get("wins", 0)) + 1
+            self.log.append("Evergreen mission won (attempt %d)." % int(self.evergreen.get("attempts", 0)))
+        else:
+            self.evergreen["losses"] = int(self.evergreen.get("losses", 0)) + 1
+            self.log.append("Evergreen mission lost (attempt %d). Try the same setup again or draw another." % (
+                int(self.evergreen.get("attempts", 0))))
+        return {"won": won, "evergreen": True, "attempts": int(self.evergreen.get("attempts", 0)),
+                "losses": int(self.evergreen.get("losses", 0))}
+
     # ------------------------------------------------------------------ Gøran's beasts
     def beasts_available(self) -> List[dict]:
         """The beasts that may be included in the next attempt (after mission 4)."""
@@ -263,23 +345,36 @@ class CampaignState:
         return line
 
     # ------------------------------------------------------------------ mercenaries
-    def hireable(self) -> List[dict]:
-        if not self.m_box_opened:
+    def _purse(self, scope: str) -> Tuple[int, List[str]]:
+        """(coins, hired ids) of a scope: the mission's camp, or an Evergreen setup's boon 24."""
+        if scope == "evergreen":
+            return int(self.evergreen.get("coins", 0)), list(self.evergreen.get("mercenaries") or [])
+        return int(self.coins), list(self.mercenaries)
+
+    def hireable(self, scope: str = "mission") -> List[dict]:
+        if scope != "evergreen" and not self.m_box_opened:
             return []
+        coins, hired = self._purse(scope)
         out = []
         from .mercenaries import MERCENARIES
         for m in MERCENARIES:
-            if m["id"] in self.mercenaries:
+            if m["id"] in hired:
                 continue
-            out.append({"id": m["id"], "name": m["name"], "cost": m["cost"], "affordable": self.coins >= m["cost"]})
+            out.append({"id": m["id"], "name": m["name"], "cost": m["cost"], "affordable": coins >= m["cost"]})
         return out
 
-    def hire(self, mid: str) -> None:
+    def hire(self, mid: str, scope: str = "mission") -> None:
         m = by_id(mid)
-        if mid in self.mercenaries:
+        coins, hired = self._purse(scope)
+        if mid in hired:
             raise ValueError("already hired")
-        if self.coins < m["cost"]:
+        if coins < m["cost"]:
             raise ValueError("not enough coins")
+        if scope == "evergreen":
+            self.evergreen["coins"] = coins - int(m["cost"])
+            self.evergreen["mercenaries"] = hired + [mid]
+            self.log.append("Evergreen: hired %s for %d coin%s." % (m["name"], m["cost"], "" if m["cost"] == 1 else "s"))
+            return
         self.coins -= int(m["cost"])
         self.mercenaries.append(mid)
         self.log.append("Hired %s for %d coin%s." % (m["name"], m["cost"], "" if m["cost"] == 1 else "s"))

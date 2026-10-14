@@ -4,4 +4,5 @@ Content comes from docs/LEGACY_CAMPAIGN.md (fan transcription reconciled with th
 rulebook); everything tagged "unverified" there is also tagged here so the UI can say so.
 """
 from . import legacy_rules  # noqa: F401  (registers the rule sets)
+from . import evergreen_rules  # noqa: F401  (registers Evergreen mode)
 from .state import CampaignState  # noqa: F401

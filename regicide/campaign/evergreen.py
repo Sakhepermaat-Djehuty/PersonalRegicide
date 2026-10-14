@@ -13,13 +13,16 @@ banes by the mat as you play as reminders of the rules. To increase complexity y
 swap one of the grey banes with a second red bane. For an extra challenge just add
 another bane!"
 
-The data below is a transcription; the engine rules for each card follow once all
-three parts of the pack are read.
+The data below is the transcription; ``draw_setup`` draws a mission, ``build_setup``
+turns a drawn setup (location id, bane and boon numbers) into a ``GameConfig.extra`` for
+``EvergreenRules`` (``evergreen_rules.py``), which implements every card.
 """
 from __future__ import annotations
 
 import random
 from typing import Any, Dict, List, Optional
+
+from . import party as P
 
 # Each location is a mission rules card: an optional setup, a start/end of turn effect,
 # special rules and an enemy-defeated step.
@@ -174,3 +177,133 @@ def draw_setup(rng: random.Random, extra_red: bool = False, extra_bane: bool = F
     used_o: List[int] = []
     boons = pick(by_tier(BOONS, "grey"), 1, used_o) + pick(by_tier(BOONS, "yellow"), 1, used_o)
     return {"location": rng.choice(LOCATIONS), "banes": banes, "boons": boons}
+
+
+# --------------------------------------------------------------------------- lookups
+def location_by_id(loc_id: str) -> Dict[str, Any]:
+    for loc in LOCATIONS:
+        if loc["id"] == loc_id:
+            return loc
+    raise KeyError(loc_id)
+
+
+def bane(n: int) -> Dict[str, Any]:
+    for b in BANES:
+        if b["n"] == int(n):
+            return b
+    raise KeyError(n)
+
+
+def boon(n: int) -> Dict[str, Any]:
+    for b in BOONS:
+        if b["n"] == int(n):
+            return b
+    raise KeyError(n)
+
+
+def setup_ids(setup: Dict[str, Any]) -> Dict[str, Any]:
+    """The compact, saveable form of a drawn setup: the location letter and the card numbers."""
+    return {"location": str(setup["location"]["id"]), "banes": sorted(int(b["n"]) for b in setup["banes"]),
+            "boons": sorted(int(b["n"]) for b in setup["boons"])}
+
+
+def expand_setup(ids: Dict[str, Any]) -> Dict[str, Any]:
+    """The card dicts of a saved setup (``setup_ids`` inverse)."""
+    return {"location": location_by_id(str(ids["location"])), "banes": [bane(n) for n in ids.get("banes", [])],
+            "boons": [boon(n) for n in ids.get("boons", [])]}
+
+
+# --------------------------------------------------------------------------- a mission's setup
+def build_setup(camp, ids: Dict[str, Any], rng: random.Random, mercenaries: Optional[List[str]] = None) -> Dict[str, Any]:
+    """``GameConfig.extra`` for an attempt at the drawn setup ``ids`` (see ``setup_ids``)
+    with the finished campaign's party. The grey banes and boons change this setup; the
+    location's setup line and everything else is read by ``EvergreenRules`` from the
+    ``evergreen`` entry.
+
+    * Enemies (rules card): the four Phase III and four Phase II experiments of mission 4,
+      weaker group on top, in their corrupted sleeves. Bane 1 puts the six Hydras of
+      mission 2 in place of the Phase II group, bane 3 the six Wyverns of mission 8 in
+      place of the Phase III group, bane 5 Myla (20/80) at the bottom and bane 8 the High
+      Arcana (25/120, immune to the four base classes) at the very bottom (5 before 8).
+    * Reserve: the party, less Ash and Quill (bane 6) or the five 10s (bane 7); plus the
+      chosen beast or all four (boon 26), the renewed Gøran (boon 25), the puppy with its
+      four classes while played (boon 28), Oaken, Tolman and Roslyn (boon 29) and the
+      mercenaries hired with the boon's five coins (boon 24).
+    * Bane 4 plays with the corrupt Evergreen Mother instead of the restored one. The
+      Forest shuffles the four Phase I experiments into the banished pile; the Lake deals
+      the 24 pilgrims (the puppy is in mission box 8) into a face-down pilgrim deck.
+    * ``hand_bonus`` is 1 with boon 27 (the hand limit rises by one).
+    """
+    from . import missions as M
+    banes = [int(n) for n in ids.get("banes", [])]
+    boons = [int(n) for n in ids.get("boons", [])]
+    loc = str(ids["location"])
+    lab = M._lab_castle(rng)
+    phase2 = [e for e in lab if e["rank"] == "Q"]
+    phase3 = [e for e in lab if e["rank"] == "K"]
+    phase1 = [e for e in lab if e["rank"] == "J"]
+    if 1 in banes:
+        phase2 = M._hydra_castle(rng)
+    if 3 in banes:
+        phase3 = [e for e in M._edge_castle(rng) if e["rank"] == "K"]
+    castle = phase2 + phase3
+    if 5 in banes:
+        castle.append(dict(M.MYLA_BOSS))
+    if 8 in banes:
+        arcana = dict(M.HIGH_ARCANA_BOSS)
+        arcana["flags"] = list(arcana.get("flags", [])) + ["immune_basic"]
+        castle.append(arcana)
+    party = [dict(c) for c in camp.party]
+    if 6 in banes:
+        party = [c for c in party if str(c["id"]) not in (M.ASH["id"], "AM")]
+    if 7 in banes:
+        party = [c for c in party if str(c.get("rank")) != "10"]
+    if 26 in boons:
+        for b in M.BEASTS:
+            if P.find(party, str(b["id"])) is None:
+                party.append(dict(b))
+    elif camp.beast and camp.flags.get("beasts"):
+        b = M.beast_by_id(camp.beast)
+        if b is not None and P.find(party, str(b["id"])) is None:
+            party.append(dict(b))
+    if 25 in boons and P.find(party, M.GORAN_RENEWED["id"]) is None:
+        party.append(dict(M.GORAN_RENEWED))
+    if 28 in boons and P.find(party, M.PUPPY["id"]) is None:
+        puppy = dict(M.PUPPY)
+        puppy["flags"] = ["evergreen_puppy"]
+        party.append(puppy)
+    if 29 in boons:
+        for group, cid in ((M.REAVERS, "3R"), (M.DRUIDS, "3U"), (M.CHANTERS, "3T")):
+            card = [c for c in group if c["id"] == cid][0]
+            if P.find(party, cid) is None:
+                party.append(dict(card))
+    extra_jesters = 0
+    if 24 in boons:
+        from .mercenaries import by_id
+        for mid in mercenaries or []:
+            card = dict(by_id(mid)["card"])
+            if card["rank"] == "X":
+                extra_jesters += 1
+            elif P.find(party, str(card["id"])) is None:
+                party.append(card)
+    relics = list(camp.relics)
+    if 4 in banes and "mother_restored" in relics:
+        relics = [r for r in relics if r != "mother_restored"]
+        if "mother" not in relics:
+            relics.append("mother")
+    banished_start: List[dict] = []
+    if loc == "C":
+        rng.shuffle(phase1)
+        banished_start = phase1
+    pilgrims: List[dict] = []
+    if loc == "E":
+        pilgrims = [dict(c) for c in M.PILGRIMS if c["id"] != M.PUPPY["id"]]
+        rng.shuffle(pilgrims)
+    return {
+        "party": party, "castle": castle, "relics": relics, "extra_jesters": extra_jesters,
+        "discard_low_to_high": bool(camp.flags.get("discard_low_to_high")),
+        "mission": 13, "evergreen": {"location": loc, "banes": sorted(banes), "boons": sorted(boons)},
+        "banished_start": banished_start, "zone_start": [], "pilgrims": pilgrims,
+        "pilgrims_in_reserve": [], "capture": {}, "beast_deck": [],
+        "hand_bonus": 1 if 27 in boons else 0,
+    }

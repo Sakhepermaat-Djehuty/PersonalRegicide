@@ -914,10 +914,19 @@ early can be drawn and played as the corrupted party card it is, with its sticke
 corrupted card with a class sticker is a two-class enemy: immune to both classes and,
 if a second class is among the four, with both powers (the app's reading).
 
-**Engine status:** data, setup step and rewards are in (the corrupted cards move to a
-new "away" list in the campaign save for the mission and return afterwards); the
-mission rules (five-times health, zone strength, the four enemy powers, the discard or
-banish of the zone) are to be built.
+**Engine status:** mission 10 is playable (`Mission10Rules`). The corrupted cards move
+to the campaign's "away" list for the mission and return afterwards; the enemy deck is
+face up, 2 on top down to 9 (the game screen's status line names the next enemy),
+health five times the base strength. Start of turn: the top reserve card goes into the
+zone, which adds its combined strength. Powers by class, a stickered card having both:
+warrior, the total strength (base plus zone) is doubled and the paladin shields come off
+afterwards (`attack_multiplier`); paladin, the damage dealt is reduced by the base
+strength, an exact kill being judged after the reduction (`damage_reduction`); cleric,
+at the end of the turn the top discard goes into the zone; bard, the current player must
+put a hand card into the zone (`zone_feed`, no pass while the hand has an unlocked card).
+Both end-of-turn powers are skipped on a kill (p.19). Enemy defeated: the zone is
+banished and the enemy discarded; on exact damage the zone is discarded. A defeated
+member drawn later plays as the corrupted card it is (its banish, its classes).
 
 ## Mission 11, Descent Into Darkness (confirmed, transcribed from the owner's photos)
 
@@ -978,9 +987,20 @@ class, so their immunities come only from the pile tops. Whether a player with a
 hand simply skips the cleric or bard effect (the app assumes yes). If the top of the
 discard pile is a beast or a classless card it grants strength but no immunity.
 
-**Engine status:** data, the setup choice (queued before the first attempt as a
-"Mission setup" screen) and the reward are in; the mission rules (beast deck and its
-four effects, pile-top strength and immunity, exact-kill skip) are to be built.
+**Engine status:** mission 11 is playable (`Mission11Rules`). The four beasts form a
+face-down beast deck in the zone (`extra["beast_deck"]`) with a face-up pile beside it
+(`extra["beasts_out"]`; the zone strip shows the revealed beasts and the deck's count).
+Every start of turn, the first one included (the app's first player is seat 0), the top
+beast is revealed and applied: warrior, the top discard is banished; paladin, the top
+reserve card is discarded; cleric, the current player discards a hand card
+(`beast_discard`); bard, the current player banishes one (`beast_banish`); an empty hand
+skips the last two. The beast then joins the face-up pile; with all four out they are
+shuffled into a new deck. The enemies have no class of their own: each is immune to the
+classes of the top discard and the top banished card and gains their strengths (a Jester,
+a beast or a classless card grants its strength, 0 for the first two, and no immunity; a
+corrupted card's own class still ignores the immunity). Enemy defeated: banished (it then
+grants its strength from the top of the pile); on exact damage no beast is revealed at
+the start of the next turn (`extra["skip_beast"]`, cleared after skipping).
 
 ## Mission 12, Decay to Growth (confirmed, transcribed from the owner's photos)
 
@@ -1027,10 +1047,26 @@ top banished card under the reserve when played (rulebook p.15) and never enter 
 banished pile (the relic), so the whole-discard-pile banish at each kill is the
 mission's pressure.
 
-**Engine status:** data, setup steps (restore all, relic swap) and the pack E flag are
-in; the mission rules (banished-top into the zone, zone strength and immunity, banish
-zone + enemy + discard pile, exact-kill skip, the restored relic and the corrupted-card
-rule) are to be built. All twelve missions' cards are now transcribed.
+**Engine status:** mission 12 is playable (`Mission12Rules`); the campaign is marked
+complete when the High Arcana (25/120) falls, and the game menu then offers Evergreen
+mode. Start of turn: the top banished card goes into the zone (skipped after an exact
+kill, `extra["skip_zone"]`); the zone adds its combined strength and grants immunity to
+its classes. Enemy defeated: the zone is banished in the order the player chooses
+(`banish_order`, a template the player fills with the permutation; the last card ends on
+top and feeds the zone next turn; the bots put the weakest or a classless card last),
+then the enemy, then the whole discard pile in its order (its top ends on top), and only
+then the played cards go on the new discard pile. The restored relic is implemented once
+in the engine: every banish goes through `Game.banish_cards`, and `banish_redirect`
+sends a restored card under the reserve deck instead (clean-up of a mage attack, the
+zone, the discard pile, a corrupted card's effect, a reaver's reveal, a druid's slot, the
+corrupt Mother's hand banish, a beast's effect). Likewise `Game.to_reserve` asks
+`reserve_redirect`: in this mission a corrupted card (the royals, the Arcana) that would
+enter the reserve, for instance returned by a restored card's p.15 effect, goes to the
+bottom of the banished pile. The restored cards' own entry effect (top banished card
+under the reserve; their abilities ignore immunity) was already in `on_cards_played`
+and is tested here. Open reading: the "Rules continued" side of the mission 12 card was
+not photographed; the summary card's corrupted-card rule is treated as this mission's
+only extra rule. All twelve missions are transcribed and playable.
 
 ## Pack C, corruption (confirmed, transcribed from the owner's photos)
 
@@ -1374,10 +1410,29 @@ reaver (already recorded).
 dwarves 4, avions 5, humans 6, elves 7, feltrix 8, drakonids 9, Deccari 10; the party
 holds five 10s (the four basic classes and the mage).
 
-**Engine status:** the whole pack is transcribed in `regicide/campaign/evergreen.py`
-with a random setup generator; the game menu of a finished campaign shows a disabled
-"Evergreen mission" button until the location, bane and boon rules are built on the
-mission engine (after missions 4 to 12).
+**Engine status:** Evergreen mode is playable. `evergreen.py` holds the transcription,
+the draw (`draw_setup`, with the two rules-card variants) and `build_setup`, which turns
+a drawn setup into a mission (the Phase II and III experiments, the grey banes' and
+boons' setup changes); `evergreen_rules.py` implements every location, bane and boon as
+small handlers keyed by card number on one rule set (`EvergreenRules`, id `evergreen`),
+tested one card at a time. The campaign save keeps the current setup, its options and
+its record (`CampaignState.evergreen`); the game menu of a finished campaign opens the
+Evergreen screen (draw, redraw, the two options, the cards' texts, boon 24's five-coin
+mercenary camp, start, continue); a lost mission allows a retry or a redraw, no coins.
+Readings the pack leaves open, as the app plays them: effects sharing a moment resolve
+location first, then banes and boons by number (end of turn: the location, bane 10, bane
+12, bane 23; start of turn: the location, bane 16, bane 22; setup: bane 5's Myla above
+bane 8's Arcana at the bottom). On a kill, the exact-kill boons 32 and 33 resolve
+before bane 15 and the location's steps (boon 32 names the zone, which the location then
+empties), bane 14 keeps the killing attack (its last play, a mage attack included) in
+the zone after the location's steps, and bane 13's team damage comes once the piles are
+final. Bane 21 and boon 30 judge the attack as formed in step 1, before the relics let
+others add to it; a beast counts as its partner. Bane 2 moves the 30 cards before the
+hands are drawn. Boon 31 applies to a player's own damage, not to team damage. Boons
+32 and 35 are mandatory when they have an option (their cards say "put"); boons 30, 31
+and 33 may be declined. Boon 28's puppy has no classes anywhere but in an attack. The
+corrupted-card rule of mission 12 is not applied in Evergreen mode (it is a mission 12
+card), so a discarded experiment or Arcana may be healed into the reserve and drawn.
 
 ## Verification checklist for the owner (gate G2 in PLAN.md)
 

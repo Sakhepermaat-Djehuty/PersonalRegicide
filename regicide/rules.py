@@ -172,9 +172,46 @@ class BaseRules:
         """Added to the enemy's printed attack before shields (Legacy missions)."""
         return 0
 
+    def attack_multiplier(self, game: "Game") -> int:
+        """Multiplies the enemy's total strength (printed plus bonus) before the paladin
+        shields are subtracted (Legacy mission 10's warriors double it)."""
+        return 1
+
     def damage_reduction(self, game: "Game") -> int:
         """Subtracted from the damage a combo deals (Legacy mission 10)."""
         return 0
+
+    def kinfolk_limit(self, game: "Game") -> int:
+        """The most a set / kinfolk attack may total (10; an Evergreen boon makes it 12)."""
+        return 10
+
+    def card_suits(self, game: "Game", card: Card) -> Tuple[str, ...]:
+        """The classes a card brings to an attack (its printed suits; an Evergreen boon
+        gives the puppy all four basic classes while it is played)."""
+        return tuple(card.suits)
+
+    def banish_redirect(self, game: "Game", card: Card) -> Optional[str]:
+        """Where a card goes instead of the banished pile, or None for the pile itself.
+        ``"reserve_bottom"``: under the reserve deck (Legacy mission 12's restored relic:
+        restored cards can never enter the banished pile)."""
+        return None
+
+    def reserve_redirect(self, game: "Game", card: Card) -> Optional[str]:
+        """Where a card goes instead of the reserve deck, or None for the deck itself.
+        ``"banished_bottom"``: the bottom of the banished pile (Legacy mission 12:
+        corrupted cards can never enter the reserve deck)."""
+        return None
+
+    def discard_suffered(self, game: "Game", cards: Sequence[Card], damage: int, feign: bool) -> None:
+        """Put the cards a player discarded to suffer damage where they go (the discard
+        pile; an Evergreen boon sends an exact payment under the reserve deck)."""
+        game._discard_cards(list(cards))
+
+    def after_suffer(self, game: "Game", cards: Sequence[Card], damage: int, feign: bool) -> Optional[Dict[str, Any]]:
+        """Called after a player paid the enemy's damage and before the end-of-turn
+        effects. Return a decision dict (with a ``player``) to ask something first (the
+        rules' ``decide`` then ends with ``game.resume_suffered()``), or None."""
+        return None
 
     def can_yield(self, game: "Game") -> bool:
         """Official: "A player may not yield if every other player has yielded on their
@@ -243,8 +280,11 @@ class BaseRules:
         return sum(c.value for c in cards)
 
     # --- resolution hooks --------------------------------------------------------
-    def on_turn_start(self, game: "Game") -> None:
-        pass
+    def on_turn_start(self, game: "Game") -> Optional[Dict[str, Any]]:
+        """Start-of-turn effects. May return a serialisable decision dict (with a
+        ``player``) to ask something before the player acts (Legacy mission 11's beast
+        effects); the rules' ``decide`` then ends with ``game.resume_turn_start()``."""
+        return None
 
     def on_turn_end(self, game: "Game") -> Optional[Dict[str, Any]]:
         """End-of-turn effects. May return a serialisable decision dict (with a ``player``)
@@ -291,15 +331,16 @@ class BaseRules:
 # ---------------------------------------------------------------------------
 
 def classify_combo(cards: Sequence[Card], strength: Optional[Callable[[Card], int]] = None,
-                   max_cards: Optional[int] = 4) -> Tuple[str, Optional[str]]:
+                   max_cards: Optional[int] = 4, max_total: int = 10) -> Tuple[str, Optional[str]]:
     """Classify a set of cards as a legal play.
 
     Returns ``(kind, None)`` or ``("", reason)``. With the defaults this is the base game:
     a set is two to four cards of the same number totalling at most 10. ``strength``
     (card -> int) makes a set a matter of equal *strength* rather than rank and sums with
     it (Legacy kinfolk, where a 2/5 card counts as a 2); ``max_cards=None`` lifts the
-    four-card cap (Legacy allows five 2s). A Legacy beast (flag ``beast``) pairs like an
-    Animal Companion: with any one other card, never in a set, never with a Jester.
+    four-card cap (Legacy allows five 2s); ``max_total`` is the set's cap (an Evergreen
+    boon raises it to 12). A Legacy beast (flag ``beast``) pairs like an Animal
+    Companion: with any one other card, never in a set, never with a Jester.
     """
     if not cards:
         return "", "Pick at least one card."
@@ -333,8 +374,8 @@ def classify_combo(cards: Sequence[Card], strength: Optional[Callable[[Card], in
         return "", "Combos need cards of the same number, or an Ace with one other card."
     if max_cards is not None and len(cards) > max_cards:
         return "", "A combo has at most %s cards." % ("four" if max_cards == 4 else max_cards)
-    if total > 10:
-        return "", "A combo's total must be 10 or less."
+    if total > max_total:
+        return "", "A combo's total must be %d or less." % max_total
     return "set", None
 
 

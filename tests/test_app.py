@@ -1160,6 +1160,187 @@ def test_mission9_pile_strip_rescue_flow_and_exact_kill_overlay(app):
     assert gs.zone.title == "Captured piles · %d / %d / %d" % (len(piles[0]), len(piles[1]), len(piles[2]))
 
 
+def _finished_campaign(app, names=("Solo",)):
+    """A campaign that has completed mission 12, shown on its game menu."""
+    from app.screens import CampaignScreen
+    from regicide.campaign import missions as M
+    app.new_campaign(len(names), list(names))
+    camp = app.campaign
+    camp.mission = 12
+    camp.completed = list(range(1, 13))
+    camp.finished = True
+    camp.relics.append("mother_restored")
+    camp.flags["beasts"] = True
+    camp.set_beast("B_H")
+    for d in M.MAGE_DECK:
+        P.add_card(camp.party, dict(d))
+    P.add_card(camp.party, dict(M.ASH))
+    P.add_card(camp.party, dict(M.ESME_REBORN))
+    for cid in ("2S", "3H", "4D", "5C", "7S", "8H", "9D", "ESME6E"):
+        P.add_flag(camp.party, cid, "restored")
+    app.save_campaign()
+    app.show(CampaignScreen(app))
+    return camp
+
+
+def test_evergreen_screen_draw_redraw_options_mercenaries_start_and_continue(app):
+    from app import store
+    from app.screens import CampaignResultOverlay, CampaignScreen, EvergreenScreen, GameScreen, MercenaryScreen
+    camp = _finished_campaign(app)
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert "Campaign complete!" in texts and ui.button(app, "Evergreen mission").enabled
+    _tap_button(app, "Evergreen mission")
+    assert isinstance(app.current, EvergreenScreen) and ui.button(app, "New Evergreen mission")
+    with pytest.raises(KeyError):
+        ui.button(app, "Start")                        # nothing drawn yet
+    assert ui.render(app).size[0] > 0
+    # the two options of the rules card are switches, remembered in the save
+    switches = ui.find(app, lambda v: isinstance(v, ui.Switch))
+    assert len(switches) == 2 and not switches[0].value
+    switches[0].value = True
+    switches[0].action(switches[0])
+    assert camp.evergreen["options"]["extra_red"] is True and store.load_campaign(camp.slot).evergreen["options"]["extra_red"]
+    _tap_button(app, "New Evergreen mission")
+    setup = camp.evergreen["setup"]
+    assert setup and len(setup["banes"]) == 4 and len(setup["boons"]) == 2
+    tiers = [b["tier"] for b in camp.evergreen_setup()["banes"]]
+    assert tiers.count("red") == 2 and tiers.count("grey") == 1
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    loc = camp.evergreen_setup()["location"]
+    assert "Location %s: the %s" % (loc["id"], loc["name"]) in texts
+    assert all(any(b["name"] in t for t in texts) for b in camp.evergreen_setup()["banes"] + camp.evergreen_setup()["boons"])
+    assert ui.button(app, "Start") and ui.button(app, "Redraw") and ui.render(app).size[0] > 0
+    calls = camp.rng_calls
+    _tap_button(app, "Redraw")
+    assert camp.rng_calls > calls and store.load_campaign(camp.slot).evergreen["setup"] == camp.evergreen["setup"]
+    # boon 24: the five-coin mercenary camp scoped to this setup
+    camp.evergreen["setup"] = {"location": "A", "banes": [2, 9, 11], "boons": [24, 30]}
+    camp.evergreen["coins"] = 5
+    app.save_campaign()
+    app.show(EvergreenScreen(app))
+    _tap_button(app, "Mercenaries (5 coins left)")
+    assert isinstance(app.current, MercenaryScreen) and app.current.evergreen
+    hires = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Hire" and v.enabled)]
+    assert len(hires) == 14
+    ui.tap(app, *ui.root_point(app, hires[0]))
+    assert camp.evergreen["coins"] == 4 and len(camp.evergreen["mercenaries"]) == 1 and camp.mercenaries == [] and camp.coins == 0
+    assert not ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Swap")
+    _tap_button(app, "‹ Back")
+    assert isinstance(app.current, EvergreenScreen) and ui.button(app, "Mercenaries (4 coins left)")
+    # start: an Evergreen game with the hired mercenary, saved as the campaign's attempt
+    _tap_button(app, "Start")
+    gs = _game_screen(app)
+    g = app.game
+    assert g.config.rules_id == "evergreen" and app.in_campaign and store.has_attempt(camp.slot)
+    assert any(x.startswith("M") and g.cards[x].has("mercenary") for x in g.cards) and len(g.discard) == 30
+    assert not gs.zone.hidden and gs.zone.title.startswith("Mission zone (the Shrine)")
+    assert camp.evergreen["attempts"] == 1 and ui.render(app).size[0] > 0
+    # continue from both menus
+    app.show(CampaignScreen(app))
+    assert ui.button(app, "Continue attempt")
+    _tap_button(app, "Evergreen mission")
+    assert ui.button(app, "Continue attempt")
+    with pytest.raises(KeyError):
+        ui.button(app, "Redraw")                       # no redraw while an attempt is in progress
+    _tap_button(app, "Continue attempt")
+    gs = _game_screen(app)
+    assert app.game.config.rules_id == "evergreen"
+    # a loss: no coins, the setup may be retried or redrawn
+    app.game._lose("test loss")
+    gs.refresh(after_action=False)
+    assert isinstance(gs.overlay, CampaignResultOverlay)
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert "Evergreen mission lost" in texts and camp.evergreen["losses"] == 1 and camp.coins == 0 and camp.finished
+    assert not store.has_attempt(camp.slot) and ui.button(app, "Play this setup again")
+    _tap_button(app, "Evergreen missions")
+    assert isinstance(app.current, EvergreenScreen) and ui.button(app, "Retry this setup (attempt 2)")
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert "This setup: 1 attempt, 1 lost" in texts
+
+
+def _late_mission_attempt(app, number, names=("Solo",)):
+    from regicide.campaign import missions as M
+    app.new_campaign(len(names), list(names))
+    camp = app.campaign
+    camp.mission = number
+    camp.completed = list(range(1, number))
+    camp.flags["beasts"] = True
+    camp.set_beast("B_H")
+    for d in M.MAGE_DECK:
+        P.add_card(camp.party, dict(d))
+    P.add_card(camp.party, dict(M.ASH))
+    if number == 10:
+        P.add_card(camp.party, dict(M.GORAN_RENEWED))
+    if number == 12:
+        P.add_card(camp.party, dict(M.ESME_REBORN))
+    for cid in ("2S", "3H", "4D", "5C", "6C", "7S", "8H", "9D")[: 7 if number == 12 else 8]:
+        P.add_flag(camp.party, cid, "corrupted")
+        camp.corrupted.append(cid)
+    app.save_campaign()
+    app.start_attempt()
+    gs = _game_screen(app)
+    return gs, app.game
+
+
+def test_mission11_beast_hand_pick_and_mission12_banish_order_overlay(app):
+    from app.screens import OrderOverlay
+    from helpers import set_mission_enemy
+    gs, g = _late_mission_attempt(app, 11)
+    assert not gs.zone.hidden and gs.zone.title.startswith("Beast deck · 3 face down · revealed: ")
+    if g.phase == PHASE_DECIDE:
+        gs.decide(greedy_policy(g))
+    # a cleric beast at the next start of turn: the hand is shown with one card to discard
+    for play in g.plays:
+        g.discard.extend(play.card_ids)
+    g.plays = []
+    set_mission_enemy(g, "CV_J1", hp=100)
+    g.extra["beast_deck"] = ["B_H"] + [x for x in g.extra["beast_deck"] if x != "B_H"]
+    g.extra["beasts_out"] = [x for x in g.extra["beasts_out"] if x != "B_H"]
+    set_hand(g, ["AS", "9S", "8S", "2C"])
+    g.tavern.extend(g.discard)
+    g.discard = []
+    g.banished = []
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["AS"])
+    _tap_button(app, "Play")
+    gs.hand.set_selection(["9S", "8S"])
+    _tap_button(app, "Discard")
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "beast_discard" and gs.overlay is None
+    assert gs.right_btn.title == "Discard" and not gs.right_btn.enabled and gs.left_btn.title == "No pass" and not gs.left_btn.enabled
+    assert "cleric beast" in gs.message.text and [c.id for c in gs.hand.cards] == ["2C"]
+    assert gs.zone.title.startswith("Beast deck") and "Cleric" in gs.zone.title and ui.render(app).size[0] > 0
+    _tap_card(app, gs, "2C")
+    assert gs.right_btn.enabled and "discards 2♣" in gs.message.text
+    _tap_button(app, "Discard")
+    assert g.decision is None and g.discard[0] == "2C" and g.phase == PHASE_PLAY
+    assert "2♣ discarded" in gs.message_text
+    # mission 12: the banish order is picked by tapping the zone cards in order
+    gs, g = _late_mission_attempt(app, 12)
+    assert gs.zone.title == "Mission zone (empty)"
+    set_mission_enemy(g, "THQH", hp=9)
+    for x in ("6D", "4H"):                             # neither is restored: both can be banished
+        for pile in (g.tavern, g.discard, g.banished, g.players[0].hand):
+            if x in pile:
+                pile.remove(x)
+    g.mission_zone = ["6D", "4H"]
+    set_hand(g, ["9S", "AS"])
+    gs.refresh(after_action=False)
+    assert gs.zone.title == "Mission zone · enemy strength +10 · immune to Bards"
+    gs.hand.set_selection(["9S"])
+    assert "defeats it exactly" in gs.message.text
+    _tap_button(app, "Play")
+    assert g.decision["kind"] == "banish_order" and isinstance(gs.overlay, OrderOverlay)
+    confirm = ui.button(app, "Confirm the order (0 of 2)")
+    assert not confirm.enabled and ui.render(app).size[0] > 0
+    ui.tap(app, *ui.root_point(app, gs.overlay.card_views["4H"]))
+    assert gs.overlay.picked == ["4H"] and gs.overlay.card_views["4H"].badge == "1"
+    ui.tap(app, *ui.root_point(app, gs.overlay.card_views["6D"]))
+    assert gs.overlay.picked == ["4H", "6D"]
+    _tap_button(app, "Confirm the order (2 of 2)")
+    assert g.decision is None and g.banished[:3] == ["4H", "6D", "THQH"] and g.enemies_defeated == 1
+    assert "Mission zone banished, 6♦ on top" in gs.message_text and gs.overlay is None
+
+
 def test_evergreen_mother_solo_pick_overlay_and_two_player_hand_banish(app):
     from app.screens import DecisionOverlay, PickOverlay
     from helpers import set_discard
