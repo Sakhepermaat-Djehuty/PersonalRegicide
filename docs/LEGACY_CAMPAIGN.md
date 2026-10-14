@@ -523,8 +523,9 @@ veils, the Crimson Grove in danger); texts in the private lore overlay only.
    (A sticker card with the four class icons sits behind it: his later classes.)
 2. "Keep Gøran's four beasts in the box beside your party. Each mission attempt you may
    include one of these four beasts in your reserve deck." Four beast cards, rank B, one
-   per class ("Gøran's Beast"): Bonty is the cleric; the bard, paladin and warrior
-   beasts' names were not read.
+   per class ("Gøran's Beast"): Bonty the cleric, Cosmo the bard (a violin), Tui the
+   warrior (an axe) and Lola the paladin (a shield). The app shows them as plain B
+   cards, B♥ B♦ B♣ B♠, with no names (owner's choice; see "Themeless cards" below).
 3. "Open pack C and corrupt another character in your party." Player's choice.
 4. "Acquire the new relic." Scarlet Whistle. *Two or more players:* "After you form an
    attack with a solitary Animal Companion or Beast, one other player may add any card
@@ -686,8 +687,10 @@ map piece on the back with the well marked by a cross).
 (red feather icon).
 
 **Enemy stats card:** Shoal 10 / 20, Deep 15 / 30, Abyssal 20 / 40; one pondkin of each
-class per tier, twelve enemies. (Whether they sit in corrupted sleeves was not visible on
-the stat card; an enemy card photo would settle it.)
+class per tier, twelve enemies. **Enemy fronts** (photographed): all twelve pondkin sit in
+plain sleeves, not corrupted ones. Shoal: Reed (cleric), a bard, a warrior and Bob
+(paladin); Deep: Pearl (paladin), Sirena (cleric), Lily (warrior), Nieven (bard);
+Abyssal: a paladin, Helion (bard), Ettran (cleric), Cerulea (warrior).
 
 **Mission rules card (front).** *Setup:* open pack P. Shuffle the pilgrims and place
 them in a face-down pilgrim deck in the mission zone. *Start of turn:* place a card from
@@ -739,9 +742,9 @@ damage; they still fill the hand limit, so a hand of pilgrims that cannot yield 
 mission (p.14). Enemy defeated: on exact damage one zone card may first be banished
 (`zone_banish`, optional); then cards equal to the zone's total strength go from the top
 of the reserve to the discard pile (fewer if it runs out), the zone is discarded, the
-enemy banished, the played cards go on top. Decisions: whether the pondkin sit in
-corrupted sleeves is still open, so they are plain enemies; the pilgrim match is decided
-by the active player also for cards other players add through the Flute.
+enemy banished, the played cards go on top. The pondkin are plain enemies (their fronts
+show plain sleeves). Decision: the pilgrim match is decided by the active player also for
+cards other players add through the Flute.
 
 ## Mission 8, Winds of Chaos (confirmed, transcribed from the owner's photos)
 
@@ -1058,8 +1061,15 @@ strength of cards in the mission zone. Each enemy has immunity to the classes of
 cards in the mission zone. *Enemy defeated:* banish all cards in the mission zone (in
 any order), then banish the enemy, then banish the discard pile (without changing the
 order). If the enemy was dealt exact damage, do not place the top card of the banished
-pile into the mission zone at the start of the next turn. The "Rules continued" side was
-not photographed; the summary card carries its one extra rule.
+pile into the mission zone at the start of the next turn.
+
+**Rules continued (back).** *Note:* "If a corrupted card would ever enter the reserve
+deck, put it on the bottom of the banished pile instead." *Remember:* "When a restored
+card enters play on your playmat place the top card of the banished pile under the
+reserve deck." *Example:* Edward (20, Mutated King, cleric, health 40) faces a mission
+zone of Dhonatir (4, dwarf paladin), River (3, halfling bard) and Bite (8, feltrix
+paladin): "Edward is immune to clerics, bards and paladins. He has strength of 35 (20 +
+4 + 3 + 8)." (His own class plus the zone's classes; strength printed plus the zone.)
 
 **Rules summary card:** Start of turn: put the top of the banished pile into the
 mission zone. Cards in the mission zone grant strength and immunity to the enemy.
@@ -1101,9 +1111,39 @@ corrupt Mother's hand banish, a beast's effect). Likewise `Game.to_reserve` asks
 enter the reserve, for instance returned by a restored card's p.15 effect, goes to the
 bottom of the banished pile. The restored cards' own entry effect (top banished card
 under the reserve; their abilities ignore immunity) was already in `on_cards_played`
-and is tested here. Open reading: the "Rules continued" side of the mission 12 card was
-not photographed; the summary card's corrupted-card rule is treated as this mission's
-only extra rule. All twelve missions are transcribed and playable.
+and is tested here, as is the card's Edward example (strength 35, immune to clerics,
+bards and paladins). All twelve missions are transcribed and playable.
+
+## Themeless cards (owner's decision)
+
+The owner plays a themeless deck: "for the same reason as not giving the reserve or
+enemies names", Gøran's beasts are "plain B playing cards". The app applies the same rule
+to every card the party holds. The transcriptions in this document keep the names
+printed on the physical cards; the app shows none of them.
+
+* **Plain cards, rank and class only:** Gøran's four beasts (B♥ B♦ B♣ B♠), Myla's beast
+  (B★, "Ash"), the ten mages (the ace was "Quill"), the four Reavers, Guardians, Druids
+  and Chanters (3, 5, 7 and 9 of their class), the 24 pilgrims and the pilgrim ace (the
+  puppy), shown as "Pilgrim 4", and the mercenaries ("12 Cleric", "2/5 Bard", "19 (no
+  class)", "Wild Animal (choose a class)", "Jester"). Reward texts name the cards the same
+  way ("the 5 Reaver teaches a 6: the Cleric, Bard or Paladin 6 gains the Reaver class").
+  Races (dwarves, feltrix and so on) are not shown either: mission 9's student choice is
+  "the 4s or the 8s".
+* **Still named:** the story characters the mission cards name (Gøran, Myla, Esme and the
+  High Arcana) and the enemies' type names (Sporeling, Troll, Justicar and so on), as
+  before.
+* **Card faces:** the rank in the corner over the class pips, the pips large in the
+  middle, each in its own colour (an Evergreen card shows four small ones). A classless
+  card shows its rank large in the middle. The word under the pips is a story character's
+  name, "pilgrim" on a pilgrim or "any class" on a Wild Animal, and nothing on a plain
+  card. A 2/5 shows "2/5".
+* **Sleeves (owner's choice):** a corrupted card sits in a purple sleeve and a restored
+  card in a green one, drawn as a thick coloured edge around the face instead of a word.
+  A restored card also carries the restoration icon, a small geometric tree, as an extra
+  pip after its classes (in the corner, in the middle and on small faces). Other tags
+  ("stuck" for a pilgrim, "flute" for a stored card, an order number) keep a gold band
+  along the bottom.
+* **Saves:** campaigns and attempts saved before the change lose these names when loaded.
 
 ## Pack C, corruption (confirmed, transcribed from the owner's photos)
 
@@ -1152,11 +1192,10 @@ same two numbers on the enemy panel.
 (3 and 4 are the contents list), the four player helper cards, all twelve missions
 (location, story, setup, rules, summary, enemy stats and reward cards, with an example
 enemy for most), every relic on both sides, packs C, F, M, P and E in full, the map and
-the mat. Not photographed and not needed: the 40 party card fronts (names are not
-wanted), the 12s' and 2/5s' names, the 5 and 7 pilgrims' names. Still open, small: the
-"Rules continued" side of mission 12 if the card has one, the fronts of Gøran's four
-beasts (names and classes; only Bonty the cleric is known), and whether mission 7's
-pondkin sit in corrupted sleeves.
+the mat, the back of mission 12's rules card, Gøran's four beasts and mission 7's
+pondkin fronts. Not photographed and not needed: the 40 party card fronts (names are not
+wanted), the 12s' and 2/5s' names, the 5 and 7 pilgrims' names. Nothing from the box is
+left open.
 
 ## Permanent mechanics (as transcribed)
 

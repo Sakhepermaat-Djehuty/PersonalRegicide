@@ -425,6 +425,27 @@ def test_mission12_banished_top_feeds_the_zone_which_adds_strength_and_immunity_
     _ids_everywhere(g)
 
 
+def test_mission12_rules_card_example_edward_has_strength_35_and_three_immunities():
+    """The back of the mission 12 rules card: a cleric King (20) facing a zone of a 4
+    paladin, a 3 bard and an 8 paladin is immune to clerics, bards and paladins and has
+    strength 35 (20 + 4 + 3 + 8)."""
+    c, g = _mission12(seed=1203)
+    _switch_enemy(g, "THKH", hp=40)
+    _rig(g, "mission_zone", ["4S", "3D", "8S"])
+    assert g.cards["THKH"].attack == 20 and tuple(g.cards["THKH"].suits) == ("H",)
+    assert g.rules.attack_bonus(g) == 15 and g.enemy_attack == 35
+    assert sorted(g.rules.immune_suits(g)) == ["D", "H", "S"]
+    _ids_everywhere(g)
+
+
+def test_goran_beasts_are_plain_b_cards_one_per_class():
+    """Owner's choice: Gøran's beasts are plain "B" playing cards, no names (like the
+    reserve and the enemies). Myla's beast is the B of the Mage class."""
+    assert [P.to_card(b).label() for b in M.BEASTS] == ["B♥", "B♦", "B♣", "B♠"]
+    assert all("name" not in b and b["value"] == 0 and b["flags"] == ["beast"] for b in M.BEASTS)
+    assert P.to_card(M.ASH).label() == "B★" and "name" not in M.ASH
+
+
 def test_mission12_defeat_banishes_the_zone_in_the_chosen_order_then_the_enemy_then_the_discard_pile():
     c, g = _mission12(seed=1201)
     _switch_enemy(g, "THQH", hp=9)

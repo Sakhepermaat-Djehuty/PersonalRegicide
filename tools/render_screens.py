@@ -155,7 +155,9 @@ def main(argv):
             break
     if g2.phase == "won":
         camp.finish_attempt(g2)
-        camp.resolve_choice(camp.pending_choice()["options"][0])
+        # pack C's corruption is random (no options): resolve it, then show the stickers
+        while camp.pending_choice() and camp.pending_choice()["kind"] == "corrupt_random":
+            camp.resolve_choice(None)
         app.show(ChoiceScreen(app))
         shot(app, "45e_class_stickers")
         camp.pending = []

@@ -662,7 +662,7 @@ def test_boons_25_26_28_29_add_cards_to_the_reserve():
     c, g = _evergreen("A", boons=[26])
     assert all(b["id"] in g.cards for b in M.BEASTS)
     c, g = _evergreen("A", boons=[29])
-    assert all(x in g.cards for x in ("3R", "3U", "3T")) and g.cards["3R"].name == "Oaken"
+    assert all(x in g.cards for x in ("3R", "3U", "3T")) and g.cards["3R"].name == "" and g.cards["3R"].label() == "3⚔"
     c, g = _evergreen("A", boons=[28])
     assert "PILA" in g.cards and g.cards["PILA"].has("evergreen_puppy") and not g.cards["PILA"].has("pilgrim")
     # the puppy has all four classes while played, none anywhere else

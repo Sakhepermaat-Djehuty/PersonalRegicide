@@ -1121,11 +1121,11 @@ def test_mission7_zone_title_and_pilgrim_banish_pick_overlay(app):
     assert g.decision["kind"] == "pilgrim_banish" and isinstance(gs.overlay, PickOverlay)
     texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
     assert "A pilgrim matches" in texts
-    assert ui.button(app, "Banish Follower (3)") and ui.button(app, "Keep the pilgrims")
+    assert ui.button(app, "Banish Pilgrim 3") and ui.button(app, "Keep the pilgrims")
     assert ui.render(app).size[0] > 0
-    _tap_button(app, "Banish Follower (3)")
+    _tap_button(app, "Banish Pilgrim 3")
     assert g.mission_zone == [] and "PIL3_1" in g.banished and g.decision is None and gs.overlay is None
-    assert "Follower (3) banished from the mission zone" in gs.message_text
+    assert "Pilgrim 3 banished from the mission zone" in gs.message_text
     assert gs.zone.title.startswith("Mission zone · 0 pilgrims, total 0")
 
 

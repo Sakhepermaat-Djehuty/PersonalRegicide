@@ -915,7 +915,9 @@ def test_mission5_setup_and_rewards_follow_the_cards():
     rng = random.Random(2)
     for step in M.start_steps(c, 5):
         M.apply_step(c, step, rng)
-    assert [P.find(c.party, x)["name"] for x in ("3R", "5R", "7R", "9R")] == ["Oaken", "Harore", "Elf Reaver", "Drakonid Reaver"]
+    # themeless: plain cards, rank and class only (no names, no races)
+    assert [P.to_card(P.find(c.party, x)).label() for x in ("3R", "5R", "7R", "9R")] == ["3⚔", "5⚔", "7⚔", "9⚔"]
+    assert all("name" not in P.find(c.party, x) and "subtitle" not in P.find(c.party, x) for x in ("3R", "5R", "7R", "9R"))
     assert M.start_steps(c, 5) == []
     # rewards
     steps = M.reward_steps(c, 5, rng)
@@ -948,7 +950,8 @@ def test_mission6_setup_and_rewards_follow_the_cards():
     for step in M.start_steps(c, 6):
         M.apply_step(c, step, rng)
     assert P.find(c.party, "MYLA7") is None
-    assert [P.find(c.party, x)["name"] for x in ("3G", "5G", "7G", "9G")] == ["Runo", "Teko", "Elf Guardian", "Drakonid Guardian"]
+    assert [P.to_card(P.find(c.party, x)).label() for x in ("3G", "5G", "7G", "9G")] == ["3⛨", "5⛨", "7⛨", "9⛨"]
+    assert all("name" not in P.find(c.party, x) for x in ("3G", "5G", "7G", "9G"))
     assert M.start_steps(c, 6) == []
     extra = M.build_setup(c, 6, rng)
     assert [d["id"] for d in extra["zone_start"]] == ["MYLA7"] and extra["banished_start"] == []
@@ -1451,7 +1454,8 @@ def test_mission7_setup_and_rewards_follow_the_cards():
     rng = random.Random(4)
     for step in M.start_steps(c, 7):
         M.apply_step(c, step, rng)
-    assert [P.find(c.party, x)["name"] for x in ("3U", "5U", "7U", "9U")] == ["Tolman", "Avion Druid", "Alantha", "Drakonid Druid"]
+    assert [P.to_card(P.find(c.party, x)).label() for x in ("3U", "5U", "7U", "9U")] == ["3✿", "5✿", "7✿", "9✿"]
+    assert all("name" not in P.find(c.party, x) for x in ("3U", "5U", "7U", "9U"))
     assert M.start_steps(c, 7) == []
     extra = M.build_setup(c, 7, rng)
     enemies = extra["castle"]
@@ -1484,7 +1488,8 @@ def test_mission8_setup_and_rewards_follow_the_cards():
     rng = random.Random(5)
     for step in M.start_steps(c, 8):
         M.apply_step(c, step, rng)
-    assert [P.find(c.party, x)["name"] for x in ("3T", "5T", "7T", "9T")] == ["Roslyn", "Avion Chanter", "Elf Chanter", "Druldox"]
+    assert [P.to_card(P.find(c.party, x)).label() for x in ("3T", "5T", "7T", "9T")] == ["3♫", "5♫", "7♫", "9♫"]
+    assert all("name" not in P.find(c.party, x) for x in ("3T", "5T", "7T", "9T"))
     assert M.start_steps(c, 8) == []
     extra = M.build_setup(c, 8, rng)
     enemies = extra["castle"]
@@ -1496,8 +1501,9 @@ def test_mission8_setup_and_rewards_follow_the_cards():
     assert len(extra["pilgrims_in_reserve"]) == 24 and all(d["id"] != "PILA" for d in extra["pilgrims_in_reserve"])
     names = {}
     for d in extra["pilgrims_in_reserve"]:
-        names.setdefault(d["value"], set()).add(d["name"])
-    assert names[2] == {"Traveller", "Seeker"} and names[3] == {"Follower"} and names[4] == {"Servant"} and names[6] == {"Acolyte"}
+        names.setdefault(d["value"], set()).add(P.to_card(d).label())
+    # themeless: every pilgrim is a plain classless card, "Pilgrim 2" to "Pilgrim 7"
+    assert all(names[v] == {"Pilgrim %d" % v} for v in names) and not any("name" in d for d in extra["pilgrims_in_reserve"])
     assert sorted(names) == [2, 3, 4, 5, 6, 7] and all(sum(1 for d in extra["pilgrims_in_reserve"] if d["value"] == v) == 4 for v in names)
     steps = M.reward_steps(c, 8, rng)
     assert [s["kind"] for s in steps] == ["add_suit", "corrupt_random", "remove_card", "remove_card", "remove_card", "choice_suit", "set_flag"]
@@ -2924,7 +2930,7 @@ def test_mission7_pilgrim_deck_flips_at_every_start_of_turn_and_pilgrims_never_l
     set_hand(g, ["8S", "3C"], player=1)
     set_tavern_top(g, ["5C", "6C"])
     # pilgrims in hand: not playable, not discardable, no feign death, and they count in the limit
-    assert g.check_play(["PIL4_1"]) == (False, "Servant (4) may never leave your hand.")
+    assert g.check_play(["PIL4_1"]) == (False, "Pilgrim 4 may never leave your hand.")
     assert all("PIL" not in x for p in g.legal_plays() for x in p)
     assert g.hand_defence_value() == 9 + 2 and g.hand_locked("PIL4_1") and not g.hand_locked("9S")
     g.play(["2D"])                                     # bard: Ana and Ben draw one each

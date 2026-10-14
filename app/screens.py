@@ -2515,7 +2515,7 @@ class ChoiceScreen(Screen):
         if step["kind"] == "choice_classes":
             self._layout_classes(step, y)
         elif step["kind"] == "choice_mage_student":
-            self._layout_options(step, y, {"4": "Dwarves (the 4s)", "8": "Feltrix (the 8s)"})
+            self._layout_options(step, y, {"4": "The 4s", "8": "The 8s"})
         else:
             self._layout_pick(step, y)
         self.add_subview(self.confirm_btn)

@@ -20,6 +20,7 @@ points where I need you. The gates where I need you are marked **G0–G4**.
 | Rules source of truth | `docs/RULES_BASE.md`, checked sentence by sentence against the official rulebook text | Two independent open-source engines were used as cross-checks. |
 | Legacy content | `docs/LEGACY_CAMPAIGN.md`: fan transcription (DorkDad141) reconciled with the rulebook, the publisher's compendium and reviews; every unverified line is tagged VERIFY | The physical cards are definitive; the app flags unverified rules in-game until you confirm them (G2). |
 | Spoilers | The app reveals a mission's rules, enemies and rewards only when you reach it (default); a setting can show everything | Keeps the legacy experience if you have not played the box yet. |
+| Card names | Themeless: every card the party holds is a plain playing card (rank and class), Gøran's beasts are plain B cards; only Gøran, Myla, Esme and the High Arcana keep their names | Your choice, "for the same reason as not giving the reserve or enemies names". |
 
 ## Stage ladder
 
@@ -51,9 +52,9 @@ failure adds coins equal to the failures so far; hired mercenaries stay until th
 is won; same-cost swaps after each failure), the solo Jester text, second-edition
 Mission 6, and every mission's location, story, rules, summary, enemy stat and reward
 cards (missions 1 to 12), with all five relics on both sides, pack C, pack F and pack M.
-The owner has photographed the whole box. Small open
-points: the "Rules continued" side of mission 12 if it exists, the fronts of
-Gøran's four beasts, and whether mission 7's enemies are in corrupted sleeves.
+The owner has photographed the whole box, including the back of mission 12's rules
+card, Gøran's four beasts (Bonty, Cosmo, Tui, Lola) and mission 7's pondkin (plain
+sleeves). Nothing from the box is left open.
 
 **G3 — answered:** progressive reveal stays on. Campaigns are save files: main menu
 Continue / Load game / New game / Quick play / Lore (all games); game menu Next
