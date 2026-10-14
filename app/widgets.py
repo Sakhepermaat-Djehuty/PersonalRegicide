@@ -53,6 +53,33 @@ def card_color(card: Card) -> str:
     return "#444444"
 
 
+RESTORED_PIP = "restored"   # pseudo-suit: the restoration icon drawn after a restored card's classes
+
+
+def sleeve_color(card: Card) -> str:
+    """The sleeve a card sits in: purple when corrupted, green when restored, none otherwise."""
+    if card.has("corrupted"):
+        return T.CORRUPTED
+    if card.has("restored"):
+        return T.RESTORED
+    return ""
+
+
+def draw_tree(x: float, y: float, w: float, h: float, color: str) -> None:
+    """The restoration icon: a small geometric tree (three stacked triangles on a trunk)
+    filling the box (x, y, w, h)."""
+    ui.set_color(color)
+    cx = x + w / 2.0
+    for apex, base, half in ((0.0, 0.42, 0.26), (0.2, 0.62, 0.36), (0.4, 0.82, 0.46)):
+        t = ui.Path()
+        t.move_to(cx, y + h * apex)
+        t.line_to(cx + w * half, y + h * base)
+        t.line_to(cx - w * half, y + h * base)
+        t.close()
+        t.fill()
+    ui.Path.rect(cx - w * 0.08, y + h * 0.8, w * 0.16, h * 0.2).fill()
+
+
 def card_caption(card: Card) -> str:
     """The small word under a card's pips: a story character's name, "pilgrim" on a
     pilgrim, "any class" on a Wild Animal; nothing on a plain card. An enemy card (a royal)
@@ -83,77 +110,96 @@ class CardView(ui.View):
         self.background_color = None  # drawn in draw()
 
     def draw(self) -> None:
-        w, h = self.width, self.height
-        r = max(6.0, min(w, h) * 0.12)
+        W, H = self.width, self.height
+        r = max(6.0, min(W, H) * 0.12)
         if not self.face_up:
             ui.set_color(T.CARD_BACK)
-            ui.Path.rounded_rect(1, 1, w - 2, h - 2, r).fill()
+            ui.Path.rounded_rect(1, 1, W - 2, H - 2, r).fill()
             ui.set_color("#7c6bc2")
-            ui.Path.rounded_rect(5, 5, w - 10, h - 10, r * 0.7).stroke()
+            ui.Path.rounded_rect(5, 5, W - 10, H - 10, r * 0.7).stroke()
             return
-        ui.set_color(T.CARD_FACE_DIM if self.dimmed else T.CARD_FACE)
-        ui.Path.rounded_rect(1, 1, w - 2, h - 2, r).fill()
-        border = ui.Path.rounded_rect(1.5, 1.5, w - 3, h - 3, r)
-        border.line_width = 3 if self.selected else 1
-        ui.set_color(T.ACCENT if self.selected else T.CARD_BORDER)
-        border.stroke()
         c = self.card
+        # Sleeves, as on the physical cards: a corrupted card sits in a purple sleeve, a
+        # restored one in a green sleeve. The sleeve is a thick coloured edge around the face.
+        sleeve = sleeve_color(c)
+        sw = max(2.5, min(W, H) * 0.08) if sleeve else 0.0
+        if sleeve:
+            ui.set_color(sleeve)
+            ui.Path.rounded_rect(1, 1, W - 2, H - 2, r).fill()
+        ui.set_color(T.CARD_FACE_DIM if self.dimmed else T.CARD_FACE)
+        ui.Path.rounded_rect(1 + sw, 1 + sw, W - 2 - 2 * sw, H - 2 - 2 * sw, max(3.0, r - sw * 0.6)).fill()
+        if self.selected or not sleeve:
+            border = ui.Path.rounded_rect(1.5, 1.5, W - 3, H - 3, r)
+            border.line_width = 3 if self.selected else 1
+            ui.set_color(T.ACCENT if self.selected else T.CARD_BORDER)
+            border.stroke()
+        # everything below is drawn inside the face (the sleeve's inner edge)
+        ox, oy = sw, sw
+        w, h = W - 2 * sw, H - 2 * sw
         col = card_color(c)
         if c.is_jester:
-            ui.draw_string("J", (0, h * 0.12, w, h * 0.4), (T.FONT_BOLD, h * 0.34), col, ui.ALIGN_CENTER)
-            ui.draw_string("JESTER", (0, h * 0.62, w, h * 0.3), (T.FONT_BOLD, max(8, h * 0.12)), col, ui.ALIGN_CENTER)
+            ui.draw_string("J", (ox, oy + h * 0.12, w, h * 0.4), (T.FONT_BOLD, h * 0.34), col, ui.ALIGN_CENTER)
+            ui.draw_string("JESTER", (ox, oy + h * 0.62, w, h * 0.3), (T.FONT_BOLD, max(8, h * 0.12)), col, ui.ALIGN_CENTER)
             return
         # Themeless faces: rank and class like a playing card. A beast is a plain "B" with
         # its class; a classless card (a pilgrim, a 19) shows its rank large in the middle.
         # Only the story characters (Gøran, Myla, Esme, the High Arcana) carry a name, and a
         # pilgrim or a Wild Animal a one-word reminder of what it is. Each class pip is drawn
-        # in its own colour and shrinks so that four (an Evergreen card) still fit.
+        # in its own colour and shrinks so that four (an Evergreen card) still fit. A
+        # restored card adds the restoration pip, a small tree, after its classes.
         rank = "2/5" if c.has("twofive") else c.rank
         suits = list(c.suits)
+        pips = suits + ([RESTORED_PIP] if c.has("restored") else [])
         caption = card_caption(c)
         if self.small:
             if suits:
-                ui.draw_string(rank, (0, h * 0.08, w, h * 0.45), (T.FONT_BOLD, h * 0.36), col, ui.ALIGN_CENTER)
-                self._pips(suits, 2, h * 0.5, w - 4, h * 0.34, ui.ALIGN_CENTER)
+                ui.draw_string(rank, (ox, oy + h * 0.08, w, h * 0.45), (T.FONT_BOLD, h * 0.36), col, ui.ALIGN_CENTER)
+                self._pips(pips, ox + 2, oy + h * 0.5, w - 4, h * 0.34, ui.ALIGN_CENTER)
             else:
-                ui.draw_string(rank, (0, h * 0.27, w, h * 0.46), (T.FONT_BOLD, h * 0.36), col, ui.ALIGN_CENTER)
+                ui.draw_string(rank, (ox, oy + h * 0.27, w, h * 0.46), (T.FONT_BOLD, h * 0.36), col, ui.ALIGN_CENTER)
             return
-        badge = self.badge or ("corrupted" if c.has("corrupted") else "restored" if c.has("restored") else "")
+        badge = self.badge
         band = max(12.0, h * 0.13) if badge else 0.0
-        bottom = h - 3 - band                      # the badge (a sleeve's colour) sits at the bottom
+        bottom = h - 3 - band                      # a tag ("stuck", "flute", an order) sits at the bottom
         cap_h = h * 0.17
-        ui.draw_string(rank, (5, 3, w - 10, h * 0.3), (T.FONT_BOLD, h * 0.22), col, ui.ALIGN_LEFT)
+        ui.draw_string(rank, (ox + 5, oy + 3, w - 10, h * 0.3), (T.FONT_BOLD, h * 0.22), col, ui.ALIGN_LEFT)
         low = bottom - (cap_h if (caption or c.is_royal) else 2)
         if suits:
-            self._pips(suits, 5, h * 0.22, w - 10, h * 0.16, ui.ALIGN_LEFT)
+            self._pips(pips, ox + 5, oy + h * 0.22, w - 10, h * 0.16, ui.ALIGN_LEFT)
             top = h * 0.38
             size = min(h * 0.42, (low - top) * 0.85)
-            self._pips(suits, 4, top + max(0.0, (low - top) - size * 1.15) / 2.0, w - 8, size, ui.ALIGN_CENTER)
+            self._pips(pips, ox + 4, oy + top + max(0.0, (low - top) - size * 1.15) / 2.0, w - 8, size, ui.ALIGN_CENTER)
         else:
             top = h * 0.36
             size = min(h * 0.32, (low - top) * 0.8)
-            ui.draw_string(rank, (0, top + max(0.0, (low - top) - size * 1.2) / 2.0, w, size * 1.3),
+            ui.draw_string(rank, (ox, oy + top + max(0.0, (low - top) - size * 1.2) / 2.0, w, size * 1.3),
                            (T.FONT_BOLD, size), col, ui.ALIGN_CENTER)
         if caption:
-            ui.draw_string(caption, (2, bottom - cap_h, w - 4, cap_h), (T.FONT, max(8, h * 0.1)), "#333333", ui.ALIGN_CENTER)
+            ui.draw_string(caption, (ox + 2, oy + bottom - cap_h, w - 4, cap_h), (T.FONT, max(8, h * 0.1)), "#333333",
+                           ui.ALIGN_CENTER)
         if c.is_royal:
-            ui.draw_string("%d" % c.value, (0, bottom - cap_h, w - 5, cap_h), (T.FONT_BOLD, h * 0.12), col, ui.ALIGN_RIGHT)
+            ui.draw_string("%d" % c.value, (ox, oy + bottom - cap_h, w - 5, cap_h), (T.FONT_BOLD, h * 0.12), col,
+                           ui.ALIGN_RIGHT)
         if badge:
-            ui.set_color("#5a1f6b" if badge == "corrupted" else "#1f6b3a" if badge == "restored" else T.ACCENT)
-            ui.Path.rounded_rect(3, h - 3 - band, w - 6, band, 4).fill()
-            ui.draw_string(badge, (3, h - 3 - band, w - 6, band), (T.FONT_BOLD, max(8, h * 0.09)),
-                           "white" if badge in ("corrupted", "restored") else T.BG, ui.ALIGN_CENTER)
+            ui.set_color(T.ACCENT)
+            ui.Path.rounded_rect(ox + 3, oy + h - 3 - band, w - 6, band, 4).fill()
+            ui.draw_string(badge, (ox + 3, oy + h - 3 - band, w - 6, band), (T.FONT_BOLD, max(8, h * 0.09)), T.BG,
+                           ui.ALIGN_CENTER)
 
     @staticmethod
-    def _pips(suits, x: float, y: float, width: float, size: float, align) -> None:
-        """Class symbols in a row, each in its own colour, shrunk to fit ``width``."""
-        if not suits:
+    def _pips(pips, x: float, y: float, width: float, size: float, align) -> None:
+        """Class symbols in a row, each in its own colour, shrunk to fit ``width``; the
+        restoration pip is drawn as a small geometric tree."""
+        if not pips:
             return
-        step = min(size * 0.95, width / float(len(suits)))
+        step = min(size * 0.95, width / float(len(pips)))
         size = min(size, step / 0.95)
-        total = step * len(suits)
+        total = step * len(pips)
         x0 = x + (width - total) / 2.0 if align == ui.ALIGN_CENTER else x
-        for i, s in enumerate(suits):
+        for i, s in enumerate(pips):
+            if s == RESTORED_PIP:
+                draw_tree(x0 + i * step + step * 0.08, y + size * 0.18, step * 0.84, size * 0.92, T.RESTORED)
+                continue
             ui.draw_string(SUIT_SYMBOL.get(s, s), (x0 + i * step, y, step, size * 1.3), (T.FONT_BOLD, size),
                            T.SUIT_COLOR.get(s, T.TEXT), ui.ALIGN_CENTER)
 
@@ -184,12 +230,20 @@ class EnemyPanel(ui.View):
         # card on the left
         cw, ch = min(78.0, w * 0.22), min(110.0, h - 16)
         cx, cy = 10, (h - ch) / 2
-        ui.set_color(T.CARD_FACE)
-        ui.Path.rounded_rect(cx, cy, cw, ch, 8).fill()
-        ui.set_color(T.CARD_BORDER)
-        ui.Path.rounded_rect(cx + 0.5, cy + 0.5, cw - 1, ch - 1, 8).stroke()
+        sleeve = sleeve_color(card)   # a corrupted enemy (an experiment, a royal) sits in a purple sleeve
+        sw = max(2.5, cw * 0.08) if sleeve else 0.0
+        if sleeve:
+            ui.set_color(sleeve)
+            ui.Path.rounded_rect(cx, cy, cw, ch, 8).fill()
+            ui.set_color(T.CARD_FACE)
+            ui.Path.rounded_rect(cx + sw, cy + sw, cw - 2 * sw, ch - 2 * sw, max(3.0, 8 - sw * 0.6)).fill()
+        else:
+            ui.set_color(T.CARD_FACE)
+            ui.Path.rounded_rect(cx, cy, cw, ch, 8).fill()
+            ui.set_color(T.CARD_BORDER)
+            ui.Path.rounded_rect(cx + 0.5, cy + 0.5, cw - 1, ch - 1, 8).stroke()
         sym = "".join(SUIT_SYMBOL.get(s, s) for s in card.suits)
-        ui.draw_string(card.rank, (cx + 4, cy + 2, cw, 26), (T.FONT_BOLD, 22), col)
+        ui.draw_string(card.rank, (cx + 4 + sw, cy + 2 + sw, cw, 26), (T.FONT_BOLD, 22), col)
         ui.draw_string(sym, (cx, cy + ch * 0.32, cw, ch * 0.5), (T.FONT_BOLD, ch * 0.4), col, ui.ALIGN_CENTER)
         # text block
         tx = cx + cw + 12

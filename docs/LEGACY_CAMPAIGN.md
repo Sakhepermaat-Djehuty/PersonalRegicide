@@ -1099,8 +1099,13 @@ printed on the physical cards; the app shows none of them.
   middle, each in its own colour (an Evergreen card shows four small ones). A classless
   card shows its rank large in the middle. The word under the pips is a story character's
   name, "pilgrim" on a pilgrim or "any class" on a Wild Animal, and nothing on a plain
-  card. A 2/5 shows "2/5". The corrupted or restored band sits along the bottom, like a
-  sleeve's colour, so it never hides the rank.
+  card. A 2/5 shows "2/5".
+* **Sleeves (owner's choice):** a corrupted card sits in a purple sleeve and a restored
+  card in a green one, drawn as a thick coloured edge around the face instead of a word.
+  A restored card also carries the restoration icon, a small geometric tree, as an extra
+  pip after its classes (in the corner, in the middle and on small faces). Other tags
+  ("stuck" for a pilgrim, "flute" for a stored card, an order number) keep a gold band
+  along the bottom.
 * **Saves:** campaigns and attempts saved before the change lose these names when loaded.
 
 ## Pack C, corruption (confirmed, transcribed from the owner's photos)

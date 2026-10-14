@@ -17,6 +17,8 @@ fakeui.install()
 import ui  # noqa: E402
 
 from app import store  # noqa: E402
+from app import theme as T  # noqa: E402
+from app import widgets  # noqa: E402
 from app.widgets import CardView, card_caption  # noqa: E402
 from regicide.campaign import CampaignState  # noqa: E402
 from regicide.campaign import evergreen as E  # noqa: E402
@@ -102,10 +104,27 @@ def test_card_faces_show_rank_and_class_and_names_only_the_story_characters():
         nineteen = [m["card"] for m in MERCENARIES if m["id"] == "merc_19_1"][0]
         assert face(nineteen) == ["19", "19"]
         assert face(M.GORAN) == ["8", "8", "Gøran"]
-        corrupted = dict(M.BEASTS[0], flags=["beast", "corrupted"])
-        assert face(corrupted)[-1] == "corrupted"
+        # corrupted and restored cards are shown by their sleeve (a purple or green edge),
+        # not by a word; a restored card adds the restoration pip, a tree, after its classes
+        corrupted = {"id": "6C", "rank": "6", "suits": ["C"], "value": 6, "flags": ["corrupted"]}
+        restored = {"id": "6C", "rank": "6", "suits": ["C"], "value": 6, "flags": ["restored"]}
+        assert face(corrupted) == ["6", "♣", "♣"] and face(restored) == ["6", "♣", "♣"]
     finally:
         ui.draw_string = real
+    assert widgets.sleeve_color(P.to_card(corrupted)) == T.CORRUPTED
+    assert widgets.sleeve_color(P.to_card(restored)) == T.RESTORED
+    assert widgets.sleeve_color(P.to_card(M.BEASTS[0])) == ""
+    trees = []
+    real_tree = widgets.draw_tree
+    widgets.draw_tree = lambda *a: trees.append(a)
+    try:
+        for d, small in ((restored, False), (restored, True), (corrupted, False)):
+            v = CardView(P.to_card(d), frame=(0, 0, 80, 114))
+            v.small = small
+            ui.render(v)
+    finally:
+        widgets.draw_tree = real_tree
+    assert len(trees) == 3 and all(t[-1] == T.RESTORED for t in trees)   # corner + centre, small: one; none when corrupted
     assert card_caption(P.to_card(M.BEASTS[0])) == "" and card_caption(P.to_card(M.PUPPY)) == "pilgrim"
     assert card_caption(P.to_card([m["card"] for m in MERCENARIES if m["id"] == "merc_ace_1"][0])) == "any class"
 
