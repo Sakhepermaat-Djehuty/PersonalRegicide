@@ -683,7 +683,7 @@ def test_emblem_place_handover_flow_for_two_players(app):
     # Ben is asked first, flute-style: a handover panel, then his hand
     assert isinstance(gs.overlay, DecisionOverlay) and gs.hand.cards == []
     texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
-    assert any("Ben: place a card for Ana's 5★ attack?" in t for t in texts)
+    assert any("Ben: place a card for Ana's 5⚝ attack?" in t for t in texts)
     assert any(t.startswith("Azure Emblem") for t in texts)
     assert ui.render(app).size[0] > 0
     _tap_button(app, "Show my hand")
@@ -790,7 +790,7 @@ def test_reaver_count_grid_then_pick_overlay(app):
     gs.refresh(after_action=False)
     gs.hand.set_selection(["5C", "5R"])
     # the forecast counts the reaver's addition as 0: 10, doubled twice
-    assert "Reaver" in gs.message.text and "40 damage" in gs.message.text and "⚔ +0 then double" in gs.message.text
+    assert "Reaver" in gs.message.text and "40 damage" in gs.message.text and "⛏︎ +0 then double" in gs.message.text
     assert g.tavern[:3] == ["7H", "2D", "3D"]
     _tap_button(app, "Play")
     assert g.phase == PHASE_DECIDE and g.decision["kind"] == "reaver_count"

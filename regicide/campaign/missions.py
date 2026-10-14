@@ -9,7 +9,7 @@ import itertools
 import random
 from typing import Any, Dict, List, Optional
 
-from ..cards import BASIC_SUITS, CLASS_NAME, RANK_VALUE, SUIT_NAME
+from ..cards import BASIC_SUITS, CLASS_NAME, RANK_VALUE, SUIT_NAME, SUIT_SYMBOL
 from . import party as P
 
 Step = Dict[str, Any]
@@ -647,7 +647,7 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
                       "label": "The renewed Gøran (8, Evergreen: all four classes, ignores immunity) joins the party"})
         steps.append({"kind": "choice_mage_student", "options": ["4", "8"],
                       "label": MAGE_STUDENT_LABEL})
-        steps.append({"kind": "add_card", "card": ASH, "label": "Myla's beast, a B of the Mage class (B★), joins the party"})
+        steps.append({"kind": "add_card", "card": ASH, "label": "Myla's beast, a B of the Mage class (B%s), joins the party" % SUIT_SYMBOL["M"]})
     elif number == 10:
         # Reward cards (confirmed, in order): "Remove Gøran (8, Evergreen) from your party";
         # "Return the corrupted characters (the enemies from the previous mission) to your

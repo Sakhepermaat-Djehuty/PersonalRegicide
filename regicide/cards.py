@@ -20,12 +20,14 @@ SUIT_SYMBOL: Dict[str, str] = {
     DIAMONDS: "♦", # ♦
     CLUBS: "♣",    # ♣
     SPADES: "♠",   # ♠
-    # Legacy suits (used from Stage 3 on). Symbols are deliberately plain.
-    "M": "★",      # ★ mages
-    "R": "⚔",      # ⚔ reavers
-    "G": "⛨",      # ⛨ guardians
-    "U": "✿",      # ✿ druids
-    "T": "♫",      # ♫ drums
+    # Legacy classes: the owner's picks (from the symbol picker, checked on the phone). A
+    # trailing U+FE0E asks for the plain "text style" glyph, which takes the class colour
+    # instead of an emoji's own colours.
+    "M": "\u269D",           # outlined star: mages
+    "R": "\u26CF\uFE0E",     # pick, text style: reavers
+    "G": "\u265C",           # rook: guardians
+    "U": "\u2618\uFE0E",     # shamrock, text style: druids
+    "T": "\U0001D11E",       # G clef: chanters
 }
 SUIT_NAME: Dict[str, str] = {
     HEARTS: "Hearts", DIAMONDS: "Diamonds", CLUBS: "Clubs", SPADES: "Spades",

@@ -1143,7 +1143,7 @@ to every card the party holds. The transcriptions in this document keep the name
 printed on the physical cards; the app shows none of them.
 
 * **Plain cards, rank and class only:** Gøran's four beasts (B♥ B♦ B♣ B♠), Myla's beast
-  (B★, "Ash"), the ten mages (the ace was "Quill"), the four Reavers, Guardians, Druids
+  (B⚝, "Ash"), the ten mages (the ace was "Quill"), the four Reavers, Guardians, Druids
   and Chanters (3, 5, 7 and 9 of their class), the 24 pilgrims and the pilgrim ace (the
   puppy), shown as "Pilgrim 4", and the mercenaries ("12 Cleric", "2/5 Bard", "19 (no
   class)", "Wild Animal (choose a class)", "Jester"). Reward texts name the cards the same
@@ -1256,10 +1256,10 @@ left open.
     restored relic (**confirmed, both sides the same**): restored cards can never enter
     the banished pile; if they would, put them on the bottom of the reserve deck.
 * **New suits / classes** (each has 3/5/7/9 cards that join temporarily, one stays):
-  * ★ Mages (M3, permanent A–10★ added): reveal N cards from the tavern, pick one to add
+  * ⚝ Mages (M3, permanent A–10⚝ added): reveal N cards from the tavern, pick one to add
     to the combo (its suits and value join), discard the rest; a picked Mage chains.
     Cards from a combo containing a Mage are banished at cleanup instead of discarded.
-  * ⚔ Reavers (M5): reveal N cards, banish them all, add the chosen one's value to the
+  * ⛏︎ Reavers (M5): reveal N cards, banish them all, add the chosen one's value to the
     damage. With an empty tavern: just double the damage.
   * 🛡 Guardians (M6): take no damage this turn.
   * 🪶 Druids (M7): sort the discard pile: one card to hand, one on top of the tavern,
@@ -1269,7 +1269,7 @@ left open.
     Spades, Guardians, Clubs, Reavers. VERIFY against the Legacy rulebook.
 * **Beasts**: value 0 alone; paired with another card they copy its value. From M5 you
   pick one Beast of a basic suit to add to the deck for the mission (M11 excluded). A
-  permanent ★ Beast joins after M9.
+  permanent ⚝ Beast joins after M9.
 * **Special party members**: the High Arcana (25, "Elf Mage", no class, confirmed by the owner; joins after M1; the fan transcription has him leaving after M2 but no M2 card does it), Goran (8, gains a suit
   after each of M5–M8, ignores immunity after M9, removed after M10), Myla (7; joins
   after M5, leaves at M6, is the boss of M9), Esme (the 6♣; removed for M11, returns with

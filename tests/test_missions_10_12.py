@@ -443,7 +443,7 @@ def test_goran_beasts_are_plain_b_cards_one_per_class():
     reserve and the enemies). Myla's beast is the B of the Mage class."""
     assert [P.to_card(b).label() for b in M.BEASTS] == ["B♥", "B♦", "B♣", "B♠"]
     assert all("name" not in b and b["value"] == 0 and b["flags"] == ["beast"] for b in M.BEASTS)
-    assert P.to_card(M.ASH).label() == "B★" and "name" not in M.ASH
+    assert P.to_card(M.ASH).label() == "B⚝" and "name" not in M.ASH
 
 
 def test_mission12_defeat_banishes_the_zone_in_the_chosen_order_then_the_enemy_then_the_discard_pile():

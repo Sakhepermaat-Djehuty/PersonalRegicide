@@ -26,7 +26,7 @@ _PHRASES: List[Tuple[str, str]] = [
     ("The High Arcana (25, Elf Mage)", "The High Arcana (25, no class)"),
     ("Gøran (8, Feltrix Evergreen)", "Gøran (8, no class)"),
     ("Myla (7, Elf Pilgrim)", "Myla (7, no class)"),
-    ("Ash, Myla's beast (Mage), joins the party", "Myla's beast, a B of the Mage class (B★), joins the party"),
+    ("Ash, Myla's beast (Mage), joins the party", "Myla's beast, a B of the Mage class (B⚝), joins the party"),
     ("Gøran's four beasts wait beside the party", "Gøran's four beasts (B♥ B♦ B♣ B♠) wait beside the party"),
     ("The puppy stays at Heaven's Edge", "The pilgrim ace stays at Heaven's Edge"),
     ("Gi… (12, Cleric)", "12 Cleric"), ("Bard 12 (12, Bard)", "12 Bard"),
@@ -47,10 +47,10 @@ _PHRASES.sort(key=lambda p: -len(p[0]))
 
 # Then single names (whole words), as they appeared in "X joins / leaves the party".
 _NAMES: List[Tuple[str, str]] = [
-    ("Avion Chanter", "5♫"), ("Elf Chanter", "7♫"), ("Avion Druid", "5✿"), ("Drakonid Druid", "9✿"),
-    ("Elf Guardian", "7⛨"), ("Drakonid Guardian", "9⛨"), ("Elf Reaver", "7⚔"), ("Drakonid Reaver", "9⚔"),
-    ("Roslyn", "3♫"), ("Druldox", "9♫"), ("Tolman", "3✿"), ("Alantha", "7✿"), ("Runo", "3⛨"),
-    ("Teko", "5⛨"), ("Oaken", "3⚔"), ("Harore", "5⚔"), ("Bonty", "B♥"), ("Ash", "B★"), ("Quill", "A★"),
+    ("Avion Chanter", "5𝄞"), ("Elf Chanter", "7𝄞"), ("Avion Druid", "5☘︎"), ("Drakonid Druid", "9☘︎"),
+    ("Elf Guardian", "7♜"), ("Drakonid Guardian", "9♜"), ("Elf Reaver", "7⛏︎"), ("Drakonid Reaver", "9⛏︎"),
+    ("Roslyn", "3𝄞"), ("Druldox", "9𝄞"), ("Tolman", "3☘︎"), ("Alantha", "7☘︎"), ("Runo", "3♜"),
+    ("Teko", "5♜"), ("Oaken", "3⛏︎"), ("Harore", "5⛏︎"), ("Bonty", "B♥"), ("Ash", "B⚝"), ("Quill", "A⚝"),
     ("Puppy", "Pilgrim A"),
 ]
 _NAME_RE = re.compile(r"\b(%s)\b" % "|".join(re.escape(n) for n, _ in sorted(_NAMES, key=lambda p: -len(p[0]))))

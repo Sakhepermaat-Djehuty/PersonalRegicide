@@ -54,8 +54,8 @@ def test_party_side_cards_are_plain_and_only_the_story_characters_keep_a_name():
 def test_plain_labels_read_like_playing_cards():
     label = lambda d: P.to_card(d).label()   # noqa: E731
     assert [label(b) for b in M.BEASTS] == ["B♥", "B♦", "B♣", "B♠"]
-    assert label(M.ASH) == "B★" and label(M.MAGE_DECK[0]) == "A★"
-    assert [label(d) for d in M.REAVERS] == ["3⚔", "5⚔", "7⚔", "9⚔"]
+    assert label(M.ASH) == "B⚝" and label(M.MAGE_DECK[0]) == "A⚝"
+    assert [label(d) for d in M.REAVERS] == ["3⛏︎", "5⛏︎", "7⛏︎", "9⛏︎"]
     assert label(M.PUPPY) == "Pilgrim A" and {label(d) for d in M.PILGRIMS if d["rank"] == "4"} == {"Pilgrim 4"}
     mercs = {m["id"]: (m["name"], label(m["card"])) for m in MERCENARIES}
     assert mercs["merc_12H"] == ("12 Cleric", "12♥") and mercs["merc_25S"] == ("2/5 Paladin", "2/5♠")
@@ -112,7 +112,7 @@ def test_card_faces_show_rank_and_class_and_names_only_the_story_characters():
         restored = {"id": "6C", "rank": "6", "suits": ["C"], "value": 6, "flags": ["restored"]}
         stickered = {"id": "4D", "rank": "4", "suits": ["D", "U"], "value": 4, "flags": ["restored"]}
         assert face(corrupted) == ["6", "♣", "♣"] and face(restored) == ["6", "♣", "♣"]
-        assert face(stickered) == ["4", "♦", "✿", "♦", "✿"]
+        assert face(stickered) == ["4", "♦", "☘︎", "♦", "☘︎"]
         assert face(dict(M.GORAN_RENEWED)) == ["8", "Gøran"]          # its pips are trees
     finally:
         ui.draw_string = real
@@ -218,10 +218,10 @@ def test_old_save_text_and_attempt_enemy_are_rewritten(tmp_path, monkeypatch):
         {"kind": "remove_card", "card_id": "5G", "label": "Teko stays to rebuild the garden"},
     ]
     c2 = CampaignState.from_dict(json.loads(json.dumps(d)))
-    assert c2.log[-4:] == ["3⚔ leaves the party.", "Hired 12 Paladin for 1 coin.", "Ash wins the mission.",
+    assert c2.log[-4:] == ["3⛏︎ leaves the party.", "Hired 12 Paladin for 1 coin.", "Ash wins the mission.",
                            "Pilgrim 3 banished from the mission zone."]
     assert [s["label"] for s in c2.pending] == [M.CHOICE_SUIT_LABELS["R"], M.MAGE_STUDENT_LABEL,
-                                                "5⛨ stays to rebuild the garden"]
+                                                "5♜ stays to rebuild the garden"]
     assert c2.flags["plain_text"] is True
     c3 = CampaignState.from_dict(json.loads(json.dumps(c2.to_dict())))
     assert c3.log == c2.log                                   # rewritten once only

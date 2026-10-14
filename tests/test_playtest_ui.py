@@ -140,7 +140,7 @@ def test_wild_animal_has_a_class_icon_in_each_corner_and_multi_class_pips_keep_t
         del calls[:]
         v = CardView(P.to_card({"id": "8H", "rank": "8", "suits": ["H", "G"], "value": 8}), frame=(0, 0, 80, 114))
         ui.render(v)
-        assert ("⛨", T.SUIT_COLOR["G"]) in calls and ("♥", T.SUIT_COLOR["H"]) in calls
+        assert ("♜", T.SUIT_COLOR["G"]) in calls and ("♥", T.SUIT_COLOR["H"]) in calls
     finally:
         ui.draw_string = real
 

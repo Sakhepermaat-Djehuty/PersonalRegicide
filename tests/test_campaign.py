@@ -916,7 +916,7 @@ def test_mission5_setup_and_rewards_follow_the_cards():
     for step in M.start_steps(c, 5):
         M.apply_step(c, step, rng)
     # themeless: plain cards, rank and class only (no names, no races)
-    assert [P.to_card(P.find(c.party, x)).label() for x in ("3R", "5R", "7R", "9R")] == ["3⚔", "5⚔", "7⚔", "9⚔"]
+    assert [P.to_card(P.find(c.party, x)).label() for x in ("3R", "5R", "7R", "9R")] == ["3⛏︎", "5⛏︎", "7⛏︎", "9⛏︎"]
     assert all("name" not in P.find(c.party, x) and "subtitle" not in P.find(c.party, x) for x in ("3R", "5R", "7R", "9R"))
     assert M.start_steps(c, 5) == []
     # rewards
@@ -950,7 +950,7 @@ def test_mission6_setup_and_rewards_follow_the_cards():
     for step in M.start_steps(c, 6):
         M.apply_step(c, step, rng)
     assert P.find(c.party, "MYLA7") is None
-    assert [P.to_card(P.find(c.party, x)).label() for x in ("3G", "5G", "7G", "9G")] == ["3⛨", "5⛨", "7⛨", "9⛨"]
+    assert [P.to_card(P.find(c.party, x)).label() for x in ("3G", "5G", "7G", "9G")] == ["3♜", "5♜", "7♜", "9♜"]
     assert all("name" not in P.find(c.party, x) for x in ("3G", "5G", "7G", "9G"))
     assert M.start_steps(c, 6) == []
     extra = M.build_setup(c, 6, rng)
@@ -1454,7 +1454,7 @@ def test_mission7_setup_and_rewards_follow_the_cards():
     rng = random.Random(4)
     for step in M.start_steps(c, 7):
         M.apply_step(c, step, rng)
-    assert [P.to_card(P.find(c.party, x)).label() for x in ("3U", "5U", "7U", "9U")] == ["3✿", "5✿", "7✿", "9✿"]
+    assert [P.to_card(P.find(c.party, x)).label() for x in ("3U", "5U", "7U", "9U")] == ["3☘︎", "5☘︎", "7☘︎", "9☘︎"]
     assert all("name" not in P.find(c.party, x) for x in ("3U", "5U", "7U", "9U"))
     assert M.start_steps(c, 7) == []
     extra = M.build_setup(c, 7, rng)
@@ -1488,7 +1488,7 @@ def test_mission8_setup_and_rewards_follow_the_cards():
     rng = random.Random(5)
     for step in M.start_steps(c, 8):
         M.apply_step(c, step, rng)
-    assert [P.to_card(P.find(c.party, x)).label() for x in ("3T", "5T", "7T", "9T")] == ["3♫", "5♫", "7♫", "9♫"]
+    assert [P.to_card(P.find(c.party, x)).label() for x in ("3T", "5T", "7T", "9T")] == ["3𝄞", "5𝄞", "7𝄞", "9𝄞"]
     assert all("name" not in P.find(c.party, x) for x in ("3T", "5T", "7T", "9T"))
     assert M.start_steps(c, 8) == []
     extra = M.build_setup(c, 8, rng)
