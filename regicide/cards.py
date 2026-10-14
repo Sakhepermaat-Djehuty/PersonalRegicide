@@ -98,6 +98,13 @@ class Card:
             return "Jester"
         if self.name and not self.suits:
             return "%s (%s)" % (self.name, self.value)
+        if not self.suits:
+            # Legacy's classless cards are plain (themeless) cards: a pilgrim reads
+            # "Pilgrim 4", a Wild Animal "Wild Animal", a 19 simply "19".
+            if self.has("pilgrim") or self.has("evergreen_puppy"):
+                return "Pilgrim %s" % self.rank
+            if self.has("choosable"):
+                return "Wild Animal"
         return self.rank + "".join(SUIT_SYMBOL.get(s, s) for s in self.suits)
 
     def __str__(self) -> str:  # pragma: no cover - convenience

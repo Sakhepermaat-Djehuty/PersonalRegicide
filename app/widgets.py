@@ -53,6 +53,21 @@ def card_color(card: Card) -> str:
     return "#444444"
 
 
+def card_caption(card: Card) -> str:
+    """The small word under a card's pips: a story character's name, "pilgrim" on a
+    pilgrim, "any class" on a Wild Animal; nothing on a plain card. An enemy card (a royal)
+    shows its value there instead: its name is on the enemy panel."""
+    if card.is_royal:
+        return ""
+    if card.name:
+        return card.name
+    if card.has("pilgrim") or card.has("evergreen_puppy"):
+        return "pilgrim"
+    if card.has("choosable"):
+        return "any class"
+    return ""
+
+
 class CardView(ui.View):
     """A playing card. Tap toggles selection through ``on_tap``."""
 
@@ -88,26 +103,59 @@ class CardView(ui.View):
             ui.draw_string("J", (0, h * 0.12, w, h * 0.4), (T.FONT_BOLD, h * 0.34), col, ui.ALIGN_CENTER)
             ui.draw_string("JESTER", (0, h * 0.62, w, h * 0.3), (T.FONT_BOLD, max(8, h * 0.12)), col, ui.ALIGN_CENTER)
             return
-        rank = c.rank
-        sym = "".join(SUIT_SYMBOL.get(s, s) for s in c.suits)
+        # Themeless faces: rank and class like a playing card. A beast is a plain "B" with
+        # its class; a classless card (a pilgrim, a 19) shows its rank large in the middle.
+        # Only the story characters (Gøran, Myla, Esme, the High Arcana) carry a name, and a
+        # pilgrim or a Wild Animal a one-word reminder of what it is. Each class pip is drawn
+        # in its own colour and shrinks so that four (an Evergreen card) still fit.
+        rank = "2/5" if c.has("twofive") else c.rank
+        suits = list(c.suits)
+        caption = card_caption(c)
         if self.small:
-            ui.draw_string(rank, (0, h * 0.08, w, h * 0.45), (T.FONT_BOLD, h * 0.36), col, ui.ALIGN_CENTER)
-            ui.draw_string(sym, (0, h * 0.5, w, h * 0.45), (T.FONT_BOLD, h * 0.34), col, ui.ALIGN_CENTER)
+            if suits:
+                ui.draw_string(rank, (0, h * 0.08, w, h * 0.45), (T.FONT_BOLD, h * 0.36), col, ui.ALIGN_CENTER)
+                self._pips(suits, 2, h * 0.5, w - 4, h * 0.34, ui.ALIGN_CENTER)
+            else:
+                ui.draw_string(rank, (0, h * 0.27, w, h * 0.46), (T.FONT_BOLD, h * 0.36), col, ui.ALIGN_CENTER)
             return
+        badge = self.badge or ("corrupted" if c.has("corrupted") else "restored" if c.has("restored") else "")
+        band = max(12.0, h * 0.13) if badge else 0.0
+        bottom = h - 3 - band                      # the badge (a sleeve's colour) sits at the bottom
+        cap_h = h * 0.17
         ui.draw_string(rank, (5, 3, w - 10, h * 0.3), (T.FONT_BOLD, h * 0.22), col, ui.ALIGN_LEFT)
-        ui.draw_string(sym, (5, h * 0.22, w - 10, h * 0.25), (T.FONT_BOLD, h * 0.16), col, ui.ALIGN_LEFT)
-        ui.draw_string(sym, (0, h * 0.38, w, h * 0.45), (T.FONT_BOLD, h * 0.42), col, ui.ALIGN_CENTER)
-        if c.name:
-            ui.draw_string(c.name, (2, h * 0.8, w - 4, h * 0.18), (T.FONT, max(8, h * 0.1)), "#333333", ui.ALIGN_CENTER)
+        low = bottom - (cap_h if (caption or c.is_royal) else 2)
+        if suits:
+            self._pips(suits, 5, h * 0.22, w - 10, h * 0.16, ui.ALIGN_LEFT)
+            top = h * 0.38
+            size = min(h * 0.42, (low - top) * 0.85)
+            self._pips(suits, 4, top + max(0.0, (low - top) - size * 1.15) / 2.0, w - 8, size, ui.ALIGN_CENTER)
+        else:
+            top = h * 0.36
+            size = min(h * 0.32, (low - top) * 0.8)
+            ui.draw_string(rank, (0, top + max(0.0, (low - top) - size * 1.2) / 2.0, w, size * 1.3),
+                           (T.FONT_BOLD, size), col, ui.ALIGN_CENTER)
+        if caption:
+            ui.draw_string(caption, (2, bottom - cap_h, w - 4, cap_h), (T.FONT, max(8, h * 0.1)), "#333333", ui.ALIGN_CENTER)
         if c.is_royal:
-            ui.draw_string("%d" % c.value, (0, h * 0.8, w - 5, h * 0.18), (T.FONT_BOLD, h * 0.12), col, ui.ALIGN_RIGHT)
-        badge = self.badge or ("corrupted" if c.has("corrupted") else "restored" if c.has("restored")
-                               else "beast" if c.has("beast") else "")
+            ui.draw_string("%d" % c.value, (0, bottom - cap_h, w - 5, cap_h), (T.FONT_BOLD, h * 0.12), col, ui.ALIGN_RIGHT)
         if badge:
             ui.set_color("#5a1f6b" if badge == "corrupted" else "#1f6b3a" if badge == "restored" else T.ACCENT)
-            ui.Path.rounded_rect(3, 3, w - 6, max(12, h * 0.13), 4).fill()
-            ui.draw_string(badge, (3, 3, w - 6, max(12, h * 0.13)), (T.FONT_BOLD, max(8, h * 0.09)),
+            ui.Path.rounded_rect(3, h - 3 - band, w - 6, band, 4).fill()
+            ui.draw_string(badge, (3, h - 3 - band, w - 6, band), (T.FONT_BOLD, max(8, h * 0.09)),
                            "white" if badge in ("corrupted", "restored") else T.BG, ui.ALIGN_CENTER)
+
+    @staticmethod
+    def _pips(suits, x: float, y: float, width: float, size: float, align) -> None:
+        """Class symbols in a row, each in its own colour, shrunk to fit ``width``."""
+        if not suits:
+            return
+        step = min(size * 0.95, width / float(len(suits)))
+        size = min(size, step / 0.95)
+        total = step * len(suits)
+        x0 = x + (width - total) / 2.0 if align == ui.ALIGN_CENTER else x
+        for i, s in enumerate(suits):
+            ui.draw_string(SUIT_SYMBOL.get(s, s), (x0 + i * step, y, step, size * 1.3), (T.FONT_BOLD, size),
+                           T.SUIT_COLOR.get(s, T.TEXT), ui.ALIGN_CENTER)
 
     def touch_ended(self, touch) -> None:
         x, y = touch.location

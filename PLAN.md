@@ -20,6 +20,7 @@ points where I need you. The gates where I need you are marked **G0–G4**.
 | Rules source of truth | `docs/RULES_BASE.md`, checked sentence by sentence against the official rulebook text | Two independent open-source engines were used as cross-checks. |
 | Legacy content | `docs/LEGACY_CAMPAIGN.md`: fan transcription (DorkDad141) reconciled with the rulebook, the publisher's compendium and reviews; every unverified line is tagged VERIFY | The physical cards are definitive; the app flags unverified rules in-game until you confirm them (G2). |
 | Spoilers | The app reveals a mission's rules, enemies and rewards only when you reach it (default); a setting can show everything | Keeps the legacy experience if you have not played the box yet. |
+| Card names | Themeless: every card the party holds is a plain playing card (rank and class), Gøran's beasts are plain B cards; only Gøran, Myla, Esme and the High Arcana keep their names | Your choice, "for the same reason as not giving the reserve or enemies names". |
 
 ## Stage ladder
 

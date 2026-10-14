@@ -100,9 +100,9 @@ BANES: List[Dict[str, Any]] = [
      "text": "Add the High Arcana (from mission box 12) to the bottom of the enemy deck. The High Arcana is immune "
              "to the 4 base classes (cleric, bard, warrior and paladin)."},
     {"n": 7, "name": "Solstice", "tier": "grey", "when": "setup",
-     "text": "Set aside all five Deccari (10s). You can't use them this game."},
+     "text": "Set aside all five 10s. You can't use them this game."},
     {"n": 6, "name": "Full Moon", "tier": "grey", "when": "setup",
-     "text": "Set aside Ash (B, mage) and Quill (A, mage). You cannot use them this game."},
+     "text": "Set aside Myla's beast (B, mage) and the mage ace (A, mage). You cannot use them this game."},
     {"n": 5, "name": "Somehow, Myla Returned", "tier": "grey", "when": "setup",
      "text": "Add Myla, High Arcana's Apprentice (in mission box 9), to the bottom of the enemy deck."},
     {"n": 4, "name": "Seeds of Corruption", "tier": "grey", "when": "setup",
@@ -128,10 +128,10 @@ BOONS: List[Dict[str, Any]] = [
     {"n": 27, "name": "Too Easy!", "tier": "grey", "when": "special",
      "text": "The hand size limit is increased by 1."},
     {"n": 28, "name": "Best Friend", "tier": "grey", "when": "setup",
-     "text": "Add the puppy (from mission box 8) to the reserve deck. When you play the puppy it has all four base "
+     "text": "Add the pilgrim ace (from mission box 8) to the reserve deck. When you play it, it has all four base "
              "classes for this attack (cleric, bard, warrior, paladin)."},
     {"n": 29, "name": "Second Breakfast", "tier": "grey", "when": "setup",
-     "text": "Add Oaken (3 reaver), Tolman (3 druid) and Roslyn (3 chanter) to the reserve deck (from mission "
+     "text": "Add the 3 reaver, the 3 druid and the 3 chanter to the reserve deck (from mission "
              "boxes 5, 7 and 8 respectively)."},
     {"n": 30, "name": "Squad of Siblings", "tier": "yellow", "when": "special",
      "text": "Immediately after you form an attack you may move one card from the mission zone to the discard "

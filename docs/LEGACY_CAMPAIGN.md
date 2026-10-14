@@ -498,7 +498,8 @@ veils, the Crimson Grove in danger); texts in the private lore overlay only.
 2. "Keep Gøran's four beasts in the box beside your party. Each mission attempt you may
    include one of these four beasts in your reserve deck." Four beast cards, rank B, one
    per class ("Gøran's Beast"): Bonty the cleric, Cosmo the bard (a violin), Tui the
-   warrior (an axe) and Lola the paladin (a shield).
+   warrior (an axe) and Lola the paladin (a shield). The app shows them as plain B
+   cards, B♥ B♦ B♣ B♠, with no names (owner's choice; see "Themeless cards" below).
 3. "Open pack C and corrupt another character in your party." Player's choice.
 4. "Acquire the new relic." Scarlet Whistle. *Two or more players:* "After you form an
    attack with a solitary Animal Companion or Beast, one other player may add any card
@@ -1075,6 +1076,32 @@ bottom of the banished pile. The restored cards' own entry effect (top banished 
 under the reserve; their abilities ignore immunity) was already in `on_cards_played`
 and is tested here, as is the card's Edward example (strength 35, immune to clerics,
 bards and paladins). All twelve missions are transcribed and playable.
+
+## Themeless cards (owner's decision)
+
+The owner plays a themeless deck: "for the same reason as not giving the reserve or
+enemies names", Gøran's beasts are "plain B playing cards". The app applies the same rule
+to every card the party holds. The transcriptions in this document keep the names
+printed on the physical cards; the app shows none of them.
+
+* **Plain cards, rank and class only:** Gøran's four beasts (B♥ B♦ B♣ B♠), Myla's beast
+  (B★, "Ash"), the ten mages (the ace was "Quill"), the four Reavers, Guardians, Druids
+  and Chanters (3, 5, 7 and 9 of their class), the 24 pilgrims and the pilgrim ace (the
+  puppy), shown as "Pilgrim 4", and the mercenaries ("12 Cleric", "2/5 Bard", "19 (no
+  class)", "Wild Animal (choose a class)", "Jester"). Reward texts name the cards the same
+  way ("the 5 Reaver teaches a 6: the Cleric, Bard or Paladin 6 gains the Reaver class").
+  Races (dwarves, feltrix and so on) are not shown either: mission 9's student choice is
+  "the 4s or the 8s".
+* **Still named:** the story characters the mission cards name (Gøran, Myla, Esme and the
+  High Arcana) and the enemies' type names (Sporeling, Troll, Justicar and so on), as
+  before.
+* **Card faces:** the rank in the corner over the class pips, the pips large in the
+  middle, each in its own colour (an Evergreen card shows four small ones). A classless
+  card shows its rank large in the middle. The word under the pips is a story character's
+  name, "pilgrim" on a pilgrim or "any class" on a Wild Animal, and nothing on a plain
+  card. A 2/5 shows "2/5". The corrupted or restored band sits along the bottom, like a
+  sleeve's colour, so it never hides the rank.
+* **Saves:** campaigns and attempts saved before the change lose these names when loaded.
 
 ## Pack C, corruption (confirmed, transcribed from the owner's photos)
 

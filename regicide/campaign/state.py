@@ -83,7 +83,20 @@ class CampaignState:
             setattr(c, k, v)
         if "swaps_allowed" not in d:
             c._migrate_coin_rule()
+        c._migrate_plain_cards()
         return c
+
+    def _migrate_plain_cards(self) -> None:
+        """The app's cards are themeless: beasts, class decks, mages, pilgrims and
+        mercenaries carry no names. Older saves stored names on the party's cards and on
+        cards waiting in reward steps; drop them."""
+        M.strip_flavour_names(self.party)
+        M.strip_flavour_names(self.away)
+        for step in self.pending:
+            if isinstance(step.get("card"), dict):
+                M.strip_flavour_names([step["card"]])
+            if isinstance(step.get("cards"), list):
+                M.strip_flavour_names(step["cards"])
 
     def _migrate_coin_rule(self) -> None:
         """Saves from before the rulebook coin rule gave coins = failures of the current

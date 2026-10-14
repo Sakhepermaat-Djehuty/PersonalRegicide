@@ -432,9 +432,12 @@ def test_mission12_rules_card_example_edward_has_strength_35_and_three_immunitie
     _ids_everywhere(g)
 
 
-def test_goran_beasts_carry_the_names_on_their_card_fronts():
-    by_class = {b["suits"][0]: b["name"] for b in M.BEASTS}
-    assert by_class == {"H": "Bonty", "D": "Cosmo", "C": "Tui", "S": "Lola"}
+def test_goran_beasts_are_plain_b_cards_one_per_class():
+    """Owner's choice: Gøran's beasts are plain "B" playing cards, no names (like the
+    reserve and the enemies). Myla's beast is the B of the Mage class."""
+    assert [P.to_card(b).label() for b in M.BEASTS] == ["B♥", "B♦", "B♣", "B♠"]
+    assert all("name" not in b and b["value"] == 0 and b["flags"] == ["beast"] for b in M.BEASTS)
+    assert P.to_card(M.ASH).label() == "B★" and "name" not in M.ASH
 
 
 def test_mission12_defeat_banishes_the_zone_in_the_chosen_order_then_the_enemy_then_the_discard_pile():

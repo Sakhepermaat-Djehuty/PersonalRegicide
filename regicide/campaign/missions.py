@@ -235,9 +235,9 @@ MISSIONS: List[Dict[str, Any]] = [
                 "strength equal to the combined strength of the zone. Enemy defeated: the enemy and the zone "
                 "are shuffled into the banished pile; on exact damage the next enemy takes damage equal to "
                 "the defeated enemy's strength.",
-     "rewards_text": "Gøran gains the Warrior class. Myla joins the party; Harore (5, Reaver) stays and the "
-                     "other three Reavers leave. Open pack C and corrupt another character. Choose James (6 "
-                     "Cleric), Jakhim (6 Bard) or Lee (6 Paladin) to gain the Reaver class."},
+     "rewards_text": "Gøran gains the Warrior class. Myla joins the party; the 5 Reaver stays and the "
+                     "other three Reavers leave. Open pack C and corrupt another character. Choose the 6 "
+                     "Cleric, 6 Bard or 6 Paladin to gain the Reaver class."},
     {"number": 6, "title": "Shards of Memory", "fan_title": "The Evergreen Siege", "location": "Garden of Remembrance",
      "rules_id": "legacy_m6", "playable": True, "verified": True,
      "summary": "Myla leaves the party and starts face up in the mission zone; four Guardians join. Four "
@@ -247,8 +247,8 @@ MISSIONS: List[Dict[str, Any]] = [
                 "zone's combined strength, discarded one card at a time by any players. A Guardian in the "
                 "killing attack prevents the team damage.",
      "rewards_text": "Gøran gains the Paladin class. Open pack C and corrupt another character. Acquire the "
-                     "Azure Emblem. Choose Bronze (8 Cleric), Snow (8 Bard) or Shadow (8 Warrior) to gain the "
-                     "Guardian class. Runo (3, Guardian) stays; the other three Guardians leave."},
+                     "Azure Emblem. Choose the 8 Cleric, 8 Bard or 8 Warrior to gain the Guardian class. The "
+                     "3 Guardian stays; the other three Guardians leave."},
     {"number": 7, "title": "Tales of Rebirth", "fan_title": "The Pilgrimage", "location": "Well of Tears",
      "rules_id": "legacy_m7", "playable": True, "verified": True,
      "summary": "Four Druids join for the mission. Shoal (10/20), Deep (15/30) and Abyssal (20/40) pondkin, "
@@ -257,22 +257,21 @@ MISSIONS: List[Dict[str, Any]] = [
                 "same strength. Pilgrims never leave players' hands. Enemy defeated: discard reserve cards "
                 "equal to the zone's total strength, discard the zone, banish the enemy; on exact damage one "
                 "zone card may be banished first.",
-     "rewards_text": "Gøran gains the Cleric class. Open pack C and corrupt another character. Alantha (7, "
-                     "Druid) stays and the other three Druids leave. Choose Glamelyn (4 Bard), Herbod (4 "
-                     "Warrior) or Dhonatir (4 Paladin) to gain the Druid class."},
+     "rewards_text": "Gøran gains the Cleric class. Open pack C and corrupt another character. The 7 Druid "
+                     "stays and the other three Druids leave. Choose the 4 Bard, 4 Warrior or 4 Paladin to "
+                     "gain the Druid class."},
     {"number": 8, "title": "Winds of Chaos", "fan_title": "The Troll Bridge", "location": "Heaven's Edge",
      "rules_id": "legacy_m8", "playable": True, "verified": True,
-     "summary": "Four Chanters join for the mission. The pilgrim puppy starts in the mission zone and the "
+     "summary": "Four Chanters join for the mission. The pilgrim ace starts in the mission zone and the "
                 "other pilgrims are shuffled into the reserve. Six Trolls (10/20) then six Wyverns (25/50), "
                 "each immune to two classes. Non-pilgrim cards in the zone add their strength to the "
                 "enemy. Enemy defeated: banish it, then cards in play may be moved into the zone one at a "
-                "time, each exactly one strength higher than the zone's highest (the puppy is 1); a 10 "
+                "time, each exactly one strength higher than the zone's highest (the pilgrim ace is 1); a 10 "
                 "clears the zone into the discard pile, lets you banish any discards and heals the rest "
                 "under the reserve. Exact damage: any discard pile card goes on top of the reserve.",
-     "rewards_text": "Gøran gains the Bard class. Open pack C and corrupt another character. Druldox (9, "
-                     "Chanter) stays and the other three Chanters leave. Choose Sprinkle (2 Cleric), Dinky "
-                     "(2 Warrior) or Wicket (2 Paladin) to gain the Chanter class. The puppy goes back in "
-                     "the box."},
+     "rewards_text": "Gøran gains the Bard class. Open pack C and corrupt another character. The 9 Chanter "
+                     "stays and the other three Chanters leave. Choose the 2 Cleric, 2 Warrior or 2 Paladin "
+                     "to gain the Chanter class. The pilgrim ace goes back in the box."},
     {"number": 9, "title": "Hope From Ashes", "fan_title": "The Rescue", "location": "Twinseed Temple",
      "rules_id": "legacy_m9", "playable": True, "verified": True,
      "summary": "Gøran, your beast, Jesters and mercenaries are set aside; thirty of the remaining party "
@@ -283,9 +282,9 @@ MISSIONS: List[Dict[str, Any]] = [
                 "top card of one pile to the discard pile, or rotate every pile. Enemy defeated: banish it; "
                 "on exact damage a pile's top card may go on top of the reserve deck.",
      "rewards_text": "Acquire the Evergreen Mother (corrupt relic). Gøran is renewed: the old card leaves "
-                     "and the Evergreen Gøran (8, all four classes, ignores immunity) joins. Choose dwarves "
-                     "(4) or feltrix (8): the first unstickered one revealed from the shuffled party gains "
-                     "the Mage class. Ash, Myla's beast (Mage), joins the party."},
+                     "and the Evergreen Gøran (8, all four classes, ignores immunity) joins. Choose the 4s "
+                     "or the 8s: the first unstickered one revealed from the shuffled party gains the Mage "
+                     "class. Myla's beast, a B of the Mage class, joins the party."},
     {"number": 10, "title": "Pride to Fall", "fan_title": "The Corruption", "location": "Twinseed Temple Ruins",
      "rules_id": "legacy_m10", "playable": True, "verified": True,
      "summary": "The corrupted members leave the party and form the enemy deck, face up, 2 on top down to 9. "
@@ -300,7 +299,7 @@ MISSIONS: List[Dict[str, Any]] = [
      "rules_id": "legacy_m11", "playable": True, "verified": True,
      "summary": "One corrupted member of the Eternal Vine dies at the machine and is torn up for good. "
                 "Gøran's four beasts form a face-down beast deck in the mission zone (none may join the "
-                "reserve; Ash may). Start of turn: reveal a beast and apply its class: warrior banishes the "
+                "reserve; Myla's B of the Mage class may). Start of turn: reveal a beast and apply its class: warrior banishes the "
                 "top discard, paladin discards the top reserve card, cleric makes you discard a hand card, "
                 "bard makes you banish one; revealed beasts pile up face up and reform the deck when all "
                 "four are out. Four Justicars (10/30), then the Corrupted Evergreen (20/90); each enemy is "
@@ -476,62 +475,43 @@ def start_steps(camp, number: int) -> List[Step]:
     return steps
 
 
-# Mission 8's Chanters: Roslyn (3, halfling), an avion (5), an elf (7) and Druldox (9,
-# drakonid). Only Druldox stays after the mission.
+# The app plays a themeless deck (owner's choice): the cards the party holds are plain
+# playing cards, rank and class only, with no names or races. Only the story characters
+# the mission cards name (Gøran, Myla, Esme, the High Arcana) keep their names.
+
+# Mission 8's Chanters: a 3, 5, 7 and 9. Only the 9 stays after the mission.
 CHANTERS: List[Dict[str, Any]] = [
-    {"id": "3T", "rank": "3", "suits": ["T"], "value": 3, "name": "Roslyn", "subtitle": "Halfling Chanter", "flags": []},
-    {"id": "5T", "rank": "5", "suits": ["T"], "value": 5, "name": "Avion Chanter", "subtitle": "Avion Chanter", "flags": []},
-    {"id": "7T", "rank": "7", "suits": ["T"], "value": 7, "name": "Elf Chanter", "subtitle": "Elf Chanter", "flags": []},
-    {"id": "9T", "rank": "9", "suits": ["T"], "value": 9, "name": "Druldox", "subtitle": "Drakonid Chanter", "flags": []},
+    {"id": "%sT" % r, "rank": r, "suits": ["T"], "value": int(r), "flags": []} for r in ("3", "5", "7", "9")
 ]
 
 
-# Mission 7's Druids: Tolman (3, halfling), an avion (5), Alantha (7, elf) and a drakonid
-# (9). Only Alantha stays after the mission.
+# Mission 7's Druids: a 3, 5, 7 and 9. Only the 7 stays after the mission.
 DRUIDS: List[Dict[str, Any]] = [
-    {"id": "3U", "rank": "3", "suits": ["U"], "value": 3, "name": "Tolman", "subtitle": "Halfling Druid", "flags": []},
-    {"id": "5U", "rank": "5", "suits": ["U"], "value": 5, "name": "Avion Druid", "subtitle": "Avion Druid", "flags": []},
-    {"id": "7U", "rank": "7", "suits": ["U"], "value": 7, "name": "Alantha", "subtitle": "Elf Druid", "flags": []},
-    {"id": "9U", "rank": "9", "suits": ["U"], "value": 9, "name": "Drakonid Druid", "subtitle": "Drakonid Druid", "flags": []},
+    {"id": "%sU" % r, "rank": r, "suits": ["U"], "value": int(r), "flags": []} for r in ("3", "5", "7", "9")
 ]
 
 # Pack P, the pilgrim deck (missions 7 and 8), confirmed by the owner: four classless
-# cards of every strength 2 to 7 (24 cards; each has its own name, e.g. Seeker and
-# Traveller among the gnome 2s, Follower 3, Servant 4, Acolyte 6, an elf 7) plus the
-# puppy, the animal pilgrim, which mission 8 places in the mission zone.
-PUPPY: Dict[str, Any] = {"id": "PILA", "rank": "A", "suits": [], "value": 1, "name": "Puppy",
-                         "subtitle": "Animal Pilgrim", "flags": ["pilgrim"]}
-_PILGRIM_NAMES = {"2": ("Traveller", "Seeker", "Gnome Pilgrim"), "3": ("Follower", "Follower", "Halfling Pilgrim"),
-                  "4": ("Servant", "Servant", "Dwarf Pilgrim"), "5": ("Pilgrim", "Pilgrim", "Avion Pilgrim"),
-                  "6": ("Acolyte", "Acolyte", "Human Pilgrim"), "7": ("Pilgrim", "Pilgrim", "Elf Pilgrim")}
+# cards of every strength 2 to 7 (24 cards) plus the pilgrim ace (the puppy on the
+# physical card), which mission 8 places in the mission zone. They show as "Pilgrim 4".
+PUPPY: Dict[str, Any] = {"id": "PILA", "rank": "A", "suits": [], "value": 1, "flags": ["pilgrim"]}
 PILGRIMS: List[Dict[str, Any]] = [dict(PUPPY)] + [
-    {"id": "PIL%s_%d" % (r, i + 1), "rank": r, "suits": [], "value": int(r),
-     "name": _PILGRIM_NAMES[r][i % 2], "subtitle": _PILGRIM_NAMES[r][2], "flags": ["pilgrim"]}
+    {"id": "PIL%s_%d" % (r, i + 1), "rank": r, "suits": [], "value": int(r), "flags": ["pilgrim"]}
     for r in ("2", "3", "4", "5", "6", "7") for i in range(4)
 ]
 
 
-# Mission 6's Guardians: Runo (3, halfling), Teko (5, avion), an elf (7) and a drakonid
-# (9). Only Runo stays after the mission.
+# Mission 6's Guardians: a 3, 5, 7 and 9. Only the 3 stays after the mission.
 GUARDIANS: List[Dict[str, Any]] = [
-    {"id": "3G", "rank": "3", "suits": ["G"], "value": 3, "name": "Runo", "subtitle": "Halfling Guardian", "flags": []},
-    {"id": "5G", "rank": "5", "suits": ["G"], "value": 5, "name": "Teko", "subtitle": "Avion Guardian", "flags": []},
-    {"id": "7G", "rank": "7", "suits": ["G"], "value": 7, "name": "Elf Guardian", "subtitle": "Elf Guardian", "flags": []},
-    {"id": "9G", "rank": "9", "suits": ["G"], "value": 9, "name": "Drakonid Guardian", "subtitle": "Drakonid Guardian", "flags": []},
+    {"id": "%sG" % r, "rank": r, "suits": ["G"], "value": int(r), "flags": []} for r in ("3", "5", "7", "9")
 ]
 
 
-# Mission 5's Reavers: Oaken (3, halfling), Harore (5, avion), an elf (7) and a drakonid
-# (9). Only Harore stays after the mission.
+# Mission 5's Reavers: a 3, 5, 7 and 9. Only the 5 stays after the mission.
 REAVERS: List[Dict[str, Any]] = [
-    {"id": "3R", "rank": "3", "suits": ["R"], "value": 3, "name": "Oaken", "subtitle": "Halfling Reaver", "flags": []},
-    {"id": "5R", "rank": "5", "suits": ["R"], "value": 5, "name": "Harore", "subtitle": "Avion Reaver", "flags": []},
-    {"id": "7R", "rank": "7", "suits": ["R"], "value": 7, "name": "Elf Reaver", "subtitle": "Elf Reaver", "flags": []},
-    {"id": "9R", "rank": "9", "suits": ["R"], "value": 9, "name": "Drakonid Reaver", "subtitle": "Drakonid Reaver", "flags": []},
+    {"id": "%sR" % r, "rank": r, "suits": ["R"], "value": int(r), "flags": []} for r in ("3", "5", "7", "9")
 ]
 
-MYLA: Dict[str, Any] = {"id": "MYLA7", "rank": "7", "suits": [], "value": 7, "name": "Myla",
-                        "subtitle": "Elf Pilgrim", "flags": []}
+MYLA: Dict[str, Any] = {"id": "MYLA7", "rank": "7", "suits": [], "value": 7, "name": "Myla", "flags": []}
 
 
 # --------------------------------------------------------------------------- rewards
@@ -543,7 +523,7 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         # Reward cards (confirmed): "Open pack C and corrupt a character in your party",
         # "Add the High Arcana to your party", "Acquire the new relic" (Kinfolk Flute).
         steps.append(_corrupt_choice(camp, "Open pack C: corrupt a character in your party"))
-        steps.append({"kind": "add_card", "card": HIGH_ARCANA, "label": "The High Arcana (25, Elf Mage) joins the party"})
+        steps.append({"kind": "add_card", "card": HIGH_ARCANA, "label": "The High Arcana (25, no class) joins the party"})
         steps.append({"kind": "relic", "relic": "flute", "label": "Relic: Kinfolk Flute"})
     elif number == 2:
         # Reward cards (confirmed): "Open pack C and corrupt another character in your party";
@@ -563,9 +543,9 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         # beasts in the box beside your party. Each mission attempt you may include one of
         # these four beasts in your reserve deck"; "Open pack C and corrupt another
         # character in your party"; "Acquire the new relic" (Scarlet Whistle).
-        steps.append({"kind": "add_card", "card": GORAN, "label": "Gøran (8, Feltrix Evergreen) joins the party"})
+        steps.append({"kind": "add_card", "card": GORAN, "label": "Gøran (8, no class) joins the party"})
         steps.append({"kind": "set_flag", "flag": "beasts", "value": True,
-                      "label": "Gøran's four beasts wait beside the party: one may join each attempt"})
+                      "label": "Gøran's four beasts (B♥ B♦ B♣ B♠) wait beside the party: one may join each attempt"})
         steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
         steps.append({"kind": "relic", "relic": "whistle", "label": "Relic: Scarlet Whistle"})
     elif number == 5:
@@ -575,13 +555,13 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         # character in your party"; "Choose either James (6 Cleric), Jakhim (6 Bard) or Lee
         # (6 Paladin), then put a Reaver sticker on them."
         steps.append({"kind": "add_suit", "card_id": GORAN["id"], "suit": "C", "label": "Gøran gains the Warrior class"})
-        steps.append({"kind": "add_card", "card": MYLA, "label": "Myla (7, Elf Pilgrim) joins the party"})
+        steps.append({"kind": "add_card", "card": MYLA, "label": "Myla (7, no class) joins the party"})
         for r in REAVERS:
             if r["id"] != "5R":
-                steps.append({"kind": "remove_card", "card_id": r["id"], "label": "%s stays to defend the veil" % r["name"]})
+                steps.append({"kind": "remove_card", "card_id": r["id"], "label": "The %s stays to defend the veil" % plain_name(r)})
         steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
         steps.append({"kind": "choice_suit", "suit": "R", "options": [c for c in ("6H", "6D", "6S") if P.find(camp.party, c)],
-                      "label": "Harore teaches a 6: James (Cleric), Jakhim (Bard) or Lee (Paladin) gains the Reaver class"})
+                      "label": "The 5 Reaver teaches a 6: the Cleric, Bard or Paladin 6 gains the Reaver class"})
     elif number == 6:
         # Reward cards (confirmed, in order): "Add a Paladin sticker to Gøran"; "Open pack C
         # and corrupt another character in your party"; "Acquire the new relic" (Azure
@@ -592,10 +572,10 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
         steps.append({"kind": "relic", "relic": "emblem", "label": "Relic: Azure Emblem"})
         steps.append({"kind": "choice_suit", "suit": "G", "options": [c for c in ("8H", "8D", "8C") if P.find(camp.party, c)],
-                      "label": "Runo teaches an 8: Bronze (Cleric), Snow (Bard) or Shadow (Warrior) gains the Guardian class"})
+                      "label": "The 3 Guardian teaches an 8: the Cleric, Bard or Warrior 8 gains the Guardian class"})
         for g in GUARDIANS:
             if g["id"] != "3G":
-                steps.append({"kind": "remove_card", "card_id": g["id"], "label": "%s stays to rebuild the garden" % g["name"]})
+                steps.append({"kind": "remove_card", "card_id": g["id"], "label": "The %s stays to rebuild the garden" % plain_name(g)})
     elif number == 7:
         # Reward cards (confirmed, in order): "Add a Cleric sticker to Gøran"; "Open pack C
         # and corrupt another character in your party"; "Alantha (7 Druid) remains in your
@@ -606,9 +586,9 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
         for d in DRUIDS:
             if d["id"] != "7U":
-                steps.append({"kind": "remove_card", "card_id": d["id"], "label": "%s stays at the Well" % d["name"]})
+                steps.append({"kind": "remove_card", "card_id": d["id"], "label": "The %s stays at the Well" % plain_name(d)})
         steps.append({"kind": "choice_suit", "suit": "U", "options": [c for c in ("4D", "4C", "4S") if P.find(camp.party, c)],
-                      "label": "Alantha teaches a 4: Glamelyn (Bard), Herbod (Warrior) or Dhonatir (Paladin) gains the Druid class"})
+                      "label": "The 7 Druid teaches a 4: the Bard, Warrior or Paladin 4 gains the Druid class"})
     elif number == 8:
         # Reward cards (confirmed, in order): "Add a Bard sticker to Gøran"; "Open pack C and
         # corrupt another character in your party"; "Druldox (9 Chanter) remains in your
@@ -619,11 +599,11 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
         for d in CHANTERS:
             if d["id"] != "9T":
-                steps.append({"kind": "remove_card", "card_id": d["id"], "label": "%s stays with the order" % d["name"]})
+                steps.append({"kind": "remove_card", "card_id": d["id"], "label": "The %s stays with the order" % plain_name(d)})
         steps.append({"kind": "choice_suit", "suit": "T", "options": [c for c in ("2H", "2C", "2S") if P.find(camp.party, c)],
-                      "label": "A song or two: Sprinkle (Cleric), Dinky (Warrior) or Wicket (Paladin) gains the Chanter class"})
+                      "label": "The 9 Chanter teaches a 2: the Cleric, Warrior or Paladin 2 gains the Chanter class"})
         steps.append({"kind": "set_flag", "flag": "puppy_boxed", "value": True,
-                      "label": "The puppy stays at Heaven's Edge (back in the mission 8 box)"})
+                      "label": "The pilgrim ace stays at Heaven's Edge (back in the mission 8 box)"})
     elif number == 9:
         # Reward cards (confirmed, in order): "Acquire the new relic" (Evergreen Mother,
         # corrupt relic); "Remove Gøran from your party. Add the new, renewed Gøran (8,
@@ -636,8 +616,8 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         steps.append({"kind": "add_card", "card": GORAN_RENEWED,
                       "label": "The renewed Gøran (8, Evergreen: all four classes, ignores immunity) joins the party"})
         steps.append({"kind": "choice_mage_student", "options": ["4", "8"],
-                      "label": "A new student: choose dwarves (4) or feltrix (8); the first unstickered one revealed gains the Mage class"})
-        steps.append({"kind": "add_card", "card": ASH, "label": "Ash, Myla's beast (Mage), joins the party"})
+                      "label": "A new student: choose the 4s or the 8s; the first unstickered one revealed gains the Mage class"})
+        steps.append({"kind": "add_card", "card": ASH, "label": "Myla's beast, a B of the Mage class (B★), joins the party"})
     elif number == 10:
         # Reward cards (confirmed, in order): "Remove Gøran (8, Evergreen) from your party";
         # "Return the corrupted characters (the enemies from the previous mission) to your
@@ -660,32 +640,69 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
 
 # The reborn Evergreen (mission 11 reward).
 ESME_REBORN: Dict[str, Any] = {"id": "ESME6E", "rank": "6", "suits": ["H", "D", "C", "S"], "value": 6, "name": "Esme",
-                               "subtitle": "Human Evergreen", "flags": ["evergreen", "ignores_immunity"]}
+                               "flags": ["evergreen", "ignores_immunity"]}
 
 
 # The renewed Gøran (mission 9 reward): the Evergreen icon stands for cleric, bard,
 # warrior and paladin at once, ignoring immunity to those four (rulebook p.15).
 GORAN_RENEWED: Dict[str, Any] = {"id": "GOR8E", "rank": "8", "suits": ["H", "D", "C", "S"], "value": 8, "name": "Gøran",
-                                 "subtitle": "Feltrix Evergreen", "flags": ["evergreen", "ignores_immunity"]}
+                                 "flags": ["evergreen", "ignores_immunity"]}
 
-# Ash (mission 9 reward): Myla's beast, Mage class, a permanent party member. Beasts pair
-# with one other card and copy its strength; alone they are worth 0.
-ASH: Dict[str, Any] = {"id": "B_ASH", "rank": "B", "suits": ["M"], "value": 0, "name": "Ash", "subtitle": "Beast",
-                       "flags": ["beast"]}
+# Myla's beast (mission 9 reward, "Ash" on the physical card): a plain B of the Mage
+# class, a permanent party member. Beasts pair with one other card and copy its
+# strength; alone they are worth 0.
+ASH: Dict[str, Any] = {"id": "B_ASH", "rank": "B", "suits": ["M"], "value": 0, "flags": ["beast"]}
 
 
-GORAN: Dict[str, Any] = {"id": "GOR8", "rank": "8", "suits": [], "value": 8, "name": "Gøran",
-                         "subtitle": "Feltrix Evergreen", "flags": []}
+GORAN: Dict[str, Any] = {"id": "GOR8", "rank": "8", "suits": [], "value": 8, "name": "Gøran", "flags": []}
 
-# Gøran's beasts (mission 4 reward): rank B, one per basic class, strength 0 on their own
-# and equal to the paired card's strength while attacking. Names from the card fronts:
-# Bonty the cleric, Cosmo the bard, Tui the warrior, Lola the paladin.
+# Gøran's beasts (mission 4 reward): plain B cards, one per basic class (B♥ B♦ B♣ B♠),
+# strength 0 on their own and equal to the paired card's strength while attacking.
 BEASTS: List[Dict[str, Any]] = [
-    {"id": "B_H", "rank": "B", "suits": ["H"], "value": 0, "name": "Bonty", "flags": ["beast"]},
-    {"id": "B_D", "rank": "B", "suits": ["D"], "value": 0, "name": "Cosmo", "flags": ["beast"]},
-    {"id": "B_C", "rank": "B", "suits": ["C"], "value": 0, "name": "Tui", "flags": ["beast"]},
-    {"id": "B_S", "rank": "B", "suits": ["S"], "value": 0, "name": "Lola", "flags": ["beast"]},
+    {"id": "B_%s" % s, "rank": "B", "suits": [s], "value": 0, "flags": ["beast"]} for s in ("H", "D", "C", "S")
 ]
+
+
+def plain_name(card: Dict[str, Any]) -> str:
+    """A card dict named the themeless way: rank and class, e.g. "3 Reaver" or "B Cleric"."""
+    suits = [CLASS_NAME.get(str(s), str(s)) for s in card.get("suits", [])]
+    return ("%s %s" % (card["rank"], "/".join(suits))) if suits else str(card["rank"])
+
+
+def plain_card_ids() -> set:
+    """Ids of the cards the app shows as plain playing cards (no names): the beasts, the
+    class decks, the mages, the pilgrims and the mercenaries."""
+    from .mercenaries import MERCENARIES
+    ids = {str(c["id"]) for c in BEASTS + [ASH] + MAGE_DECK + CHANTERS + DRUIDS + GUARDIANS + REAVERS + PILGRIMS}
+    ids.update(str(m["card"]["id"]) for m in MERCENARIES)   # type: ignore[index]
+    return ids
+
+
+def strip_flavour_names(cards: List[Any]) -> int:
+    """Saves from before the themeless cards gave those cards names and races: drop them
+    (and every card's unused race subtitle). Returns how many cards changed."""
+    ids = plain_card_ids()
+    changed = 0
+    for c in cards:
+        if not isinstance(c, dict):
+            continue
+        before = len(c)
+        c.pop("subtitle", None)
+        if str(c.get("id")) in ids:
+            c.pop("name", None)
+        changed += before != len(c)
+    return changed
+
+
+def strip_game_names(game) -> int:
+    """The same for an attempt saved before the change: its plain cards lose their names."""
+    ids = plain_card_ids()
+    changed = 0
+    for cid, card in list(game.cards.items()):
+        if cid in ids and card.name:
+            game.cards[cid] = card.with_changes(name="")
+            changed += 1
+    return changed
 
 
 def beast_by_id(bid: str) -> Optional[Dict[str, Any]]:
@@ -695,16 +712,15 @@ def beast_by_id(bid: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-# Pack F (confirmed): the ten mages, A to 10. Quill (A) is the animal mage.
+# Pack F (confirmed): the ten mages, A to 10 (the ace is the animal mage).
 MAGE_DECK: List[Dict[str, Any]] = [
-    dict({"id": "%sM" % r, "rank": r, "suits": ["M"], "value": RANK_VALUE[r], "flags": []},
-         **({"name": "Quill", "subtitle": "Animal Mage"} if r == "A" else {}))
+    {"id": "%sM" % r, "rank": r, "suits": ["M"], "value": RANK_VALUE[r], "flags": []}
     for r in ("A", "2", "3", "4", "5", "6", "7", "8", "9", "10")
 ]
 
 
 HIGH_ARCANA: Dict[str, Any] = {"id": "ARC25", "rank": "25", "suits": [], "value": 25, "name": "High Arcana",
-                               "subtitle": "Elf Mage", "flags": []}
+                               "flags": []}
 
 
 def _class_sticker_choice(camp, rng: random.Random) -> Step:
@@ -761,10 +777,10 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
     if kind == "add_card":
         if P.find(camp.party, str(step["card"]["id"])) is None:
             P.add_card(camp.party, step["card"])
-        return "%s joins the party." % (step["card"].get("name") or step["card"]["id"])
+        return "%s joins the party." % P.to_card(step["card"]).label()
     if kind == "remove_card":
         c = P.remove_card(camp.party, step["card_id"])
-        return "%s leaves the party." % ((c or {}).get("name") or step["card_id"])
+        return "%s leaves the party." % (P.to_card(c).label() if c else step["card_id"])
     if kind == "add_suit":
         card = P.find(camp.party, str(step["card_id"]))
         if card is None:
@@ -784,7 +800,7 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
     if kind == "choice_mage_student":
         options = [str(x) for x in step.get("options", ["4", "8"])]
         if option is None:
-            raise ValueError("choose dwarves (4) or feltrix (8)")
+            raise ValueError("choose the 4s or the 8s")
         if str(option) not in options:
             raise ValueError("%s is not one of the choices" % option)
         # "Flip cards from your reserve until you reveal one of the chosen race (except

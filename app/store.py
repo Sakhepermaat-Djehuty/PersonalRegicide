@@ -243,7 +243,12 @@ def save_attempt(game: Game, slot: str) -> None:
 def load_attempt(slot: str) -> Optional[Game]:
     try:
         with open(attempt_path(slot)) as f:
-            return Game.from_dict(json.load(f))
+            game = Game.from_dict(json.load(f))
+        # attempts saved before the themeless cards carried names on beasts, class decks,
+        # mages, pilgrims and mercenaries; the cards are plain now
+        from regicide.campaign import missions as _missions
+        _missions.strip_game_names(game)
+        return game
     except (OSError, ValueError, KeyError):
         return None
 
