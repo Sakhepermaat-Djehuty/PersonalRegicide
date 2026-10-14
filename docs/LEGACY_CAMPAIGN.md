@@ -750,10 +750,10 @@ overlay only.
 4. "Add Ash (B, Mage) to your party." Ash: B, Beast, Mage class, a permanent party
    member (not one of Gøran's four).
 
-**Open questions.** "No stickers" for the mage student: the app excludes cards with a
-class sticker and also corrupted cards, assuming corruption is a sticker (pack C still
-to be read). The outcome card says the pilgrims depart; no reward card returns pack P,
-so the app keeps the pilgrims in the pack until a later mission says otherwise.
+**Notes.** "No stickers" for the mage student: the app excludes cards with a class
+sticker; pack C showed corruption is a sleeve, so a corrupted card may be chosen. The
+outcome card says the pilgrims depart; no reward card returns pack P, so the app keeps
+the pilgrims in the pack (mission 8's puppy and Evergreen boons use it again).
 
 **Engine status:** data, setup description and rewards are in; the mission rules (the
 three captured piles, the end-of-turn banish-to-rescue or rotate choice, the exact-kill
@@ -960,6 +960,32 @@ class-deck visitors that leave after the mission. Corruption is a sleeve, not a 
 so a corrupted card still counts as "no stickers" for mission 9's mage student. Mission
 11's rip-up takes the corrupted 6, whatever its class, since the reborn Evergreen is a 6.
 
+## Map and game mat (the owner's photos)
+
+**Map:** the inside of the box lid shows Deccaria: a forested west, a great tree in the
+middle, mountains and a crater in the east, with the mission locations drawn as small
+white landmarks. The location cards' backs are pieces of it. The app's map screen keeps
+its themeless serpentine of twelve stops (owner's choice).
+
+**Game mat:** the same map as a playmat with boxes for the reserve deck, the discard
+pile, the mission zone (a tall box in the middle), the enemy deck, the enemy stats card,
+the banished pile, the relics, and three unlabelled boxes on the right edge (relics
+overflow and set-aside cards). Two trackers run along the long edges: enemy strength
+along the top and enemy health along the bottom, both numbered 0 to 60 with a token
+each (mission 4 notes the strength token is flipped for negative values; enemies above
+60 health, Myla and the High Arcana, need the track counted twice). The app shows the
+same two numbers on the enemy panel.
+
+**Coverage check (everything the owner photographed):** rulebook pages 2 and 5 to 26
+(3 and 4 are the contents list), the four player helper cards, all twelve missions
+(location, story, setup, rules, summary, enemy stats and reward cards, with an example
+enemy for most), every relic on both sides, packs C, F, M, P and E in full, the map and
+the mat. Not photographed and not needed: the 40 party card fronts (names are not
+wanted), the 12s' and 2/5s' names, the 5 and 7 pilgrims' names. Still open, small: the
+"Rules continued" sides of missions 3 and 12 if the cards have them, the fronts of
+Gøran's four beasts (names and classes; only Bonty the cleric is known), and whether
+mission 7's pondkin sit in corrupted sleeves.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
@@ -1039,9 +1065,8 @@ Numbers are attack / health.
 1. **Call to Arms** (Ostrana; fan name: The Beginning) — **confirmed:** 4 Justicars
    10/20, 4 Queens 15/30, 4 Kings 20/40, one per class. Enemy defeated: discard pile;
    exact damage: top of the reserve deck. Rewards: open pack C and corrupt a character
-   of your choice (qualifying characters per pack C, still to be read; the fan
-   constraints are value 2–9, never repeating a rank, never the same suit more than
-   twice), add the High Arcana (25, no class icon), acquire the Kinfolk Flute.
+   (random in the app, one strength 2 to 9 each; see the Pack C section), add the High
+   Arcana (25, no class icon), acquire the Kinfolk Flute.
 2. **Shadow and Mist** (Umbra Cavern; fan name: The Hydra Assault) — **confirmed:** 6
    Hydra Heads 10/20, each with a distinct pair of classes (immune to both). Imperfect
    kill: face down to the bottom of the enemy deck. Exact kill: banished. Rewards: open
