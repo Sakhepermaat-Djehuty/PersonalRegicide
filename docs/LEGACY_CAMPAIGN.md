@@ -1145,12 +1145,69 @@ Numbers are attack / health.
     Corrupted cards never enter the reserve (bottom of the banished pile). Reward: open
     pack E; the campaign is complete.
 
-## Eternal mode ("E" box)
+## Evergreen mode (pack E; part 1 of the owner's photos)
 
-A mission generator for the finished party deck: 5 Location cards (Shrine, Cave,
-Forest, Hills, Lake), Bane cards 1–23 and Boon cards 24–35, plus "Evergreen rules". How
-they combine per game is not public. VERIFY: the user will need to transcribe the
-cards; the engine models it as "a location + N banes + M boons" from a data file.
+The pack's own name for the mode is **Evergreen mode**. The owner wants it offered from
+the game menu of a finished campaign as an "Evergreen mission" button.
+
+**Evergreen rules card.** "Evergreen mode allows you to play Regicide Legacy over and
+over again using your party deck from the end of Mission 12. Use the Evergreen cards in
+this pack to construct unique missions. Set the game up like a normal mission (rulebook
+pg. 7) with the following changes: use the 4 Phase III Experiments and 4 Phase II
+Experiments (from mission box 4) as your 8 enemies. From this box randomly select: one
+location card; two grey banes, one yellow bane and one red bane; one grey boon and one
+yellow boon. Greys are low complexity and mostly affect the setup. Yellows are medium
+complexity and usually introduce a rule change. Reds are high complexity and often
+introduce new rules along with changes to the game state as you play. Keep boons and
+banes by the mat as you play as reminders of the rules." *Rules continued:* "To increase
+complexity you can swap one of the grey banes with a second red bane. For an extra
+challenge just add another bane! Feel free to try any combination of cards you'd like
+or check out our pre-constructed setups via the QR code below."
+
+**Location cards (five, lettered A to E; back: "Location").**
+* **A, Shrine.** End of turn: put the top card of the reserve deck into the mission
+  zone. Special rules: each enemy has immunity to the classes of cards in the mission
+  zone. Enemy defeated: banish the enemy, or discard it if exact damage was dealt; then
+  banish cards in the mission zone.
+* **B, Cave.** End of turn: put the top card of the reserve deck into the mission zone;
+  if the combined strength of cards in the mission zone equals or exceeds the base
+  strength of the current enemy, banish the mission zone and the entire discard pile.
+  Enemy defeated: banish the enemy, or discard it if exact damage was dealt; then
+  discard cards in the mission zone.
+* **C, Forest.** Setup: shuffle Phase I Experiment enemies (from mission box 4) into the
+  banished pile. Special rules: each enemy has additional strength equal to the
+  combined strength of cards in the mission zone. End of turn: put the top card of the
+  banished pile into the mission zone. Enemy defeated: put the enemy and cards in the
+  mission zone into the banished pile then shuffle the banished pile; if exact damage
+  was dealt, you may first discard one card from the mission zone.
+* **D, Hills.** End of turn: put the top card of the banished pile into the mission
+  zone; players suffer team damage equal to the combined strength of cards in the
+  mission zone (same rules as team damage in mission 6); if the damage can't be
+  satisfied the game is lost. Enemy defeated: as the Forest.
+* **E, Lake.** Setup: shuffle pilgrims and place in a pilgrim deck in the mission zone.
+  Start of turn: put the top card of the pilgrim deck (or reserve deck if the pilgrim
+  deck is empty) into the mission zone. Enemy defeated: for each card in the mission
+  zone banish a card from the reserve deck, then move the cards in the mission zone to
+  the discard pile in any order; then banish the enemy, or discard it if exact damage
+  was dealt.
+
+**Bane cards (numbered; the chevron colour is the tier; back: a banner over hills,
+"Bane").** Red banes seen so far: 23 Choose Your Poison (end of turn: you may discard a
+card from hand; if you don't, put the top card of the reserve deck into the mission
+zone); 22 The Fiery Crucible (start of turn: put the top card of the reserve deck into
+the discard pile); 21 Eye-Level Sticks (special: immediately after you form an attack
+that contains a card with 8 or more strength discard a card from your hand, if you can);
+20 Fused Bones (each enemy is immune to the classes of the card on top of the banished
+pile); 19 Shapeshift (each enemy is immune to the classes of the card on top of the
+discard pile); 18 Mutated Beasts (each enemy has additional strength equal to the
+strength of the top card of the banished pile); 17 Beastly Vigor (each enemy has
+additional strength equal to the strength of the top card of the discard pile). Banes 1
+to 16 (grey and yellow) and the boons are in parts 2 and 3.
+
+**Engine status:** the pack's text is in `regicide/campaign/evergreen.py` with a random
+setup generator; the game menu of a finished campaign shows a disabled "Evergreen
+mission" button until the rest of the pack is read and the location and bane rules are
+built on the mission engine.
 
 ## Verification checklist for the owner (gate G2 in PLAN.md)
 
@@ -1161,7 +1218,7 @@ perfect-kill variant, what joins and leaves the party, and the reward pack conte
 Globally confirm: whether a solo player may yield in Legacy (the base reading forbids it;
 the fan engine allows it unless the previous action was a yield; the solo rules on p.26
 do not mention yielding), whether unspent coins are lost when a mission is won, the
-E-box procedure. Already confirmed from the cards: every
+remaining banes and boons of pack E. Already confirmed from the cards: every
 mission, every relic on both sides, the class-ability text and resolution order, the
 coin and mercenary rules and costs, the Jester claim rules, the 2/5 and Wild Animal
 declarations, pack C's corruption procedure, pack F (the ten mages) and pack P.
