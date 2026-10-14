@@ -156,9 +156,34 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
         except IllegalAction as e:
             print("!", e)
         return True
+    if game.phase == PHASE_DECIDE and (game.decision or {}).get("kind") == "whistle_add":
+        # Scarlet Whistle, 2+ players: another player may add one card (not a Jester).
+        d = game.decision or {}
+        hand = game.hand(game.deciding)
+        play = game.plays[int(d.get("play_index", len(game.plays) - 1))]
+        print("Scarlet Whistle: %s may add one card to %s's %s attack." % (
+            game.players[game.deciding].name, game.players[play.player].name,
+            " + ".join(game.card(c).label() for c in play.card_ids)))
+        ans = input("[number=add that card, p=pass, q=quit] > ").strip().lower()
+        if ans == "q":
+            return False
+        try:
+            if ans == "p":
+                game.decide({"type": "whistle_pass"})
+            else:
+                idx = parse_indices(ans, len(hand))
+                if not idx or len(idx) != 1:
+                    print("type the number of one card, or p to pass")
+                    return True
+                game.decide({"type": "whistle_add", "card": hand[idx[0]].id})
+        except IllegalAction as e:
+            print("!", e)
+        return True
     if game.phase == PHASE_DECIDE and (game.decision or {}).get("kind") != "flute_add":
         # A choice offered as a short list: which mission zone card to rescue, the Azure
-        # Emblem's keep (solo) or place (another player's card goes on the reserve).
+        # Emblem's keep (solo) or place (another player's card goes on the reserve), the
+        # Scarlet Whistle's take, the Reaver's count and pick, the clean-up order, the
+        # card moved to the mission zone, Myla's team damage.
         d = game.decision or {}
         if d.get("kind") == "emblem_keep":
             print("Azure Emblem: %s may put one of the other revealed cards back on top of the reserve deck." % (
@@ -166,6 +191,13 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
         elif d.get("kind") == "emblem_place":
             print("Azure Emblem: %s may place one card from hand on top of the reserve deck before %s's mage looks." % (
                 game.players[game.deciding].name, game.players[game.active].name))
+        elif d.get("kind") == "reaver_count":
+            print("Reaver: how many cards does %s reveal from the reserve deck?" % game.players[game.deciding].name)
+        elif d.get("kind") == "reaver_pick":
+            print("Reaver: revealed %s. Which strength is added to the damage?" % (
+                " + ".join(game.card(c).label() for c in d.get("revealed", []))))
+        elif d.get("kind") == "team_discard":
+            print("Team damage: %d to go. Any player discards one card." % (int(d.get("damage", 0)) - int(d.get("paid", 0))))
         acts = game.legal_actions()
         for i, a in enumerate(acts, 1):
             print("  %2d. %s" % (i, a.get("label", a["type"])))
@@ -240,6 +272,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print("bot adds %s to the attack (Mage)" % game.card(act["card"]).label())
             elif act["type"] == "emblem_place":
                 print("bot places a card on top of the reserve (Azure Emblem)")
+            elif act["type"] == "whistle_add":
+                print("bot adds %s to the attack (Scarlet Whistle)" % game.card(act["card"]).label())
             else:
                 print("bot:", act.get("label", act["type"]))
             apply_action(game, act)

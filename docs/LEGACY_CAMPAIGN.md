@@ -271,15 +271,27 @@ unspent coins on success, which the sticker does not say (unverified).
 * Enemies gaining immunity mid-mission (mission rules), with the paladin recalculation.
 * Legacy kinfolk: any number of equal-strength cards totalling at most 10 (no four-card
   cap, strength-based rather than rank-based so 2/5 cards work).
-* Beasts (copy partner strength), companions pairing with companions.
+* **Done:** beasts (a beast with any one other card copies that card's strength, so beast
+  + 7 attacks as 14 and companion + beast as 2; alone, in hand, in the discard pile or
+  the mission zone it is 0; never in a kinfolk set, never with a Jester), companions
+  pairing with companions.
 * Mage attacks are banished even if the mage ability was blocked.
 * Interactive mid-resolution decisions: mage peek, pick and chain; druid deal and
   allocate per player; chanter declared number; reaver count and choice. These need a
-  serialisable "decision pending" phase in the engine.
+  serialisable "decision pending" phase in the engine. **Done** for the mage and the
+  reaver (count, then pick; the revealed cards are banished with the chosen one last;
+  immunity blocks the whole ability; an empty reserve only doubles; the p.22 example
+  deals 68) and for the Guardian (a turn flag: no enemy damage, no mission damage, and
+  no team damage in step 4b).
 * Suffering damage one card at a time with no over-discarding; clean-up order chosen by
-  the player.
-* 2/5 and Wild Animal declarations on entering play.
-* Relics with separate solo and multiplayer sides.
+  the player (**done** where it matters: mission 4 asks which played card ends on top;
+  Legacy games move the enemy first and the played cards on top of it, p.19).
+* 2/5 and Wild Animal declarations on entering play (a 2/5 counts 2 as a bonus to the
+  enemy, 5 when discarded or added by a reaver; the declaration itself is not asked).
+* Relics with separate solo and multiplayer sides. **Done:** Kinfolk Flute, Scarlet
+  Whistle (solo: take the top discard into a solitary companion or beast attack; 2+
+  players: one other player, asked clockwise, adds any card but a Jester) and Azure
+  Emblem.
 * **Done:** the Mage decision (peek, mandatory pick, chained mages, banished at clean-up even when immunity blocked the ability) and both sides of the Azure Emblem (solo keep after each pick; 2+ players place on the reserve once per attack, before the first peek).
 
 ## Mission 1, Call to Arms (confirmed, transcribed from the owner's photos)
@@ -462,9 +474,17 @@ veils, the Crimson Grove in danger); texts in the private lore overlay only.
    Step 2." *Solo relic:* "When you form an attack with a solitary animal companion or
    beast you may take the top card of the discard pile and add it to the attack."
 
-**Engine status:** data and rewards are in; the mission rules (discard-top strength bonus
-with the clean-up order chosen by the player, corrupted experiments playable from hand,
-beasts, the Scarlet Whistle) are being added.
+**Engine status:** mission 4 is playable. The enemy's strength is the printed strength
+plus the strength of the top card of the discard pile, recomputed live (a cleric's
+shuffle or a banish from the pile changes it) and frozen once damage is being suffered;
+a Jester on top counts 0, a 2/5 counts 2, a defeated experiment its printed strength. On
+a kill the experiment goes to the discard pile first (on top of the reserve on exact
+damage), then the player chooses which played card ends on top of the pile (the rest go
+under it; a mage attack is banished instead), as rulebook p.19 orders the steps. The
+twelve experiments carry the corrupted flag, so one drawn from the reserve plays as a
+corrupted card (banishes the top reserve card, its own class ignores immunity). The
+rewards add Gøran, the four beasts (one may be chosen on the campaign screen for each
+attempt) and the Scarlet Whistle, both sides implemented.
 
 ## Mission 5, High and Mighty (confirmed, transcribed from the owner's photos)
 
@@ -514,9 +534,17 @@ just defeated". The app reads this as the enemy's strength at the moment it fell
 strength tracker shows it (printed strength plus the mission zone bonus, less any paladin
 reductions). If the table plays it as the printed strength only, say so.
 
-**Engine status:** data, setup steps and rewards are in; the mission rules (banished
-pile feeding the zone, zone strength bonus, shuffle into the banished pile, carry-over
-damage, the Reaver ability) are being added together with the Mage ability.
+**Engine status:** mission 5 is playable. Myla starts in the banished pile; at the end
+of every turn that is not a kill the top card of the banished pile (the last card
+banished) goes face up into the mission zone, whose combined strength adds to the
+enemy's (a beast 0, a 2/5 2, a recycled enemy its printed strength). On a kill the enemy
+and the whole zone are inserted at random positions of the banished pile; on exact
+damage the next enemy, once revealed, takes damage equal to the fallen enemy's strength
+as the tracker showed it (printed, plus the zone, less paladin reductions, never below
+0), and if that brings it to 0 or less it falls too (exactly only at 0) and the chain
+continues; the same player then takes the next turn. The Reaver ability is implemented
+(see above); a mage attack's cards are banished in play order rather than asking for an
+order.
 
 ## Mission 6, Shards of Memory (second edition; confirmed, transcribed from the owner's photos)
 
@@ -571,10 +599,18 @@ texts in the private lore overlay only.
 5. "Runo (3 Guardian) remains in your party. Remove the other three Guardians from your
    party and return them to the mission 6 box."
 
-**Engine status:** data, setup steps and all rewards are in; the mission rules (Myla in
-the zone, the move-to-zone choice, team damage discarded by any players, Guardian
-prevention), the Guardian ability and both sides of the Azure Emblem are being added
-with the Mage work.
+**Engine status:** mission 6 is playable. Myla starts face up in the mission zone,
+which grants no immunity and no strength to the enemy here. On a kill the enemy is
+banished, the current player must move one card in play (any playmat; in a solo game
+never the set-aside Jester) to the zone, on exact damage may then move one zone card
+except Myla to the discard pile, and Myla deals team damage equal to the zone's combined
+strength (her 7 included): any player discards one card at a time (its value when
+discarded: a companion 1, a Jester 0, a 2/5 5) until the total is at least the damage,
+in any order; the app offers a seat picker in pass-and-play. If every hand together
+cannot pay, the mission is lost at once. A Guardian in the killing attack prevents the
+team damage (the clean-up still happens). A mage moved to the zone leaves the rest of
+its attack to be banished as usual. Feign death is not offered against team damage (the
+rulebook ties it to a player suffering a strike).
 
 ## Mission 7, Tales of Rebirth (confirmed, transcribed from the owner's photos)
 

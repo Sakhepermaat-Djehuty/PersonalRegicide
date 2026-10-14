@@ -72,3 +72,20 @@ def _pull(g: Game, cid: str) -> None:
             return
     if g.enemy and g.enemy.card_id == cid:
         g.enemy = None
+
+
+def set_mission_enemy(g: Game, card_id: str, hp: Optional[int] = None) -> None:
+    """Make the castle card ``card_id`` the current enemy (Legacy mission enemies have ids
+    such as ``LABJH`` or ``GRQS``); the one on the table goes back on top of the castle."""
+    if g.enemy is not None and g.enemy.card_id != card_id:
+        g.castle.insert(0, g.enemy.card_id)
+        g.enemy = None
+    if g.enemy is None:
+        g.castle.remove(card_id)
+        g.castle.insert(0, card_id)
+        g._reveal_next_enemy()
+    if hp is not None:
+        g.enemy.hp = hp
+    g.plays = []
+    g.immunity_cancelled = False
+    g.phase = PHASE_PLAY

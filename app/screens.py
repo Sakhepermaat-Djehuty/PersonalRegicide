@@ -7,7 +7,7 @@ from typing import Callable, Dict, List, Optional
 
 import ui
 
-from regicide.bots import greedy_policy, min_waste_discard
+from regicide.bots import greedy_policy, min_waste_discard, team_discard_choice
 from regicide.campaign import CampaignState
 from regicide.campaign import lore as L
 from regicide.campaign import party as P
@@ -413,6 +413,7 @@ class GameScreen(Screen):
         super().__init__(app, **kw)
         self.game: Game = app.game  # type: ignore[assignment]
         self.shown_player: Optional[int] = None
+        self.team_seat: Optional[int] = None   # mission 6 team damage: whose hand is shown
         self.overlay: Optional[ui.View] = None
         self.message_text = ""
         self.status = make_label("", (0, 0, 10, 10), 13, False, T.MUTED)
@@ -497,8 +498,13 @@ class GameScreen(Screen):
             zone_cards = [g.card(c) for c in g.mission_zone]
             imm = [s for s in g.rules.immune_suits(g) if g.enemy is not None and s not in g.enemy.suits]
             title = "Mission zone"
+            bonus = g.rules.attack_bonus(g) if zone_cards and getattr(g.rules, "mission", 0) in (5, 10, 12) else 0
             if imm:
                 title += " · immune to " + " / ".join(CLASS_NAME.get(s, s) + "s" for s in imm)
+            elif bonus:
+                title += " · enemy strength +%d" % bonus
+            elif getattr(g.rules, "mission", 0) == 6 and zone_cards:
+                title += " · Myla's team damage %d" % sum(g.rules.strength(g.card(c)) for c in g.mission_zone)
             elif not zone_cards:
                 title += " (empty)"
             self.zone.set_cards(zone_cards, title)
@@ -515,22 +521,22 @@ class GameScreen(Screen):
             self._show_overlay(ChooseNextOverlay(self))
             return
         kind = (g.decision or {}).get("kind") if g.phase == PHASE_DECIDE else None
-        if kind is not None and kind not in ("flute_add", "emblem_place", "mage_peek", "emblem_keep"):
-            # a decision of the current player's own with a short list of options (which
-            # mission zone card to rescue, and whatever later missions add)
-            self._show_overlay(PickOverlay(self))
+        if kind == "team_discard":
+            self._refresh_team_damage()
             return
-        if kind in ("mage_peek", "emblem_keep"):
-            # The attacker's secret look at the reserve. In pass-and-play another player may
-            # hold the phone (a Kinfolk Flute or Azure Emblem decision came first): hand it
-            # back before the revealed cards are shown.
+        if kind is not None and kind not in HAND_DECISIONS:
+            # A decision of the current player's own with a short list of options: the
+            # mage's secret look, the reaver's reveal, which zone card to rescue, the
+            # clean-up order, the card moved to the zone, the Scarlet Whistle's take. In
+            # pass-and-play another player may hold the phone (a Kinfolk Flute, Scarlet
+            # Whistle or Azure Emblem decision came first): hand it back first.
             seat = g.deciding
             if g.n_players > 1 and self.shown_player != seat and not g.config.open_hands:
                 self.hand.set_cards([])
                 self._show_overlay(HandoverOverlay(self))
                 return
             self.shown_player = seat
-            self._show_overlay(MagePeekOverlay(self) if kind == "mage_peek" else EmblemKeepOverlay(self))
+            self._show_overlay(PICK_OVERLAYS.get(kind, PickOverlay)(self))
             return
         # The seat whose hand is shown: the attacker, or whoever must decide (Kinfolk
         # Flute, Azure Emblem).
@@ -558,6 +564,28 @@ class GameScreen(Screen):
 
     def reveal_hand(self) -> None:
         self.shown_player = self.game.deciding
+        self.refresh(after_action=False)
+
+    def _refresh_team_damage(self) -> None:
+        """Mission 6: Myla's team damage is discarded one card at a time by any player.
+        Solo, the hand is shown at once; in pass-and-play a seat picker names who discards
+        next, then that player's hand is shown with one card selectable."""
+        g = self.game
+        seat = 0 if g.n_players == 1 else self.team_seat
+        if seat is None or not g.players[seat].hand:
+            self.team_seat = None
+            self.hand.set_cards([])
+            self._show_overlay(TeamDamageOverlay(self))
+            return
+        self._hide_overlay()
+        self.shown_player = seat
+        self.hand.badges = {}
+        self.hand.set_cards(g.hand(seat), keep_selection=False)
+        self.special_btn.hidden = True
+        self._update_controls()
+
+    def pick_team_seat(self, seat: int) -> None:
+        self.team_seat = seat
         self.refresh(after_action=False)
 
     def _update_controls(self) -> None:
@@ -612,6 +640,53 @@ class GameScreen(Screen):
                 self.message.text += " Your hand is short: use the Jester power."
             elif feign:
                 self.message.text += " At the hand limit you may feign death: discard everything."
+        elif g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") == "team_discard":
+            # Mission 6: the shown hand belongs to whoever discards next for Myla's team damage.
+            if len(sel) > 1:
+                self.hand.set_selection(sel[-1:])
+                return
+            self.hand.selectable = lambda c: True
+            self.hand.refresh_dim()
+            d = g.decision or {}
+            remaining = int(d.get("damage", 0)) - int(d.get("paid", 0))
+            seat = 0 if g.n_players == 1 else self.team_seat
+            who = g.players[seat].name if seat is not None else name
+            self.left_btn.title = "Players" if g.n_players > 1 else "Suggest"
+            set_enabled(self.left_btn, True, False)
+            self.mid_btn.hidden = True
+            self.right_btn.title = "Discard"
+            set_enabled(self.right_btn, len(sel) == 1)
+            self.message.text = "Team damage: %d to go. %s: select one card and tap Discard." % (remaining, who)
+            if sel:
+                worth = g.card(sel[0]).defence_value
+                self.message.text = "Team damage: %d to go. %s discards %s (worth %d)%s." % (
+                    remaining, who, g.card(sel[0]).label(), worth, ", enough" if worth >= remaining else "")
+        elif g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") == "whistle_add":
+            # Scarlet Whistle, 2+ players: the shown hand belongs to another player, who may
+            # add one card (not a Jester) to the attacker's solitary companion or beast.
+            if len(sel) > 1:
+                self.hand.set_selection(sel[-1:])
+                return
+            adds = set(a["card"] for a in g.legal_actions() if a["type"] == "whistle_add")
+            self.hand.selectable = lambda c: c.id in adds
+            self.hand.refresh_dim()
+            self.left_btn.title = "Pass"
+            set_enabled(self.left_btn, True, False)
+            self.mid_btn.hidden = True
+            self.right_btn.title = "Add"
+            set_enabled(self.right_btn, len(sel) == 1 and sel[0] in adds)
+            d = g.decision or {}
+            play = g.plays[int(d.get("play_index", len(g.plays) - 1))]
+            attacker = g.players[play.player].name
+            attack = " + ".join(g.card(c).label() for c in play.card_ids)
+            who = g.players[g.deciding].name
+            if sel and sel[0] in adds:
+                pv = g.preview_decision({"type": "whistle_add", "card": sel[0]})
+                self.message.text = "%s adds %s (attack %d): %s" % (
+                    who, g.card(sel[0]).label(), pv.get("attack", 0), describe_preview(g, pv))
+            else:
+                self.message.text = ("%s: add one card to %s's %s attack (Scarlet Whistle)? Any card but a Jester. "
+                                     "Select it and tap Add, or Pass." % (who, attacker, attack))
         elif g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") == "emblem_place":
             # Azure Emblem, 2+ players: the shown hand belongs to another player, who may
             # place one card face down on top of the reserve before the attacker's mage looks.
@@ -701,8 +776,18 @@ class GameScreen(Screen):
             else:
                 self.hand.set_selection(min_waste_discard(g))
         elif g.phase == PHASE_DECIDE:
-            if (g.decision or {}).get("kind") == "emblem_place":
+            kind = (g.decision or {}).get("kind")
+            if kind == "emblem_place":
                 self._act(lambda: g.decide({"type": "emblem_pass"}))
+            elif kind == "whistle_add":
+                self._act(lambda: g.decide({"type": "whistle_pass"}))
+            elif kind == "team_discard":
+                if g.n_players > 1:
+                    self.team_seat = None
+                    self.refresh(after_action=False)
+                else:
+                    act = team_discard_choice(g, g.legal_actions())
+                    self.hand.set_selection([act["card"]])
             else:
                 self._act(g.flute_pass)
 
@@ -731,8 +816,15 @@ class GameScreen(Screen):
         elif g.phase == PHASE_SUFFER:
             self._act(lambda: g.suffer(sel))
         elif g.phase == PHASE_DECIDE:
-            if (g.decision or {}).get("kind") == "emblem_place":
+            kind = (g.decision or {}).get("kind")
+            if kind == "emblem_place":
                 self._act(lambda: g.decide({"type": "emblem_place", "card": sel[0]}))
+            elif kind == "whistle_add":
+                self._act(lambda: g.decide({"type": "whistle_add", "card": sel[0]}))
+            elif kind == "team_discard":
+                seat = 0 if g.n_players == 1 else self.team_seat
+                self.team_seat = None   # the next card may come from any player
+                self._act(lambda: g.decide({"type": "team_discard", "player": seat, "card": sel[0]}))
             else:
                 self._act(lambda: g.flute_add(sel))
 
@@ -805,7 +897,7 @@ class Overlay(ui.View):
 class HandoverOverlay(Overlay):
     def build(self) -> List[ui.View]:
         g = self.screen.game
-        name = g.active_player.name
+        name = g.players[g.deciding].name
         return [
             make_label("Pass the phone to", (0, 0, 10, 24), 15, False, T.MUTED, ui.ALIGN_CENTER),
             make_label(name, (0, 0, 10, 40), 28, True, T.ACCENT, ui.ALIGN_CENTER),
@@ -834,6 +926,10 @@ class DecisionOverlay(Overlay):
             items.append(make_label("%s: place a card for %s's %s attack?" % (who, attacker, attack), (0, 0, 10, 44), 16, True, T.TEXT, ui.ALIGN_CENTER, 2))
             items.append(make_label("Azure Emblem: before the mage looks at the reserve deck you may place one card "
                                     "from your hand face down on top of it, or pass.", (0, 0, 10, 60), 13, False, T.TEXT, ui.ALIGN_CENTER, 3))
+        elif d.get("kind") == "whistle_add":
+            items.append(make_label("%s: add to %s's %s attack?" % (who, attacker, attack), (0, 0, 10, 44), 16, True, T.TEXT, ui.ALIGN_CENTER, 2))
+            items.append(make_label("Scarlet Whistle: the attack is a solitary companion or beast. You may add any one "
+                                    "card from your hand except a Jester, or pass.", (0, 0, 10, 60), 13, False, T.TEXT, ui.ALIGN_CENTER, 3))
         else:
             items.append(make_label("%s: add to %s's %s attack?" % (who, attacker, attack), (0, 0, 10, 44), 16, True, T.TEXT, ui.ALIGN_CENTER, 2))
             items.append(make_label("Kinfolk Flute: you may add %ss from your hand as long as the whole attack stays "
@@ -844,28 +940,111 @@ class DecisionOverlay(Overlay):
 
 class PickOverlay(Overlay):
     """A decision for the current player with a short list of options (one button each),
-    e.g. mission 3's exact kill: which mission zone card goes to the discard pile."""
+    e.g. mission 3's exact kill: which mission zone card goes to the discard pile. Many
+    options go in two columns with short titles; subclasses add a card strip (the mage's
+    and the reaver's revealed cards) or a number grid (how many the reaver reveals)."""
 
     TEXTS = {
         "zone_rescue": ("Exact kill!", "Choose one mission zone card to rescue to the discard pile. "
                                        "The enemy and the rest of the zone are banished."),
+        "whistle_take": ("Scarlet Whistle", "Your attack is a solitary companion or beast: you may add the top card "
+                                            "of the discard pile to it (the beast copies its strength), or skip."),
+        "cleanup_top": ("Enemy defeated", "The played cards go on top of the discard pile in the order you choose, "
+                                          "and the top card's strength adds to the next enemy. Which card ends on top?"),
+        "zone_move": ("Enemy defeated", "Choose one card in play to move to the mission zone. Its strength joins "
+                                        "Myla's team damage."),
     }
+    VERBS = {"mage_pick": "Add", "emblem_keep": "Keep", "reaver_pick": "Add", "zone_rescue": "Rescue",
+             "zone_move": "Move", "cleanup_top": "Top", "whistle_take": "Add"}
+    MANY = 4   # more card options than this go in two columns with short titles
 
-    def build(self) -> List[ui.View]:
+    def heading(self, g: Game, d: dict) -> tuple:
+        kind = str(d.get("kind"))
+        if kind == "zone_rescue" and getattr(g.rules, "mission", 0) == 6:
+            return ("Exact kill!", "Choose one mission zone card except Myla to move to the discard pile. "
+                                   "Myla then deals team damage equal to the zone's strength.")
+        return self.TEXTS.get(kind, ("Your choice", "Choose one option."))
+
+    def strip(self, g: Game, d: dict) -> Optional[CardStrip]:
+        return None
+
+    def columns(self, n: int) -> int:
+        return 2 if n > self.MANY else 1
+
+    def is_option(self, a: dict) -> bool:
+        return bool(a.get("card")) or "count" in a
+
+    def option_title(self, g: Game, a: dict, short: bool) -> str:
+        if not short:
+            return a.get("label", a["type"])
+        if a.get("card"):
+            return "%s %s" % (self.VERBS.get(a["type"], "Pick"), g.card(a["card"]).label())
+        return str(a.get("count", a.get("label", a["type"])))
+
+    def build_parts(self) -> tuple:
+        """(heading views, one button per option, trailing views)."""
         g = self.screen.game
         d = g.decision or {}
-        title, text = self.TEXTS.get(str(d.get("kind")), ("Your choice", "Choose one option."))
-        items: List[ui.View] = [
-            make_label(title, (0, 0, 10, 36), 24, True, T.ACCENT, ui.ALIGN_CENTER),
-            make_label(text, (0, 0, 10, 60), 14, False, T.TEXT, ui.ALIGN_CENTER, 3),
+        title, text = self.heading(g, d)
+        head: List[ui.View] = [
+            make_label(title, (0, 0, 10, 36), 20, True, T.ACCENT, ui.ALIGN_CENTER),
+            make_label(text, (0, 0, 10, 76), 13, False, T.TEXT, ui.ALIGN_CENTER, 4),
         ]
-        for a in g.legal_actions():
-            items.append(make_button(a.get("label", a["type"]),
-                                     (lambda act: lambda s: self.screen.decide(act))(a), (0, 0, 10, 46)))
-        return items
+        strip = self.strip(g, d)
+        if strip is not None:
+            head.append(strip)
+        acts = g.legal_actions()
+        cards = [a for a in acts if self.is_option(a)]
+        short = self.columns(len(cards)) > 1
+        options: List[ui.View] = []
+        for a in cards:
+            options.append(make_button(self.option_title(g, a, short),
+                                       (lambda act: lambda s: self.screen.decide(act))(a), (0, 0, 10, 44)))
+        tail: List[ui.View] = []
+        for a in acts:
+            if not self.is_option(a):
+                tail.append(make_button(a.get("label", a["type"]),
+                                        (lambda act: lambda s: self.screen.decide(act))(a), (0, 0, 10, 44), not a.get("skip")))
+        # The decision cannot be dismissed, so the game menu (undo, log, save) is offered here.
+        tail.append(make_button("Game menu", lambda s: self.screen._menu(s), (0, 0, 10, 36), False, 13))
+        return head, options, tail
+
+    def build(self) -> List[ui.View]:
+        head, options, tail = self.build_parts()
+        return head + options + tail
+
+    def layout(self) -> None:
+        if not hasattr(self, "panel") or not hasattr(self, "screen"):
+            return
+        for v in list(self.panel.subviews):
+            self.panel.remove_subview(v)
+        pw = min(340, self.width - 2 * T.MARGIN)
+        head, options, tail = self.build_parts()
+        y = 20
+        for v in head:
+            v.frame = (20, y, pw - 40, v.height)
+            self.panel.add_subview(v)
+            y += v.height + 12
+        cols = self.columns(len(options))
+        gap = 8 if cols > 1 else 12
+        bw = (pw - 40 - gap * (cols - 1)) / cols
+        bh = 40 if cols > 1 else 44
+        for i, b in enumerate(options):
+            r, c = divmod(i, cols)
+            b.frame = (20 + c * (bw + gap), y + r * (bh + gap), bw, bh)
+            self.panel.add_subview(b)
+        rows = (len(options) + cols - 1) // cols
+        if rows:
+            y += rows * (bh + gap) - gap + 12
+        for v in tail:
+            v.frame = (20, y, pw - 40, v.height)
+            self.panel.add_subview(v)
+            y += v.height + 12
+        ph = y + 8
+        self.panel.frame = ((self.width - pw) / 2, max(T.TOP_INSET, (self.height - ph) / 2), pw, ph)
 
 
-class MagePeekOverlay(Overlay):
+class MagePeekOverlay(PickOverlay):
     """The Mage's secret look: the cards taken from the top of the reserve in a row (Jesters
     and corrupted cards dimmed, they are discarded), one button per card that may join the
     attack, or a single "Nothing to add" when none may."""
@@ -889,72 +1068,16 @@ class MagePeekOverlay(Overlay):
         eligible = set(str(c) for c in d.get("eligible", []))
         return [str(c) for c in d.get("revealed", []) if str(c) not in eligible]
 
-    MANY = 4   # more card options than this go in two columns with short titles
+    def strip_title(self) -> str:
+        return "Revealed from the reserve deck (top first)"
 
-    def build_parts(self) -> tuple:
-        """(heading views, one button per card option, trailing views)."""
-        g = self.screen.game
-        d = g.decision or {}
-        title, text = self.heading(g, d)
-        head: List[ui.View] = [
-            make_label(title, (0, 0, 10, 36), 20, True, T.ACCENT, ui.ALIGN_CENTER),
-            make_label(text, (0, 0, 10, 76), 13, False, T.TEXT, ui.ALIGN_CENTER, 4),
-        ]
+    def strip(self, g: Game, d: dict) -> Optional[CardStrip]:
         revealed = [g.card(str(c)) for c in d.get("revealed", [])]
-        if revealed:
-            strip = CardStrip(frame=(0, 0, 10, 84))
-            strip.set_cards(revealed, "Revealed from the reserve deck (top first)", self.dimmed_ids(g, d))
-            head.append(strip)
-        acts = g.legal_actions()
-        cards = [a for a in acts if a.get("card")]
-        options: List[ui.View] = []
-        for a in cards:
-            title = a.get("label", a["type"])
-            if len(cards) > self.MANY:
-                title = "%s %s" % ("Keep" if a["type"] == "emblem_keep" else "Add", g.card(a["card"]).label())
-            options.append(make_button(title, (lambda act: lambda s: self.screen.decide(act))(a), (0, 0, 10, 44)))
-        tail: List[ui.View] = []
-        for a in acts:
-            if not a.get("card"):
-                tail.append(make_button(a.get("label", a["type"]),
-                                        (lambda act: lambda s: self.screen.decide(act))(a), (0, 0, 10, 44), not a.get("skip")))
-        # The decision cannot be dismissed, so the game menu (undo, log, save) is offered here.
-        tail.append(make_button("Game menu", lambda s: self.screen._menu(s), (0, 0, 10, 36), False, 13))
-        return head, options, tail
-
-    def build(self) -> List[ui.View]:
-        head, options, tail = self.build_parts()
-        return head + options + tail
-
-    def layout(self) -> None:
-        if not hasattr(self, "panel") or not hasattr(self, "screen"):
-            return
-        for v in list(self.panel.subviews):
-            self.panel.remove_subview(v)
-        pw = min(340, self.width - 2 * T.MARGIN)
-        head, options, tail = self.build_parts()
-        y = 20
-        for v in head:
-            v.frame = (20, y, pw - 40, v.height)
-            self.panel.add_subview(v)
-            y += v.height + 12
-        cols = 2 if len(options) > self.MANY else 1
-        gap = 8 if cols == 2 else 12
-        bw = (pw - 40 - gap * (cols - 1)) / cols
-        bh = 40 if cols == 2 else 44
-        for i, b in enumerate(options):
-            r, c = divmod(i, cols)
-            b.frame = (20 + c * (bw + gap), y + r * (bh + gap), bw, bh)
-            self.panel.add_subview(b)
-        rows = (len(options) + cols - 1) // cols
-        if rows:
-            y += rows * (bh + gap) - gap + 12
-        for v in tail:
-            v.frame = (20, y, pw - 40, v.height)
-            self.panel.add_subview(v)
-            y += v.height + 12
-        ph = y + 8
-        self.panel.frame = ((self.width - pw) / 2, max(T.TOP_INSET, (self.height - ph) / 2), pw, ph)
+        if not revealed:
+            return None
+        strip = CardStrip(frame=(0, 0, 10, 84))
+        strip.set_cards(revealed, self.strip_title(), self.dimmed_ids(g, d))
+        return strip
 
 
 class EmblemKeepOverlay(MagePeekOverlay):
@@ -968,6 +1091,66 @@ class EmblemKeepOverlay(MagePeekOverlay):
 
     def dimmed_ids(self, g: Game, d: dict) -> List[str]:
         return []
+
+
+class ReaverPickOverlay(MagePeekOverlay):
+    """Reaver, second step: the revealed cards in a row; one adds its strength to the damage,
+    all are banished, then the damage is doubled."""
+
+    def heading(self, g: Game, d: dict) -> tuple:
+        n = len(d.get("revealed", []))
+        return ("Reaver: %d card%s revealed" % (n, "" if n == 1 else "s"),
+                "Choose the card whose strength is added to the damage (%d so far). All revealed cards are "
+                "banished, then the damage is doubled." % int(d.get("damage", 0)))
+
+    def dimmed_ids(self, g: Game, d: dict) -> List[str]:
+        return []
+
+    def strip_title(self) -> str:
+        return "Revealed from the reserve deck (all are banished)"
+
+
+class ReaverCountOverlay(PickOverlay):
+    """Reaver, first step: how many cards to reveal from the top of the reserve deck (a grid
+    of numbers when the deck is big)."""
+
+    def heading(self, g: Game, d: dict) -> tuple:
+        return ("Reaver", "Choose how many cards to reveal from the top of the reserve deck (%d left). One of "
+                          "them adds its strength to the damage, all of them are banished, then the damage is "
+                          "doubled." % len(g.tavern))
+
+    def columns(self, n: int) -> int:
+        return 5 if n > self.MANY else 1
+
+
+# Decision kinds shown as the deciding player's hand (flute-style) rather than as a list
+# of buttons; the team damage of mission 6 has its own seat picker.
+HAND_DECISIONS = ("flute_add", "emblem_place", "whistle_add", "team_discard")
+PICK_OVERLAYS = {"mage_peek": MagePeekOverlay, "emblem_keep": EmblemKeepOverlay,
+                 "reaver_count": ReaverCountOverlay, "reaver_pick": ReaverPickOverlay}
+
+
+class TeamDamageOverlay(Overlay):
+    """Mission 6: Myla's team damage. Names what is left to discard and asks who discards
+    the next card; that player's hand is then shown with one card selectable."""
+
+    def build(self) -> List[ui.View]:
+        g = self.screen.game
+        d = g.decision or {}
+        remaining = int(d.get("damage", 0)) - int(d.get("paid", 0))
+        items: List[ui.View] = [
+            make_label("Team damage: %d to go" % remaining, (0, 0, 10, 36), 22, True, T.DANGER, ui.ALIGN_CENTER),
+            make_label("Myla deals %d team damage, the strength of the mission zone. Any player discards one card "
+                       "at a time, in any order, until that much strength is discarded. Who discards next?" % int(d.get("damage", 0)),
+                       (0, 0, 10, 76), 13, False, T.TEXT, ui.ALIGN_CENTER, 4),
+        ]
+        for i, p in enumerate(g.players):
+            if not p.hand:
+                continue
+            title = "%s (%d card%s, worth %d)" % (p.name, len(p.hand), "" if len(p.hand) == 1 else "s", g.hand_defence_value(i))
+            items.append(make_button(title, (lambda idx: lambda s: self.screen.pick_team_seat(idx))(i), (0, 0, 10, 46)))
+        items.append(make_button("Game menu", lambda s: self.screen._menu(s), (0, 0, 10, 36), False, 13))
+        return items
 
 
 class ChooseNextOverlay(Overlay):
@@ -1151,6 +1334,20 @@ class CampaignScreen(Screen):
             self.add_subview(make_label(stats, (m, y, w - 2 * m, 20), 12, False, T.MUTED))
             y += 26
             in_progress = store.has_attempt(camp.slot)
+            beasts = camp.beasts_available()
+            if beasts and not in_progress:
+                # Rulebook p.7: for each attempt you may include one of Gøran's beasts.
+                self.add_subview(make_label("Gøran's beast for this attempt", (m, y, w - 2 * m, 18), 12, False, T.MUTED))
+                y += 20
+                opts = [(None, "None")] + [(str(b["id"]), "%s %s" % (SUIT_SYMBOL.get(b["suits"][0], ""), CLASS_NAME.get(b["suits"][0], "")))
+                                           for b in beasts]
+                gap = 6
+                bw2 = (w - 2 * m - gap * (len(opts) - 1)) / len(opts)
+                for i, (bid, title) in enumerate(opts):
+                    b = make_button(title, (lambda x: lambda s: self._set_beast(x))(bid), (m + i * (bw2 + gap), y, bw2, 36),
+                                    camp.beast == bid, 12)
+                    self.add_subview(b)
+                y += 44
             if not in_progress and info.get("playable") and not camp.pending and camp.prepare_mission():
                 app.save_campaign()
             choice = camp.pending_choice()
@@ -1187,6 +1384,15 @@ class CampaignScreen(Screen):
         for title, action in buttons:
             self.add_subview(make_button(title, action, (x, y, bw, row_h), False))
             y += row_h + gap
+
+
+    def _set_beast(self, beast_id: Optional[str]) -> None:
+        camp = self.app.campaign
+        if camp is None:
+            return
+        camp.set_beast(beast_id)
+        self.app.save_campaign()
+        self.layout()
 
 
 class MapScreen(Screen):
@@ -1611,9 +1817,18 @@ def describe_preview(g: Game, pv: dict) -> str:
             parts.append("%s double" % sym)
         elif suit == "S":
             parts.append("%s shield +%d" % (sym, ev.get("shield", 0)))
+        elif suit == "R":
+            parts.append("%s +%d then double" % (sym, ev.get("added", 0)))
+        elif suit == "G":
+            parts.append("%s no damage this turn" % sym)
     s = "%d damage" % pv["damage"]
     if pv["defeats"]:
-        s += " — defeats it%s" % (" exactly! (goes to the tavern)" if pv["exact"] else "")
+        tail = ""
+        if pv["exact"]:
+            legacy = g.config.rules_id.startswith("legacy")
+            to_deck = g.enemy is not None and g.rules.defeat_plan(g, True).get("enemy_to") == "tavern_top"
+            tail = " exactly!" + (" (goes to the %s)" % ("reserve" if legacy else "tavern") if to_deck else "")
+        s += " — defeats it%s" % tail
     else:
         s += " (%d left), then suffer %d" % (pv["enemy_hp_after"], pv["enemy_attack_after"])
     if parts:
@@ -1625,6 +1840,12 @@ def describe_preview(g: Game, pv: dict) -> str:
         prefix = "If nobody adds (Kinfolk Flute): "
     elif pv.get("decision_kind") == "emblem_place":
         prefix = "Azure Emblem: the others may place cards on the reserve first. "
+    elif pv.get("decision_kind") == "whistle_take":
+        prefix = "Scarlet Whistle: you may add the top discard first. If not: "
+    elif pv.get("decision_kind") == "whistle_add":
+        prefix = "Scarlet Whistle: another player may add a card. If nobody does: "
+    elif pv.get("decision_kind") == "reaver_count":
+        prefix = "Reaver: reveal reserve cards and add one's strength (counted as 0 here). "
     peeks = pv.get("mage_peeks") or []
     if peeks:
         n = int(peeks[0])
@@ -1647,14 +1868,26 @@ def describe_events(g: Game) -> str:
                 parts.append("%s healed %d" % (sym, ev["healed"]))
             elif "drawn" in ev:
                 parts.append("%s drew %d" % (sym, len(ev["drawn"])))
+            elif ev["suit"] == "R" and ev.get("doubled"):
+                parts.append("%s +%d, doubled" % (sym, int(ev.get("added", 0))))
             elif ev.get("doubled"):
                 parts.append("%s doubled" % sym)
             elif "shield" in ev:
                 parts.append("%s shield +%d" % (sym, ev["shield"]))
+            elif ev["suit"] == "G":
+                parts.append("%s no damage this turn" % sym)
         elif t == "damage":
             parts.append("%d damage" % ev["amount"])
+        elif t == "carry_damage":
+            parts.append("%d carry-over damage to the next enemy." % ev["amount"])
         elif t == "defeat":
-            parts.append("Exact kill! Enemy to the tavern." if ev["exact"] else "Enemy defeated!")
+            plan = ev.get("plan") or {}
+            if ev["exact"] and plan.get("enemy_to") == "tavern_top":
+                parts.append("Exact kill! Enemy to the tavern.")
+            elif ev["exact"]:
+                parts.append("Exact kill!")
+            else:
+                parts.append("Enemy defeated!")
         elif t == "reveal":
             parts.append("%s appears." % ev["enemy"]["name"])
         elif t == "jester":
@@ -1666,7 +1899,7 @@ def describe_events(g: Game) -> str:
         elif t == "suffer":
             parts.append("Discarded %d to suffer %d." % (ev["paid"], ev["damage"]))
         elif t == "no_damage":
-            parts.append("No damage to suffer.")
+            parts.append("Guardian: no damage this turn." if ev.get("guardian") else "No damage to suffer.")
         elif t == "decide" and ev.get("kind") == "flute_add":
             parts.append("Kinfolk Flute: %s may add %ss." % (g.players[int(ev["player"])].name, ev.get("strength")))
         elif t == "add_to_play" and ev.get("source") != "mage":
@@ -1714,8 +1947,44 @@ def describe_events(g: Game) -> str:
         elif t == "zone_rescue":
             parts.append("%s rescued to the discard pile." % g.card(ev["card"]).label())
         elif t == "zone_cleared":
-            parts.append("Mission zone %s (%d card%s)." % (
-                "banished" if ev.get("to") == "banish" else "discarded", len(ev["cards"]), "" if len(ev["cards"]) == 1 else "s"))
+            where = {"banish": "banished", "banish_shuffle": "shuffled into the banished pile"}.get(str(ev.get("to")), "discarded")
+            parts.append("Mission zone %s (%d card%s)." % (where, len(ev["cards"]), "" if len(ev["cards"]) == 1 else "s"))
+        elif t == "decide" and ev.get("kind") == "whistle_take":
+            parts.append("Scarlet Whistle: add %s from the discard pile?" % g.card(ev["card"]).label())
+        elif t == "decide" and ev.get("kind") == "whistle_add":
+            parts.append("Scarlet Whistle: %s may add a card." % g.players[int(ev["player"])].name)
+        elif t == "whistle_take":
+            parts.append("%s adds %s from the discard pile (Scarlet Whistle, attack %d)." % (
+                g.players[int(ev["player"])].name, g.card(ev["card"]).label(), int(ev["value"])))
+        elif t == "whistle_skip":
+            parts.append("Scarlet Whistle: nothing taken.")
+        elif t == "whistle_pass":
+            parts.append("%s adds nothing." % g.players[int(ev["player"])].name)
+        elif t == "decide" and ev.get("kind") == "reaver_count":
+            parts.append("Reaver: how many cards to reveal?")
+        elif t == "reaver_reveal":
+            parts.append("Reaver: %s revealed." % " + ".join(g.card(c).label() for c in ev["revealed"]))
+        elif t == "reaver_pick":
+            parts.append("Reaver: +%d from %s, damage doubled to %d; %s banished." % (
+                int(ev["added"]), g.card(ev["card"]).label(), int(ev["damage"]),
+                " + ".join(g.card(c).label() for c in ev["banished"])))
+        elif t == "decide" and ev.get("kind") == "cleanup_top":
+            parts.append("Choose which played card ends on top of the discard pile.")
+        elif t == "cleanup_top":
+            parts.append("%s on top of the discard pile." % g.card(ev["card"]).label())
+        elif t == "decide" and ev.get("kind") == "zone_move":
+            parts.append("Choose a card in play to move to the mission zone.")
+        elif t == "zone_move":
+            parts.append("%s moves to the mission zone." % g.card(ev["card"]).label())
+        elif t == "team_damage":
+            parts.append("Myla deals %d team damage." % int(ev["damage"]))
+        elif t == "team_damage_prevented":
+            parts.append("Guardian: Myla's %d team damage is prevented." % int(ev["damage"]))
+        elif t == "team_discard":
+            parts.append("%s discards %s (%d of %d)." % (
+                g.players[int(ev["player"])].name, g.card(ev["card"]).label(), int(ev["paid"]), int(ev["damage"])))
+        elif t == "team_damage_done":
+            parts.append("Team damage satisfied.")
     return " ".join(parts)
 
 

@@ -1,8 +1,8 @@
 """Mission definitions: enemies, setup, and reward steps.
 
-Only missions 1 and 2 are playable in this build; the others carry their public
-description so the campaign screen can show what is coming once revealed, and raise
-``NotImplementedError`` when started.
+Missions 1 to 6 are playable in this build; the others carry their public description
+so the campaign screen can show what is coming once revealed (their rule sets are not
+registered yet, so starting one fails).
 """
 from __future__ import annotations
 
@@ -211,7 +211,7 @@ MISSIONS: List[Dict[str, Any]] = [
      "rewards_text": "Open pack C and corrupt another character in your party. Open pack F (contents still "
                      "to be read: the app assumes the Mage class deck joins the party)."},
     {"number": 4, "title": "Fusion of Darkness", "fan_title": "The Gauntlet", "location": "Biology Laboratory",
-     "rules_id": "legacy_m4", "playable": False, "verified": True,
+     "rules_id": "legacy_m4", "playable": True, "verified": True,
      "summary": "Twelve corrupted experiments: Phase I (10/20), Phase II (15/30), Phase III (20/40), one of "
                 "each class. Each enemy has additional strength equal to the strength of the top card of the "
                 "discard pile, so what you leave on top matters. Enemy defeated: discard pile, or the top of "
@@ -220,7 +220,7 @@ MISSIONS: List[Dict[str, Any]] = [
                      "include one in the reserve. Open pack C and corrupt another character. Acquire the "
                      "Scarlet Whistle."},
     {"number": 5, "title": "High and Mighty", "fan_title": "The Siege", "location": "Crimson Grove",
-     "rules_id": "legacy_m5", "playable": False, "verified": True,
+     "rules_id": "legacy_m5", "playable": True, "verified": True,
      "summary": "Four Reavers join the party for this mission and Myla (7) starts in the banished pile. Four "
                 "Sporelings (10/40) and four Gloomspores (15/60), one of each class. End of turn: the top "
                 "card of the banished pile goes face up into the mission zone, and each enemy has additional "
@@ -231,7 +231,7 @@ MISSIONS: List[Dict[str, Any]] = [
                      "other three Reavers leave. Open pack C and corrupt another character. Choose James (6 "
                      "Cleric), Jakhim (6 Bard) or Lee (6 Paladin) to gain the Reaver class."},
     {"number": 6, "title": "Shards of Memory", "fan_title": "The Evergreen Siege", "location": "Garden of Remembrance",
-     "rules_id": "legacy_m6", "playable": False, "verified": True,
+     "rules_id": "legacy_m6", "playable": True, "verified": True,
      "summary": "Myla leaves the party and starts face up in the mission zone; four Guardians join. Four "
                 "Guardian statues (15/30) and four Evergreen statues (20/40), one of each class. Enemy "
                 "defeated: banish it, move one card in play into the mission zone (one zone card except Myla "

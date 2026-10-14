@@ -91,6 +91,9 @@ class BaseRules:
     # Order in which suit powers resolve. Hearts before Diamonds is an explicit official
     # rule; Clubs and Spades only matter for damage / defence so they come last.
     power_order: Tuple[str, ...] = (HEARTS, DIAMONDS, CLUBS, SPADES)
+    # Clean-up order when an enemy falls: Legacy (p.19) moves the enemy first and puts the
+    # played cards on top of the discard pile; the base game leaves the enemy on top.
+    played_on_top: bool = False
 
     # --- setup ---------------------------------------------------------------
     def build_decks(self, game: "Game") -> None:
@@ -233,11 +236,14 @@ class BaseRules:
     def on_cards_played(self, game: "Game", cards: Sequence[Card]) -> None:
         pass
 
-    def resolve_power(self, game: "Game", suit: str, value: int, cards: Sequence[Card]) -> Any:
-        """Resolve a non-basic suit power (Legacy). The return value is logged; a dict with
-        ``damage`` replaces the running damage, and a dict with a ``decision`` (``kind``,
-        ``player``, ...) pauses the resolution in the decide phase: the rules' ``decide``
-        ends it with ``game.resolve_pending_attack()``, which resumes after this suit."""
+    def resolve_power(self, game: "Game", suit: str, value: int, cards: Sequence[Card],
+                      damage: Optional[int] = None) -> Any:
+        """Resolve a non-basic suit power (Legacy). ``damage`` is the attack damage so far
+        (step 3 powers such as the Reaver change it). The return value is logged; a dict
+        with ``damage`` replaces the running damage, and a dict with a ``decision``
+        (``kind``, ``player``, ...) pauses the resolution in the decide phase: the rules'
+        ``decide`` ends it with ``game.resolve_pending_attack()``, which resumes after
+        this suit."""
         raise NotImplementedError("suit %s has no power in these rules" % suit)
 
     def defeat_plan(self, game: "Game", exact: bool) -> Dict[str, Any]:
@@ -264,7 +270,8 @@ def classify_combo(cards: Sequence[Card], strength: Optional[Callable[[Card], in
     a set is two to four cards of the same number totalling at most 10. ``strength``
     (card -> int) makes a set a matter of equal *strength* rather than rank and sums with
     it (Legacy kinfolk, where a 2/5 card counts as a 2); ``max_cards=None`` lifts the
-    four-card cap (Legacy allows five 2s).
+    four-card cap (Legacy allows five 2s). A Legacy beast (flag ``beast``) pairs like an
+    Animal Companion: with any one other card, never in a set, never with a Jester.
     """
     if not cards:
         return "", "Pick at least one card."
@@ -279,9 +286,12 @@ def classify_combo(cards: Sequence[Card], strength: Optional[Callable[[Card], in
     if len(cards) == 1:
         return "single", None
     aces = [c for c in cards if c.is_ace]
-    if len(cards) == 2 and aces:
-        # Animal Companion: an Ace with any one other card (Ace + Ace allowed).
+    beasts = [c for c in cards if c.has("beast")]
+    if len(cards) == 2 and (aces or beasts):
+        # Animal Companion (or beast): with any one other card (Ace + Ace allowed).
         return "companion", None
+    if beasts:
+        return "", "A beast pairs with exactly one other card."
     if aces:
         return "", "An Animal Companion pairs with exactly one other card."
     if strength is None:

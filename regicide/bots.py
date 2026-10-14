@@ -100,23 +100,56 @@ def evaluate(game: Game) -> float:
     return score
 
 
+def simple_decision(g: Game) -> Optional[dict]:
+    """A cheap, lookahead-free choice for the pending decision (used inside simulations
+    and as the fallback of ``decision_policy``): decline when a "do nothing" option exists
+    (Kinfolk Flute, Scarlet Whistle, Azure Emblem); a mage's mandatory pick and a reaver's
+    pick take the strongest card; a reaver reveals one card; the clean-up top (mission 4)
+    and the card moved to the zone (mission 6) are the weakest, the rescued zone card the
+    strongest; Myla's team damage is paid with the cheapest cover over every hand."""
+    acts = g.legal_actions()
+    if not acts:
+        return None
+    skip = [a for a in acts if a.get("skip")]
+    if skip:
+        return skip[0]
+    kind = (g.decision or {}).get("kind")
+    value = lambda a: g.cards[a["card"]].value  # noqa: E731
+    if kind in ("mage_peek", "reaver_pick"):
+        return max(acts, key=value)
+    if kind == "reaver_count":
+        return min(acts, key=lambda a: int(a.get("count", 1)))
+    if kind in ("cleanup_top", "zone_move"):
+        return min(acts, key=value)
+    if kind == "zone_rescue":
+        return max(acts, key=value)
+    if kind == "team_discard":
+        return team_discard_choice(g, acts)
+    return acts[0]
+
+
+def team_discard_choice(g: Game, acts: List[dict]) -> dict:
+    """Mission 6: the next card any player discards for Myla's team damage, aiming at the
+    cheapest cover overall: the smallest single card that covers what is left, else the
+    largest card available (then the rest is covered next time round)."""
+    d = g.decision or {}
+    remaining = int(d.get("damage", 0)) - int(d.get("paid", 0))
+    worth = lambda a: g.cards[a["card"]].defence_value  # noqa: E731
+    covering = [a for a in acts if worth(a) >= remaining]
+    if covering:
+        return min(covering, key=lambda a: (worth(a), g.cards[a["card"]].value))
+    return max(acts, key=lambda a: (worth(a), -g.cards[a["card"]].value))
+
+
 def _settle_decisions(g: Game) -> None:
-    """Finish the decisions a simulated action runs into, the simple way: decline when a
-    "do nothing" option exists (Kinfolk Flute, Azure Emblem), otherwise take the strongest
-    eligible card (a mage's pick, which is mandatory) or the first option (a zone rescue)."""
+    """Finish the decisions a simulated action runs into with ``simple_decision``."""
     steps = 0
     while g.phase == PHASE_DECIDE and steps < 100:
         steps += 1
-        if g.skip_decision():
-            continue
-        acts = g.legal_actions()
-        if not acts:
+        act = simple_decision(g)
+        if act is None:
             break
-        picks = [a for a in acts if a["type"] == "mage_pick"]
-        if picks:
-            apply_action(g, max(picks, key=lambda a: g.cards[a["card"]].value))
-        else:
-            apply_action(g, acts[0])
+        apply_action(g, act)
 
 
 def _pay_cheapest(g: Game, actor: int) -> None:
@@ -201,14 +234,16 @@ def greedy_policy(game: Game, rng=None) -> dict:
 
 
 def decision_policy(game: Game) -> dict:
-    """Kinfolk Flute and the Azure Emblem's placing: give cards to the attack only when
-    that finishes the enemy.
+    """Kinfolk Flute, Scarlet Whistle and the Azure Emblem's placing: give cards to the
+    attack only when that finishes the enemy.
 
     Among the additions that defeat the enemy, prefer an exact kill (the enemy joins the
     tavern deck), then the fewest / cheapest cards; otherwise keep the cards and pass. A
     mage's pick is mandatory: take the revealed card whose one-ply outcome ranks best
     (``_mage_pick_key``); with nothing eligible the only option is to add nothing. The
-    Emblem's solo keep takes whichever option (a kept card or none) evaluates best."""
+    Emblem's solo keep takes whichever option (a kept card or none) evaluates best. The
+    reaver reveals one card and adds the strongest; the mission choices (clean-up top,
+    zone move, zone rescue, team damage) follow ``simple_decision``."""
     acts = game.legal_actions()
     skip = [a for a in acts if a.get("skip")]
     kind = (game.decision or {}).get("kind")
@@ -217,6 +252,10 @@ def decision_policy(game: Game) -> dict:
         return max(picks, key=lambda a: _mage_pick_key(game, a))
     if kind == "emblem_keep":
         return max(acts, key=lambda a: (evaluate(_simulate_turn(game, a)), 1 if a.get("skip") else 0))
+    if kind in ("reaver_count", "reaver_pick", "cleanup_top", "zone_move", "zone_rescue", "team_discard"):
+        act = simple_decision(game)
+        if act is not None:
+            return act
     best: Optional[dict] = None
     best_key = None
     for act in acts:

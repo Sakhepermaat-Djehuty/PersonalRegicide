@@ -1,4 +1,4 @@
-"""Regicide Legacy campaign: missions 1-2, rewards, losses, mercenaries, relics, rules."""
+"""Regicide Legacy campaign: missions 1-6, rewards, losses, mercenaries, relics, rules."""
 import json
 import random
 
@@ -1693,3 +1693,803 @@ def test_mission12_setup_restores_the_party_and_swaps_the_mother_relic():
     assert [s["kind"] for s in steps] == ["set_flag"]
     M.apply_step(c, steps[0], rng)
     assert c.flags["pack_e_opened"] is True
+
+
+# ---------------------------------------------------------------- Beasts (rulebook p.14, p.21)
+def _beast_game(players=1, seed=400, relics=(), beast="B_C", corrupted=()):
+    """A mission 1 attempt with Gøran's beasts available and one of them chosen."""
+    names = ["Ana", "Ben", "Cy"][:players]
+    c = CampaignState.new(players, names, seed=seed)
+    c.flags["beasts"] = True
+    c.set_beast(beast)
+    c.relics.extend(relics)
+    for cid in corrupted:
+        P.add_flag(c.party, cid, "corrupted")
+    g = c.start_attempt(seed=seed)
+    return c, g
+
+
+def test_beast_pairs_like_a_companion_and_copies_its_partners_strength():
+    c, g = _beast_game()
+    beast = g.cards["B_C"]
+    assert beast.has("beast") and beast.rank == "B" and beast.value == 0 and beast.defence_value == 0
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+    set_enemy(g, "K", "H", hp=100)
+    set_hand(g, ["B_C", "7H", "5D", "5S", "AS", "9S"])
+    plays = [sorted(p) for p in g.legal_plays()]
+    assert ["B_C"] in plays and ["7H", "B_C"] in plays and ["AS", "B_C"] in plays and ["5D", "B_C"] in plays
+    assert plays.count(["AS", "B_C"]) == 1
+    assert g.check_play(["B_C", "7H"]) == (True, "companion")
+    assert g.check_play(["B_C", "5D", "5S"])[0] is False          # a beast never joins a kinfolk set
+    assert g.check_play(["5D", "5S"]) == (True, "set")
+    g.play(["B_C", "7H"])
+    play = g.plays[0]
+    assert play.value == 14 and set(play.suits) == {"C", "H"}      # the beast copies the 7
+    powers = dict(_powers(g))
+    assert powers["H"]["value"] == 14 and powers["C"]["doubled"]
+    assert g.enemy.hp == 100 - 28 and g.phase == PHASE_SUFFER
+    # companion + beast: the beast copies the companion's 1
+    c, g = _beast_game(seed=401)
+    set_enemy(g, "K", "H", hp=100)
+    set_hand(g, ["B_C", "AS", "9S", "8S"])
+    g.play(["AS", "B_C"])
+    assert g.plays[0].value == 2 and set(g.plays[0].suits) == {"S", "C"} and g.enemy.hp == 100 - 4
+    assert g.shield == 2
+
+
+def test_beast_alone_is_a_legal_play_of_strength_zero_and_discards_for_zero():
+    c, g = _beast_game(seed=402)
+    set_enemy(g, "J", "H")
+    set_hand(g, ["B_C", "9S", "AS", "3D"])
+    g.play(["B_C"])
+    played = [ev for ev in g.last_events if ev["t"] == "play"][0]
+    assert played["value"] == 0 and played["kind"] == "single"
+    assert dict(_powers(g))["C"]["doubled"] and g.enemy.hp == 20     # doubling 0 is still 0
+    assert g.phase == PHASE_SUFFER and g.pending_damage == 10
+    with pytest.raises(IllegalAction):
+        g.suffer(["B_C", "3D"])                                        # 0 + 3 does not cover 10
+    g.suffer(["9S", "AS"])
+    assert g.phase == PHASE_PLAY and g.turn == 2 and g.plays[0].card_ids == ["B_C"] and g.players[0].hand == ["3D"]
+    # a beast never pairs with a Jester and never joins the Kinfolk Flute
+    c, g = _beast_game(players=3, seed=403, relics=["flute"])
+    jester = [x for x in g.cards if g.cards[x].is_jester][0]
+    set_enemy(g, "J", "H")
+    set_hand(g, ["5C", "9S", "8S"], player=0)
+    set_hand(g, ["B_C", jester, "5D"], player=1)
+    assert g.check_play([jester, "B_C"])[0] is False
+    g.play(["5C"])
+    assert g.deciding == 1 and _adds(g) == [("5D",)]
+
+
+# ---------------------------------------------------------------- Scarlet Whistle (both sides)
+def test_scarlet_whistle_solo_takes_the_top_of_the_discard_pile_or_skips():
+    from helpers import set_discard
+    c, g = _beast_game(seed=410, relics=["whistle"])
+    set_enemy(g, "J", "H")
+    set_hand(g, ["AS", "B_C", "7H", "3D", "9S"])
+    set_discard(g, ["6D", "2H"])
+    g.play(["AS"])
+    assert g.phase == PHASE_DECIDE and g.deciding == 0 and g.active == 0
+    assert g.decision["kind"] == "whistle_take" and g.decision["card"] == "6D" and g.decision["play_index"] == 0
+    acts = g.legal_actions()
+    assert [a["label"] for a in acts] == ["Add 6♦ from the discard pile", "Skip"] and acts[1]["skip"]
+    assert g.legal_plays() == []
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "whistle_take", "card": "2H"})
+    g.decide({"type": "whistle_take", "card": "6D"})
+    play = g.plays[0]
+    assert play.card_ids == ["AS", "6D"] and play.value == 7 and set(play.suits) == {"S", "D"}
+    assert g.discard == ["2H"] and g.decision is None
+    assert any(ev["t"] == "whistle_take" and ev["card"] == "6D" and ev["value"] == 7 for ev in g.last_events)
+    powers = dict(_powers(g))
+    assert powers["D"]["value"] == 7 and powers["S"]["shield"] == 7
+    assert g.enemy.hp == 20 - 7 and g.shield == 7 and g.phase == PHASE_SUFFER and g.pending_damage == 3
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+    # skipping resolves the attack as formed
+    c, g = _beast_game(seed=411, relics=["whistle"])
+    set_enemy(g, "J", "H")
+    set_hand(g, ["B_C", "7H", "3D", "9S", "8S"])
+    set_discard(g, ["6D"])
+    g.play(["B_C"])
+    assert g.decision["kind"] == "whistle_take"
+    g.decide({"type": "whistle_skip"})
+    assert g.decision is None and g.plays[0].card_ids == ["B_C"] and g.plays[0].value == 0
+    assert g.enemy.hp == 20 and g.discard == ["6D"] and g.phase == PHASE_SUFFER
+    assert any(ev["t"] == "whistle_skip" for ev in g.last_events)
+    # a beast copies the card it takes: beast + 6♦ is a 12, doubled by the beast's class
+    c, g = _beast_game(seed=412, relics=["whistle"])
+    set_enemy(g, "J", "H", hp=30)
+    set_hand(g, ["B_C", "7H", "3D", "9S", "8S"])
+    set_discard(g, ["6D"])
+    g.play(["B_C"])
+    g.decide({"type": "whistle_take", "card": "6D"})
+    assert g.plays[0].value == 12 and set(g.plays[0].suits) == {"C", "D"} and g.enemy.hp == 30 - 24
+    # no decision with an empty discard pile, for a two-card attack, or without the relic
+    c, g = _beast_game(seed=413, relics=["whistle"])
+    set_enemy(g, "J", "H")
+    set_hand(g, ["AS", "B_C", "7H", "3D", "9S"])
+    g.discard = []
+    g.play(["AS"])
+    assert g.decision is None and g.phase == PHASE_SUFFER
+    c, g = _beast_game(seed=414, relics=["whistle"])
+    set_enemy(g, "J", "H")
+    set_hand(g, ["AS", "B_C", "7H", "3D", "9S"])
+    set_discard(g, ["6D"])
+    g.play(["AS", "7H"])
+    assert g.decision is None
+    c, g = _beast_game(seed=415)
+    set_enemy(g, "J", "H")
+    set_hand(g, ["AS", "B_C", "7H", "3D", "9S"])
+    set_discard(g, ["6D"])
+    g.play(["AS"])
+    assert g.decision is None
+    # the forecast assumes nothing is taken
+    c, g = _beast_game(seed=416, relics=["whistle"])
+    set_enemy(g, "J", "H")
+    set_hand(g, ["AS", "B_C", "7H", "3D", "9S"])
+    set_discard(g, ["6D"])
+    pv = g.preview_play(["AS"])
+    assert pv["ok"] and pv["decision"] and pv["decision_kind"] == "whistle_take" and pv["damage"] == 1
+    assert g.discard == ["6D"] and g.decision is None
+
+
+def test_scarlet_whistle_taken_corrupted_card_banishes_and_ignores_immunity():
+    from helpers import set_discard
+    c, g = _beast_game(seed=417, relics=["whistle"], corrupted=("6D",))
+    set_enemy(g, "J", "D")                           # immune to bards
+    set_hand(g, ["AS", "7H", "3D", "9S"])
+    set_discard(g, ["6D"])
+    g.play(["AS"])
+    top = g.tavern[0]
+    g.decide({"type": "whistle_take", "card": "6D"})
+    assert g.banished == [top] and any(ev["t"] == "corrupt_banish" for ev in g.last_events)
+    bards = dict(_powers(g))["D"]
+    assert not bards.get("immune") and bards["value"] == 7
+    assert g.plays[0].value == 7 and g.enemy.hp == 13
+
+
+def test_scarlet_whistle_multiplayer_asks_the_others_clockwise_until_one_adds():
+    c, g = _beast_game(players=3, seed=420, relics=["whistle"])
+    jester = [x for x in g.cards if g.cards[x].is_jester][0]
+    set_enemy(g, "J", "H")
+    set_hand(g, ["AS", "9S", "8S"], player=0)
+    set_hand(g, ["7C", jester], player=1)
+    set_hand(g, ["4D", "3H"], player=2)
+    g.play(["AS"])
+    assert g.phase == PHASE_DECIDE and g.active == 0 and g.deciding == 1
+    assert g.decision["kind"] == "whistle_add" and g.decision["queue"] == [2] and g.decision["play_index"] == 0
+    acts = g.legal_actions()
+    assert [a["label"] for a in acts] == ["Add 7♣ to the attack", "Pass"] and acts[-1]["skip"]   # never a Jester
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "whistle_add", "card": jester})
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "whistle_add", "card": "4D"})          # not Ben's card
+    g.decide({"type": "whistle_pass"})
+    assert g.phase == PHASE_DECIDE and g.deciding == 2 and g.decision["queue"] == []
+    assert any(ev["t"] == "whistle_pass" and ev["player"] == 1 for ev in g.last_events)
+    assert [a["card"] for a in g.legal_actions() if a.get("card")] == ["4D", "3H"]
+    g.decide({"type": "whistle_add", "card": "4D"})
+    assert g.decision is None and g.plays[0].card_ids == ["AS", "4D"] and g.plays[0].value == 5
+    assert "4D" not in g.players[2].hand and g.players[1].hand[:2] == ["7C", jester]   # the bards drew for everyone
+    assert g.enemy.hp == 15 and g.shield == 5 and g.phase == PHASE_SUFFER and g.active == 0 and g.pending_damage == 5
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+    # the first player to add ends the round: Cy is not asked; a beast copies the newcomer
+    c, g = _beast_game(players=3, seed=421, relics=["whistle"])
+    set_enemy(g, "J", "H")
+    set_hand(g, ["B_C", "9S", "8S"], player=0)
+    set_hand(g, ["7C", "2D"], player=1)
+    set_hand(g, ["4D"], player=2)
+    g.play(["B_C"])
+    assert g.deciding == 1
+    g.decide({"type": "whistle_add", "card": "7C"})
+    assert g.decision is None and g.plays == [] and g.enemies_defeated == 1     # 14 doubled: 28 damage
+    assert g.players[2].hand == ["4D"] and g.active == 0 and g.phase == PHASE_PLAY
+    # players holding nothing but Jesters are skipped; when everyone passes the attack resolves as formed
+    c, g = _beast_game(players=3, seed=422, relics=["whistle"])
+    jester = [x for x in g.cards if g.cards[x].is_jester][0]
+    set_enemy(g, "J", "H")
+    set_hand(g, ["AS", "9S", "8S"], player=0)
+    set_hand(g, [jester], player=1)
+    set_hand(g, ["4D"], player=2)
+    g.play(["AS"])
+    assert g.deciding == 2 and g.decision["queue"] == []
+    g.decide({"type": "whistle_pass"})
+    assert g.decision is None and g.plays[0].card_ids == ["AS"] and g.enemy.hp == 19 and g.phase == PHASE_SUFFER
+    # nobody can add: no decision at all; the forecast assumes nobody adds
+    c, g = _beast_game(players=2, seed=423, relics=["whistle"])
+    set_enemy(g, "J", "H")
+    set_hand(g, ["AS", "9S", "8S"], player=0)
+    set_hand(g, [], player=1)
+    g.play(["AS"])
+    assert g.decision is None and g.phase == PHASE_SUFFER
+    c, g = _beast_game(players=2, seed=424, relics=["whistle"])
+    set_enemy(g, "J", "H")
+    set_hand(g, ["AS", "9S", "8S"], player=0)
+    set_hand(g, ["7C"], player=1)
+    pv = g.preview_play(["AS"])
+    assert pv["decision_kind"] == "whistle_add" and pv["damage"] == 1 and g.players[1].hand == ["7C"]
+    # the one-ply bot adds only to finish the enemy
+    g.enemy.hp = 8
+    g.play(["AS"])
+    assert greedy_policy(g) == {"type": "whistle_add", "player": 1, "card": "7C", "label": "Add 7♣ to the attack"}
+    g.enemy.hp = 20
+    assert greedy_policy(g)["type"] == "whistle_pass"
+
+
+def test_whistle_decision_survives_a_save_round_trip_and_bots_play_with_it():
+    c, g = _beast_game(players=2, seed=425, relics=["whistle"])
+    set_enemy(g, "J", "H")
+    set_hand(g, ["AS", "9S", "8S"], player=0)
+    set_hand(g, ["7C", "2D"], player=1)
+    g.play(["AS"])
+    g2 = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    assert g2.decision == g.decision and g2.legal_actions() == g.legal_actions() and g2.deciding == 1
+    g2.decide({"type": "whistle_add", "card": "2D"})
+    assert g2.plays[0].value == 3 and g2.phase == PHASE_SUFFER
+    # the random bot picks either whistle option; both bots play whole games with the relic
+    rng = random.Random(7)
+    seen = set()
+    for _ in range(30):
+        g3 = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+        act = random_policy(g3, rng)
+        assert act["type"] in ("whistle_add", "whistle_pass")
+        apply_action(g3, act)
+        seen.add(act["type"])
+        assert g3.phase == PHASE_SUFFER and sorted(g3.all_card_ids()) == sorted(g3.cards)
+    assert seen == {"whistle_add", "whistle_pass"}
+    offers = 0
+    for players in (1, 2, 3):
+        for seed in range(6):
+            c, g = _beast_game(players=players, seed=430 + seed, relics=["whistle", "flute"], beast="B_H")
+            play_out(g, greedy_policy if seed % 2 == 0 else random_policy, rng)
+            assert g.is_over and g.decision is None
+            assert sorted(g.all_card_ids() + g.extra.get("flute", [])) == sorted(g.cards)
+            offers += sum(1 for line in g.log if line.startswith("Scarlet Whistle:"))
+    assert offers > 0
+
+
+# ---------------------------------------------------------------- Reavers (rulebook p.17, p.22)
+def _reaver_game(players=1, seed=440):
+    names = ["Ana", "Ben", "Cy"][:players]
+    c = CampaignState.new(players, names, seed=seed)
+    for r in M.REAVERS:
+        P.add_card(c.party, dict(r))
+    g = c.start_attempt(seed=seed)
+    return c, g
+
+
+def test_reaver_example_five_warrior_five_reaver_reveal_two_add_seven_deals_68():
+    c, g = _reaver_game()
+    set_enemy(g, "K", "H", hp=100)
+    set_hand(g, ["5C", "5R", "9S", "8S", "7S"])
+    set_tavern_top(g, ["7H", "2D", "3D"])
+    assert g.check_play(["5C", "5R"]) == (True, "set")
+    g.play(["5C", "5R"])
+    # step 3 pauses on the reaver before the warrior: the attacker chooses how many to reveal
+    assert g.phase == PHASE_DECIDE and g.deciding == 0 and g.active == 0
+    d = g.decision
+    assert d["kind"] == "reaver_count" and d["damage"] == 10 and d["done_suits"] == ["R"] and d["resume"] == "resolve"
+    acts = g.legal_actions()
+    assert [a["label"] for a in acts][:3] == ["Reveal 1", "Reveal 2", "Reveal 3"] and len(acts) == len(g.tavern)
+    assert [a["count"] for a in acts] == list(range(1, len(g.tavern) + 1)) and not any(a.get("skip") for a in acts)
+    assert g.enemy.hp == 100 and g.tavern[0] == "7H"
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "reaver_count", "count": 0})
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "reaver_count", "count": len(g.tavern) + 1})
+    g.decide({"type": "reaver_count", "count": 2})
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "reaver_pick" and g.decision["revealed"] == ["7H", "2D"]
+    assert g.tavern[0] == "3D" and sorted(g.all_card_ids()) == sorted(g.cards)
+    assert any(ev["t"] == "reaver_reveal" and ev["revealed"] == ["7H", "2D"] for ev in g.last_events)
+    assert [a["label"] for a in g.legal_actions()] == ["Add 7♥'s strength (+7)", "Add 2♦'s strength (+2)"]
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "reaver_pick", "card": "3D"})
+    g.decide({"type": "reaver_pick", "card": "7H"})
+    # 10 + 7 = 17, the reaver doubles to 34, the warrior to 68; both revealed cards are banished
+    assert g.decision is None and g.banished == ["2D", "7H"]
+    powers = dict(_powers(g))
+    assert powers["R"]["added"] == 7 and powers["R"]["doubled"] and powers["C"]["doubled"]
+    assert [s for s, _ in _powers(g)] == ["R", "C"]
+    assert any(ev["t"] == "damage" and ev["amount"] == 68 for ev in g.last_events)
+    assert any(ev["t"] == "reaver_pick" and ev["card"] == "7H" and ev["damage"] == 34 for ev in g.last_events)
+    assert g.enemy.hp == 32 and g.phase == PHASE_SUFFER
+    assert g.plays[0].card_ids == ["5C", "5R"] and g.plays[0].value == 10   # the 7 did not join the attack
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+
+
+def test_reaver_immunity_empty_reserve_forecast_and_save_round_trip():
+    # immunity blocks the whole ability: no reveal, no doubling
+    c, g = _reaver_game(seed=441)
+    set_enemy(g, "K", "H", hp=100)
+    g.enemy.suits = ("R",)
+    set_hand(g, ["5R", "9S", "8S"])
+    reserve = list(g.tavern)
+    g.play(["5R"])
+    assert dict(_powers(g))["R"]["immune"] and g.decision is None and g.tavern == reserve
+    assert g.enemy.hp == 95 and g.banished == []
+    # an empty reserve: nothing to reveal, the damage is still doubled
+    c, g = _reaver_game(seed=442)
+    set_enemy(g, "K", "H", hp=100)
+    set_hand(g, ["5R", "9S", "8S"])
+    g.discard = g.tavern + g.discard
+    g.tavern = []
+    g.play(["5R"])
+    assert g.decision is None and g.enemy.hp == 90 and dict(_powers(g))["R"]["result"]["doubled"]
+    # the forecast assumes a reveal that adds 0 (then doubles) and leaves the reserve alone
+    c, g = _reaver_game(seed=443)
+    set_enemy(g, "K", "H", hp=100)
+    set_hand(g, ["5C", "5R", "9S", "8S"])
+    before = list(g.tavern)
+    pv = g.preview_play(["5C", "5R"])
+    assert pv["ok"] and pv["decision"] and pv["decision_kind"] == "reaver_count" and pv["damage"] == 40
+    assert pv["powers"]["R"]["added"] == 0 and pv["powers"]["R"]["forecast"] and pv["enemy_hp_after"] == 60
+    assert g.tavern == before and g.decision is None and g.banished == []
+    # a save in either reaver decision resumes with the same options
+    set_tavern_top(g, ["7H", "2D", "3D"])
+    g.play(["5C", "5R"])
+    g2 = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    assert g2.decision == g.decision and g2.legal_actions() == g.legal_actions()
+    g.decide({"type": "reaver_count", "count": 2})
+    g2.decide({"type": "reaver_count", "count": 2})
+    g3 = Game.from_dict(json.loads(json.dumps(g2.to_dict())))
+    assert g3.decision["kind"] == "reaver_pick" and g3.decision["revealed"] == ["7H", "2D"]
+    assert sorted(g3.all_card_ids()) == sorted(g3.cards) and g3.legal_actions() == g.legal_actions()
+    g3.decide({"type": "reaver_pick", "card": "2D"})
+    g.decide({"type": "reaver_pick", "card": "2D"})
+    assert g3.to_dict() == g.to_dict() and g.enemy.hp == 100 - 48
+    # bots: reveal one card and take the strongest
+    c, g = _reaver_game(seed=444)
+    set_enemy(g, "K", "H", hp=100)
+    set_hand(g, ["5R", "9S", "8S"])
+    set_tavern_top(g, ["3D", "7H"])
+    g.play(["5R"])
+    act = greedy_policy(g)
+    assert act["type"] == "reaver_count" and act["count"] == 1
+    apply_action(g, act)
+    assert g.decision["revealed"] == ["3D"]
+    assert greedy_policy(g) == g.legal_actions()[0]
+    apply_action(g, greedy_policy(g))
+    assert g.enemy.hp == 100 - 16 and g.banished == ["3D"]
+    c, g = _reaver_game(seed=445)
+    set_enemy(g, "K", "H", hp=100)
+    set_hand(g, ["5R", "9S", "8S"])
+    set_tavern_top(g, ["3D", "7H"])
+    g.play(["5R"])
+    g.decide({"type": "reaver_count", "count": 2})
+    assert greedy_policy(g)["card"] == "7H"
+
+
+# ---------------------------------------------------------------- Guardians (rulebook p.18)
+def test_guardian_prevents_the_players_damage_for_the_turn():
+    c = CampaignState.new(1, ["Ana"], seed=450)
+    for gd in M.GUARDIANS:
+        P.add_card(c.party, dict(gd))
+    g = c.start_attempt(seed=450)
+    set_enemy(g, "K", "H")
+    set_hand(g, ["5G", "9S", "2D"])
+    g.play(["5G"])
+    assert dict(_powers(g))["G"]["result"] == {"guardian": True}
+    assert g.enemy.hp == 35
+    # no damage to suffer: straight to the next turn, the hand untouched, the flag gone
+    assert any(ev["t"] == "no_damage" and ev.get("guardian") for ev in g.last_events)
+    assert g.phase == PHASE_PLAY and g.turn == 2 and g.players[0].hand == ["9S", "2D"]
+    assert "guardian" not in g.extra
+    set_hand(g, ["2D", "9S", "8S", "7S"])
+    g.play(["2D"])
+    assert g.phase == PHASE_SUFFER and g.pending_damage == 20       # the next turn is unprotected
+    # immunity to guardians blocks it
+    c = CampaignState.new(1, ["Ana"], seed=451)
+    for gd in M.GUARDIANS:
+        P.add_card(c.party, dict(gd))
+    g = c.start_attempt(seed=451)
+    set_enemy(g, "K", "H")
+    g.enemy.suits = ("G",)
+    set_hand(g, ["7G", "9S", "8S", "7S"])
+    g.play(["7G"])
+    assert dict(_powers(g))["G"]["immune"] and g.phase == PHASE_SUFFER and g.pending_damage == 20
+    assert "guardian" not in g.extra
+
+
+# ---------------------------------------------------------------- Mission 4: Fusion of Darkness
+def _mission4(players=1, seed=460, merc_25=False):
+    names = ["Ana", "Ben", "Cy"][:players]
+    c = CampaignState.new(players, names, seed=seed)
+    c.mission = 4
+    c.completed = [1, 2, 3]
+    c.relics.append("flute")
+    for d in M.MAGE_DECK:
+        P.add_card(c.party, dict(d))
+    if merc_25:
+        c.m_box_opened = True
+        c.coins = 1
+        c.hire("merc_25H")
+    g = c.start_attempt(seed=seed)
+    return c, g
+
+
+def test_mission4_enemy_strength_follows_the_top_of_the_discard_pile():
+    from helpers import set_discard, set_mission_enemy
+    c, g = _mission4(merc_25=True)
+    assert g.config.rules_id == "legacy_m4" and MISSIONS[3]["playable"]
+    enemies = [g.cards[x] for x in [g.enemy.card_id] + g.castle]
+    assert [e.name for e in enemies] == ["Phase I Experiment"] * 4 + ["Phase II Experiment"] * 4 + ["Phase III Experiment"] * 4
+    assert all(e.has("corrupted") for e in enemies)
+    assert [(e.attack, e.health) for e in enemies][::4] == [(10, 20), (15, 30), (20, 40)]
+    set_mission_enemy(g, "LABJD")                     # a Phase I bard: immune to bards
+    assert g.enemy_attack == 10 and g.rules.attack_bonus(g) == 0
+    set_discard(g, ["7D", "2S"])
+    assert g.rules.attack_bonus(g) == 7 and g.enemy_attack == 17
+    set_discard(g, ["M25H", "7D"])                    # a 2/5 counts 2
+    assert g.enemy_attack == 12
+    # a cleric's shuffle changes the top card, and with it the enemy's strength
+    set_discard(g, ["7D", "2S", "3S", "4S", "6C"])
+    set_hand(g, ["4H", "9S", "8S", "AS"])
+    assert g.enemy_attack == 17
+    g.play(["4H"])
+    assert len(g.discard) == 1 and g.enemy.hp == 16
+    assert g.enemy_attack == 10 + g.rules.strength(g.cards[g.discard[0]]) == g.pending_damage
+    # frozen while suffering: the damage was fixed when the step began
+    due = g.pending_damage
+    g.discard.insert(0, "7D") if "7D" in g.tavern and not g.tavern.remove("7D") else None
+    assert g.pending_damage == due
+    # a defeated experiment on top of the pile adds its printed strength (10)
+    c, g = _mission4(seed=461)
+    set_mission_enemy(g, "LABJD", hp=5)
+    set_hand(g, ["9S", "8S", "AS"])
+    g.play(["9S"])                                    # 9: not exact, the experiment goes to the discard pile
+    assert g.enemies_defeated == 1 and g.discard == ["9S", "LABJD"]   # the played card on top (p.19)
+    assert g.enemy_attack == 10 + 9
+    g.discard.remove("9S")
+    g.discard.append("9S")
+    assert g.enemy_attack == 10 + 10
+
+
+def test_mission4_player_chooses_which_played_card_ends_on_top_of_the_discard_pile():
+    from helpers import set_discard, set_mission_enemy
+    c, g = _mission4(seed=462)
+    set_mission_enemy(g, "LABJD", hp=10)
+    set_hand(g, ["AS", "9C", "3D", "2H"])
+    set_discard(g, ["7D"])
+    g.play(["AS", "9C"])                              # 10, doubled: 20, not exact
+    assert g.phase == PHASE_DECIDE and g.deciding == 0
+    assert g.decision["kind"] == "cleanup_top" and g.decision["options"] == ["AS", "9C"] and g.decision["exact"] is False
+    acts = g.legal_actions()
+    assert [a["label"] for a in acts] == ["Put A♠ on top of the discard pile", "Put 9♣ on top of the discard pile"]
+    assert not any(a.get("skip") for a in acts) and g.enemies_defeated == 0
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "cleanup_top", "card": "3D"})
+    g = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    assert g.decision["kind"] == "cleanup_top"
+    g.decide({"type": "cleanup_top", "card": "AS"})
+    # the experiment goes to the pile first, the played cards on top of it, the chosen one on top
+    assert g.discard == ["AS", "9C", "LABJD", "7D"] and "cleanup_top" not in g.extra
+    assert g.enemies_defeated == 1 and g.phase == PHASE_PLAY and g.active == 0 and g.enemy_attack == 10 + 1
+    assert any(ev["t"] == "cleanup_top" and ev["card"] == "AS" for ev in g.last_events)
+    # the other way round
+    set_mission_enemy(g, "LABJS", hp=10)
+    set_hand(g, ["AD", "9C", "2H"])
+    g.play(["AD", "9C"])
+    g.decide({"type": "cleanup_top", "card": "9C"})
+    assert g.discard[:3] == ["9C", "AD", "LABJS"] and g.enemy_attack == 10 + 9
+    # one played card: no decision; an exact kill puts the experiment on top of the reserve
+    set_mission_enemy(g, "LABJC", hp=9)
+    set_hand(g, ["9D", "2H", "3S"])
+    g.play(["9D"])
+    assert g.decision is None and g.enemies_defeated == 3 and g.tavern[0] == "LABJC" and g.discard[0] == "9D"
+    # the bot keeps the weakest card on top (the smallest bonus for the next enemy)
+    set_mission_enemy(g, "LABQD", hp=12)
+    set_hand(g, ["AH", "10C", "3S"])
+    g.play(["AH", "10C"])
+    assert g.decision["kind"] == "cleanup_top" and greedy_policy(g)["card"] == "AH"
+    # a Jester in a multiplayer game may end on top: strength 0
+    c, g = _mission4(players=3, seed=463)
+    jester = [x for x in g.cards if g.cards[x].is_jester][0]
+    set_mission_enemy(g, "LABJD", hp=9)
+    set_hand(g, [jester, "4D"], player=0)
+    set_hand(g, ["9S", "3H"], player=1)
+    g.play([jester])
+    g.choose_next(1)
+    g.play(["9S"])
+    assert g.decision["kind"] == "cleanup_top" and sorted(g.decision["options"]) == sorted([jester, "9S"])
+    g.decide({"type": "cleanup_top", "card": jester})
+    assert g.discard[0] == jester and g.enemy_attack == 10
+
+
+def test_mission4_defeated_experiment_plays_from_hand_as_a_corrupted_card():
+    from helpers import set_mission_enemy
+    c, g = _mission4(seed=464)
+    set_mission_enemy(g, "LABJS", hp=9)
+    set_hand(g, ["9D", "8S", "7S", "AS"])
+    g.play(["9D"])                                    # exact: the paladin experiment tops the reserve
+    assert g.tavern[0] == "LABJS" and g.enemies_defeated == 1
+    set_hand(g, ["LABJS", "8S", "7S", "AS"])
+    set_mission_enemy(g, "LABQS", hp=30)              # a Phase II paladin: immune to paladins
+    assert g.check_play(["LABJS"]) == (True, "single") and g.check_play(["AS", "LABJS"]) == (True, "companion")
+    assert g.check_play(["LABJS", "8S", "7S"])[0] is False
+    top = g.tavern[0]
+    g.play(["LABJS"])
+    assert g.banished == [top] and any(ev["t"] == "corrupt_banish" and ev["card"] == "LABJS" for ev in g.last_events)
+    assert g.plays[0].value == 10 and g.enemy.hp == 20
+    assert dict(_powers(g))["S"]["shield"] == 10 and g.shield == 10     # its own class ignores immunity
+    assert g.rules.attack_bonus(g) == 9 and g.enemy_attack == 15 + 9 - 10 and g.phase == PHASE_SUFFER
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+
+
+# ---------------------------------------------------------------- Mission 5: High and Mighty
+def _mission5(players=1, seed=470, relics=("whistle",), beast=None):
+    names = ["Ana", "Ben", "Cy"][:players]
+    c = CampaignState.new(players, names, seed=seed)
+    c.mission = 5
+    c.completed = [1, 2, 3, 4]
+    c.relics.extend(relics)
+    P.add_card(c.party, dict(M.GORAN))
+    c.flags["beasts"] = True
+    c.set_beast(beast)
+    for d in M.MAGE_DECK:
+        P.add_card(c.party, dict(d))
+    g = c.start_attempt(seed=seed)
+    return c, g
+
+
+def test_mission5_myla_starts_banished_and_the_banished_pile_feeds_the_zone():
+    from helpers import set_mission_enemy
+    c, g = _mission5()
+    assert g.config.rules_id == "legacy_m5" and MISSIONS[4]["playable"] and g.rules.uses_mission_zone
+    assert g.banished == ["MYLA7"] and g.mission_zone == [] and "MYLA7" not in g.tavern
+    myla = g.cards["MYLA7"]
+    assert myla.name == "Myla" and myla.value == 7 and myla.suits == () and myla.label() == "Myla (7)"
+    assert all(x in g.cards for x in ("3R", "5R", "7R", "9R", "GOR8"))
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+    set_mission_enemy(g, "GRJH")                      # a Sporeling cleric
+    assert g.enemy_attack == 10
+    set_hand(g, ["9S", "8S", "7D", "6C"])
+    g.play(["9S"])
+    assert g.shield == 9 and g.pending_damage == 1
+    g.suffer(["7D"])
+    # end of turn: the top of the banished pile (Myla) went into the zone, the enemy grew by 7
+    assert g.mission_zone == ["MYLA7"] and g.banished == [] and g.turn == 2
+    assert any(ev["t"] == "zone_add" and ev["card"] == "MYLA7" and ev.get("source") == "banished" for ev in g.last_events)
+    assert g.rules.attack_bonus(g) == 7 and g.enemy_attack == 10 + 7 - 9
+    assert g.rules.immune_suits(g) == ("H",)          # the zone grants no immunity here
+    # cards a reaver banishes feed the pile: the last banished is the next into the zone
+    set_hand(g, ["5R", "8S", "6C"])
+    set_tavern_top(g, ["3H", "4H"])
+    g.play(["5R"])
+    g.decide({"type": "reaver_count", "count": 1})
+    g.decide({"type": "reaver_pick", "card": "3H"})
+    assert g.banished == ["3H"] and g.enemy.hp == 40 - 9 - 16 and g.pending_damage == 8
+    g.suffer(["8S"])
+    assert g.mission_zone == ["MYLA7", "3H"] and g.rules.attack_bonus(g) == 10 and g.enemy_attack == 20 - 9
+    # Myla plays like an ordinary card if she ever reaches a hand
+    set_hand(g, ["MYLA7", "6C", "2D"])
+    assert g.check_play(["MYLA7"]) == (True, "single")
+    g.play(["MYLA7"])
+    assert g.plays[-1].value == 7 and g.plays[-1].suits == () and g.enemy.hp == 40 - 9 - 16 - 7
+
+
+def test_mission5_defeat_shuffles_enemy_and_zone_into_the_banished_pile_and_exact_kills_carry_over():
+    from helpers import set_mission_enemy
+    c, g = _mission5(seed=471)
+    set_mission_enemy(g, "GRJH", hp=12)
+    set_hand(g, ["AC", "5D", "9S", "8S"])
+    for cid in ("2C", "3C"):
+        g.tavern.remove(cid)
+        g.banished.append(cid)
+    g.mission_zone = ["MYLA7"]
+    g.banished.remove("MYLA7")
+    assert g.enemy_attack == 17
+    g.play(["AC", "5D"])                              # 6 doubled: 12, exact
+    assert g.enemies_defeated == 1 and g.decision is None
+    assert set(g.banished) == {"MYLA7", "2C", "3C", "GRJH"} and len(g.banished) == 4   # shuffled in, without looking
+    assert g.mission_zone == [] and set(g.discard[:2]) == {"AC", "5D"}
+    assert any(ev["t"] == "zone_cleared" and ev["to"] == "banish_shuffle" for ev in g.last_events)
+    # carry-over: the defeated enemy's strength as it fell (10 + 7 zone, no shield)
+    carry = [ev for ev in g.last_events if ev["t"] == "carry_damage"]
+    assert carry and carry[0]["amount"] == 17 and g.enemy.hp == g.enemy.max_hp - 17
+    assert g.phase == PHASE_PLAY and g.active == 0 and g.turn == 2 and "zone_add" not in [ev["t"] for ev in g.last_events]
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+    # not exact: no carry-over
+    g.enemy.hp = 5
+    set_hand(g, ["9S", "8S", "7C"])
+    g.play(["9S"])
+    assert g.enemies_defeated == 2 and g.enemy.hp == g.enemy.max_hp
+    assert not any(ev["t"] == "carry_damage" for ev in g.last_events)
+    # a paladin's reduction lowers the carry-over, never below 0
+    c, g = _mission5(seed=472)
+    set_mission_enemy(g, "GRJH", hp=19)
+    set_hand(g, ["9S", "10C", "8S"])
+    g.play(["9S"])                                    # 9 damage, shield 9: enemy strength 1
+    g.suffer(["8S"]) if g.phase == PHASE_SUFFER else None
+    assert g.mission_zone == ["MYLA7"] and g.enemy_attack == 10 + 7 - 9
+    set_hand(g, ["10C", "2D"])
+    g.enemy.hp = 20
+    g.play(["10C"])                                   # 20: exact
+    assert g.enemies_defeated == 1
+    assert [ev["amount"] for ev in g.last_events if ev["t"] == "carry_damage"] == [8]
+    # a chain: the carry-over kills the next enemy exactly, whose own strength carries on
+    c, g = _mission5(seed=473)
+    set_mission_enemy(g, "GRJH", hp=10)
+    set_hand(g, ["10H", "9S", "8S"])
+    for cid in ("10S", "10C", "3C"):
+        g.tavern.remove(cid)
+    g.mission_zone = ["MYLA7", "10S", "10C", "3C"]   # 30: the Sporeling strikes for 40
+    g.banished = []
+    assert g.enemy_attack == 40
+    g.play(["10H"])                                   # clerics are immune: exactly 10
+    assert g.enemies_defeated == 2                    # the next Sporeling (40) fell to the carry-over, exactly
+    carries = [ev["amount"] for ev in g.last_events if ev["t"] == "carry_damage"]
+    assert carries == [40, 10]                        # then its own 10 (the zone was banished) hits the third
+    assert g.enemy.hp == g.enemy.max_hp - 10 and g.phase == PHASE_PLAY and g.active == 0
+    assert set(["GRJH", "MYLA7", "10S", "10C", "3C"]) <= set(g.banished) and len(g.banished) == 6
+    assert g.mission_zone == [] and sorted(g.all_card_ids()) == sorted(g.cards)
+
+
+# ---------------------------------------------------------------- Mission 6: Shards of Memory
+def _mission6(players=1, seed=480, relics=("whistle",), beast=None):
+    names = ["Ana", "Ben", "Cy"][:players]
+    c = CampaignState.new(players, names, seed=seed)
+    c.mission = 6
+    c.completed = [1, 2, 3, 4, 5]
+    c.relics.extend(relics)
+    P.add_card(c.party, dict(M.GORAN))
+    P.add_suit(c.party, "GOR8", "C")
+    P.add_card(c.party, dict(M.MYLA))
+    c.flags["beasts"] = True
+    c.set_beast(beast)
+    for d in M.MAGE_DECK:
+        P.add_card(c.party, dict(d))
+    g = c.start_attempt(seed=seed)
+    return c, g
+
+
+def test_mission6_kill_moves_a_card_to_the_zone_rescues_one_on_exact_and_myla_deals_team_damage():
+    from helpers import set_mission_enemy
+    c, g = _mission6(players=2)
+    assert g.config.rules_id == "legacy_m6" and MISSIONS[5]["playable"] and g.rules.uses_mission_zone
+    assert g.mission_zone == ["MYLA7"] and g.banished == [] and P.find(c.party, "MYLA7") is None
+    assert all(x in g.cards for x in ("3G", "5G", "7G", "9G")) and sorted(g.all_card_ids()) == sorted(g.cards)
+    assert g.enemy_attack == 15 and g.rules.attack_bonus(g) == 0     # the zone adds no strength here
+    set_mission_enemy(g, "GDQH", hp=9)
+    assert g.rules.immune_suits(g) == ("H",)                           # and no immunity
+    set_hand(g, ["9S", "8D", "AD"], player=0)
+    set_hand(g, ["3H", "4D", "7S", "2C"], player=1)
+    g.play(["9S"])                                                     # 9: exact
+    assert g.phase == PHASE_DECIDE and g.deciding == 0 and g.enemies_defeated == 0
+    assert g.decision["kind"] == "zone_move" and g.decision["options"] == ["9S"] and g.decision["exact"] is True
+    assert [a["label"] for a in g.legal_actions()] == ["Move 9♠ to the mission zone"]
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "zone_move", "card": "8D"})
+    g.decide({"type": "zone_move", "card": "9S"})
+    assert g.mission_zone == ["MYLA7", "9S"] and g.plays[0].card_ids == []
+    assert any(ev["t"] == "zone_move" and ev["card"] == "9S" for ev in g.last_events)
+    # exact damage: one zone card except Myla goes to the discard pile
+    assert g.decision["kind"] == "zone_rescue" and g.decision["options"] == ["9S"]
+    assert [a["card"] for a in g.legal_actions()] == ["9S"]
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "zone_rescue", "card": "MYLA7"})
+    g.decide({"type": "zone_rescue", "card": "9S"})
+    assert g.discard == ["9S"] and g.mission_zone == ["MYLA7"]
+    # Myla's team damage: 7, discarded one card at a time by any player
+    assert g.decision["kind"] == "team_discard" and g.decision["damage"] == 7 and g.decision["paid"] == 0
+    assert any(ev["t"] == "team_damage" and ev["damage"] == 7 and ev["available"] == 25 for ev in g.last_events)
+    acts = g.legal_actions()
+    assert sorted((a["player"], a["card"]) for a in acts) == sorted(
+        [(0, "8D"), (0, "AD"), (1, "3H"), (1, "4D"), (1, "7S"), (1, "2C")])
+    assert not any(a.get("skip") for a in acts) and g.legal_plays() == []
+    g = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    assert g.decision["kind"] == "team_discard" and g.legal_actions() == acts
+    g.decide({"type": "team_discard", "player": 1, "card": "3H"})
+    assert g.decision["kind"] == "team_discard" and g.decision["paid"] == 3 and g.discard[0] == "3H"
+    assert "3H" not in g.players[1].hand and g.enemies_defeated == 0
+    assert any(ev["t"] == "team_discard" and ev["remaining"] == 4 for ev in g.last_events)
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "team_discard", "player": 0, "card": "3H"})   # gone
+    g.decide({"type": "team_discard", "player": 0, "card": "AD"})
+    assert g.decision["paid"] == 4
+    g.decide({"type": "team_discard", "player": 1, "card": "4D"})       # 3 + 1 + 4 = 8 >= 7
+    assert g.decision is None and g.enemies_defeated == 1 and g.phase == PHASE_PLAY and g.active == 0
+    assert any(ev["t"] == "team_damage_done" for ev in g.last_events)
+    assert g.banished == ["GDQH"] and g.mission_zone == ["MYLA7"]
+    assert g.discard == ["4D", "AD", "3H", "9S"] and g.players[0].hand == ["8D"] and g.players[1].hand == ["7S", "2C"]
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+
+
+def test_mission6_not_exact_no_rescue_zone_grows_mage_rest_is_banished_and_the_bot_pays_cheaply():
+    from helpers import set_mission_enemy
+    c, g = _mission6(seed=481)
+    set_mission_enemy(g, "GDQH", hp=9)
+    set_hand(g, ["5M", "AS", "9S", "8S", "7S", "6S"])
+    set_tavern_top(g, ["4C", "2D", "3D", "2S", "3S"])
+    g.play(["5M"])
+    g.decide({"type": "mage_pick", "card": "4C"})                     # 9, doubled: 18, not exact
+    assert g.decision["kind"] == "zone_move" and g.decision["options"] == ["5M", "4C"] and g.decision["exact"] is False
+    g.decide({"type": "zone_move", "card": "5M"})
+    # no rescue; team damage is 7 + 5 = 12 and the bot covers it with the least waste
+    assert g.decision["kind"] == "team_discard" and g.decision["damage"] == 12 and g.mission_zone == ["MYLA7", "5M"]
+    assert "zone_rescue" not in [ev.get("kind") for ev in g.last_events]
+    act = greedy_policy(g)
+    assert act["type"] == "team_discard" and act["card"] == "9S"       # no single card covers 12: the largest first
+    apply_action(g, act)
+    assert g.decision["paid"] == 9
+    act = greedy_policy(g)
+    assert act["card"] == "6S"                                          # then the smallest card that covers the rest (3)
+    apply_action(g, act)
+    assert g.decision is None and g.enemies_defeated == 1
+    assert "4C" in g.banished and "GDQH" in g.banished and "5M" in g.mission_zone and "5M" not in g.banished
+    assert "9S" in g.discard and "6S" in g.discard and sorted(g.players[0].hand) == ["7S", "8S", "AS"]
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+    # the next kill's team damage is 12 again (the zone keeps growing)
+    set_mission_enemy(g, "GDQD", hp=7)
+    set_hand(g, ["7S", "8S", "10C", "9H"])
+    g.play(["7S"])
+    g.decide({"type": "zone_move", "card": "7S"})
+    assert g.decision["kind"] == "zone_rescue" and sorted(g.decision["options"]) == ["5M", "7S"]
+    g.decide({"type": "zone_rescue", "card": "5M"})
+    assert g.decision["kind"] == "team_discard" and g.decision["damage"] == 14 and g.mission_zone == ["MYLA7", "7S"]
+
+
+def test_mission6_team_damage_is_lost_when_the_hands_cannot_pay_and_a_guardian_prevents_it():
+    from helpers import set_mission_enemy
+    c, g = _mission6(players=2, seed=482)
+    set_mission_enemy(g, "GDQH", hp=9)
+    set_hand(g, ["9S"], player=0)
+    set_hand(g, ["3H", "2C"], player=1)
+    g.play(["9S"])
+    g.decide({"type": "zone_move", "card": "9S"})
+    g.decide({"type": "zone_rescue", "card": "9S"})
+    assert g.phase == PHASE_LOST and g.decision is None and "Myla" in g.loss_reason and g.enemies_defeated == 0
+    assert any(ev["t"] == "lost" for ev in g.last_events)
+    # a Guardian in the killing attack: no team damage at all
+    c, g = _mission6(seed=483)
+    set_mission_enemy(g, "GDQH", hp=9)
+    set_hand(g, ["9G", "2C"])
+    g.play(["9G"])
+    assert g.extra.get("guardian") and g.decision["kind"] == "zone_move"
+    g.decide({"type": "zone_move", "card": "9G"})
+    assert g.decision["kind"] == "zone_rescue"
+    g.decide({"type": "zone_rescue", "card": "9G"})
+    assert g.decision is None and g.enemies_defeated == 1 and g.players[0].hand == ["2C"]
+    assert any(ev["t"] == "team_damage_prevented" and ev["damage"] == 7 for ev in g.last_events)
+    assert g.phase == PHASE_PLAY and "guardian" not in g.extra         # the new turn clears it
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+    # the zone never grants immunity nor strength in this mission
+    assert g.rules.immune_suits(g) == tuple(g.enemy.suits) and g.rules.attack_bonus(g) == 0
+
+
+@pytest.mark.parametrize("number,players", [(4, 1), (4, 2), (5, 1), (5, 2), (6, 1), (6, 2)])
+def test_bots_play_out_missions_4_to_6(number, players):
+    builders = {4: _mission4, 5: _mission5, 6: _mission6}
+    rng = random.Random(number * 10 + players)
+    decisions = set()
+    for seed in range(4):
+        kw = {"players": players, "seed": 500 + number * 10 + seed}
+        if number in (5, 6):
+            kw["beast"] = ("B_H", "B_C", "B_D", "B_S")[seed]
+        c, g = builders[number](**kw)
+        policy = greedy_policy if seed % 2 == 0 else random_policy
+        play_out(g, policy, rng)
+        assert g.is_over and g.decision is None
+        ids = g.all_card_ids() + g.extra.get("flute", [])
+        assert len(ids) == len(set(ids)) == len(g.cards)
+        for line in g.log:
+            for key in ("Reaver:", "Guardian:", "team damage", "mission zone", "top of the discard pile"):
+                if key in line:
+                    decisions.add(key)
+    expected = {4: {"top of the discard pile"}, 5: {"Reaver:", "mission zone"}, 6: {"Guardian:", "mission zone"}}[number]
+    assert expected <= decisions, decisions
+
+
+def test_forecast_reports_a_kill_that_pauses_on_the_missions_defeat_choice():
+    from helpers import set_discard, set_mission_enemy
+    c, g = _mission4(seed=490)
+    set_mission_enemy(g, "LABJD", hp=10)
+    set_hand(g, ["AS", "9C", "3D", "2H"])
+    set_discard(g, ["7D"])
+    pv = g.preview_play(["AS", "9C"])
+    assert pv["ok"] and pv["defeats"] and not pv["exact"] and pv["decision_kind"] == "cleanup_top"
+    assert pv["damage"] == 20 and pv["enemy_hp_after"] == 0 and g.phase == PHASE_PLAY and g.enemies_defeated == 0
+    c, g = _mission6(seed=491)
+    set_mission_enemy(g, "GDQH", hp=9)
+    set_hand(g, ["9S", "8D", "AD"])
+    pv = g.preview_play(["9S"])
+    assert pv["defeats"] and pv["exact"] and pv["decision_kind"] == "zone_move" and g.mission_zone == ["MYLA7"]

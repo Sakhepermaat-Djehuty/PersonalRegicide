@@ -761,3 +761,223 @@ def test_mission11_setup_choice_shows_before_the_first_attempt(app, monkeypatch)
     assert not app.campaign.pending
     # nothing is queued again: the start button is back
     assert ui.button(app, "Next mission: start")
+
+
+# ---------------------------------------------------------------------------- missions 4 to 6
+def _mission_attempt(app, number, names=("Solo",), relics=(), beast=None):
+    from regicide.campaign import missions as M
+    from regicide.campaign import party as P
+    app.new_campaign(len(names), list(names))
+    camp = app.campaign
+    camp.mission = number
+    camp.completed = list(range(1, number))
+    camp.relics.extend(relics)
+    if number >= 5:
+        P.add_card(camp.party, dict(M.GORAN))
+        camp.flags["beasts"] = True
+        camp.set_beast(beast)
+    if number >= 6:
+        P.add_card(camp.party, dict(M.MYLA))
+    for d in M.MAGE_DECK:
+        P.add_card(camp.party, dict(d))
+    app.save_campaign()
+    app.start_attempt()
+    gs = _game_screen(app)
+    return gs, app.game
+
+
+def test_reaver_count_grid_then_pick_overlay(app):
+    from app import store
+    from app.screens import ReaverCountOverlay, ReaverPickOverlay
+    from app.widgets import CardStrip
+    from helpers import set_mission_enemy
+    gs, g = _mission_attempt(app, 5)
+    assert not gs.zone.hidden and gs.zone.title.startswith("Mission zone")
+    set_mission_enemy(g, "GRJH", hp=100)
+    set_hand(g, ["5C", "5R", "9S", "8S", "7S"])
+    set_tavern_top(g, ["7H", "2D", "3D"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["5C", "5R"])
+    # the forecast counts the reaver's addition as 0: 10, doubled twice
+    assert "Reaver" in gs.message.text and "40 damage" in gs.message.text and "⚔ +0 then double" in gs.message.text
+    assert g.tavern[:3] == ["7H", "2D", "3D"]
+    _tap_button(app, "Play")
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "reaver_count"
+    assert isinstance(gs.overlay, ReaverCountOverlay)
+    numbers = [b.title for b in ui.find(gs.overlay, lambda v: isinstance(v, ui.Button) and v.title.isdigit())]
+    assert numbers == [str(n) for n in range(1, len(g.tavern) + 1)]   # a grid of counts, five per row
+    assert ui.render(app).size[0] > 0
+    assert store.load_attempt(app.campaign.slot).phase == PHASE_DECIDE
+    _tap_button(app, "2")
+    assert g.decision["kind"] == "reaver_pick" and g.decision["revealed"] == ["7H", "2D"]
+    assert isinstance(gs.overlay, ReaverPickOverlay)
+    strip = ui.find(gs.overlay, lambda v: isinstance(v, CardStrip))[0]
+    assert [c.id for c in strip.cards] == ["7H", "2D"] and strip.dimmed == []
+    adds = [b.title for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Add"))]
+    assert adds == ["Add 7♥'s strength (+7)", "Add 2♦'s strength (+2)"]
+    assert ui.render(app).size[0] > 0
+    _tap_button(app, "Add 7♥'s strength (+7)")
+    assert g.decision is None and g.enemy.hp == 100 - 68 and g.banished == ["MYLA7", "2D", "7H"]
+    assert gs.overlay is None and gs.right_btn.title == "Discard"
+    assert "doubled to 34" in gs.message_text and "68 damage" in gs.message_text
+    assert "suffers 10 damage" in gs.message.text
+
+
+def test_scarlet_whistle_solo_pick_overlay_and_the_beast_choice(app):
+    from app.screens import CampaignScreen, PickOverlay
+    from helpers import set_discard
+    app.new_campaign(1, ["Solo"])
+    camp = app.campaign
+    camp.relics.append("whistle")
+    camp.flags["beasts"] = True
+    app.save_campaign()
+    app.show(CampaignScreen(app))
+    # the campaign screen offers Gøran's beasts for the next attempt
+    assert ui.button(app, "None") and ui.button(app, "♣ Warrior")
+    _tap_button(app, "♣ Warrior")
+    assert camp.beast == "B_C"
+    _tap_button(app, "Next mission: start")
+    gs = _game_screen(app)
+    g = app.game
+    assert "B_C" in g.cards
+    set_enemy(g, "J", "H")
+    set_hand(g, ["B_C", "7H", "3D", "9S", "8S"])
+    set_discard(g, ["6D"])
+    gs.refresh(after_action=False)
+    assert ui.render(app).size[0] > 0                 # the B rank and the beast badge draw
+    gs.hand.set_selection(["B_C"])
+    assert "Scarlet Whistle" in gs.message.text and "0 damage" in gs.message.text
+    _tap_button(app, "Play")
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "whistle_take"
+    assert isinstance(gs.overlay, PickOverlay)
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert "Scarlet Whistle" in texts
+    assert ui.button(app, "Add 6♦ from the discard pile") and ui.button(app, "Skip")
+    assert ui.render(app).size[0] > 0
+    _tap_button(app, "Add 6♦ from the discard pile")
+    # beast + 6♦ is a 12, doubled by the beast's warrior class: the Justicar falls
+    assert g.decision is None and g.enemies_defeated == 1 and gs.overlay is None
+    assert "adds 6♦ from the discard pile (Scarlet Whistle, attack 12)" in gs.message_text
+
+
+def test_scarlet_whistle_two_players_hand_decision_overlay(app):
+    from app.screens import DecisionOverlay
+    from helpers import set_mission_enemy
+    gs, g = _mission_attempt(app, 5, names=("Ana", "Ben"), relics=("whistle",), beast="B_H")
+    set_mission_enemy(g, "GRJH", hp=100)
+    set_hand(g, ["AS", "9S", "8S"], player=0)
+    set_hand(g, ["7C", "3D", "2D"], player=1)
+    gs.reveal_hand()
+    gs.hand.set_selection(["AS"])
+    assert "Scarlet Whistle" in gs.message.text
+    _tap_button(app, "Play")
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "whistle_add" and g.deciding == 1
+    assert isinstance(gs.overlay, DecisionOverlay) and gs.hand.cards == []
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert any("Ben: add to Ana's A♠ attack?" in t for t in texts) and any(t.startswith("Scarlet Whistle") for t in texts)
+    assert ui.render(app).size[0] > 0
+    _tap_button(app, "Show my hand")
+    assert gs.overlay is None and [c.id for c in gs.hand.cards] == ["7C", "3D", "2D"]
+    assert gs.left_btn.title == "Pass" and gs.right_btn.title == "Add" and not gs.right_btn.enabled
+    _tap_card(app, gs, "7C")
+    assert gs.hand.selected == ["7C"] and gs.right_btn.enabled and "attack 8" in gs.message.text
+    _tap_card(app, gs, "3D")                       # one card only
+    assert gs.hand.selected == ["3D"]
+    _tap_card(app, gs, "7C")
+    _tap_button(app, "Add")
+    assert g.decision is None and g.plays[0].card_ids == ["AS", "7C"] and g.plays[0].value == 8
+    assert g.enemy.hp == 100 - 16 and g.phase == PHASE_SUFFER and g.active == 0
+
+
+def test_mission6_team_damage_seat_picker_flow(app):
+    from app import store
+    from app.screens import PickOverlay, TeamDamageOverlay
+    from helpers import set_mission_enemy
+    gs, g = _mission_attempt(app, 6, names=("Ana", "Ben"))
+    assert g.mission_zone == ["MYLA7"] and not gs.zone.hidden and "Myla's team damage 7" in gs.zone.title
+    set_mission_enemy(g, "GDQH", hp=9)
+    set_hand(g, ["9S", "8D", "AD"], player=0)
+    set_hand(g, ["3H", "4D", "7S", "2C"], player=1)
+    gs.reveal_hand()
+    gs.hand.set_selection(["9S"])
+    _tap_button(app, "Play")
+    # the kill: move a card in play to the zone
+    assert g.decision["kind"] == "zone_move" and isinstance(gs.overlay, PickOverlay)
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert "Enemy defeated" in texts
+    _tap_button(app, "Move 9♠ to the mission zone")
+    # exact: rescue one zone card except Myla
+    assert g.decision["kind"] == "zone_rescue" and isinstance(gs.overlay, PickOverlay)
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert any("except Myla" in t for t in texts)
+    assert not ui.find(app, lambda v: isinstance(v, ui.Button) and "Myla" in v.title)
+    _tap_button(app, "Rescue 9♠ to the discard pile")
+    # team damage: a seat picker, then the chosen player's hand
+    assert g.decision["kind"] == "team_discard" and isinstance(gs.overlay, TeamDamageOverlay)
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert "Team damage: 7 to go" in texts
+    assert ui.button(app, "Ana (2 cards, worth 9)") and ui.button(app, "Ben (4 cards, worth 16)")
+    assert ui.render(app).size[0] > 0
+    assert store.load_attempt(app.campaign.slot).decision["kind"] == "team_discard"
+    _tap_button(app, "Ben (4 cards, worth 16)")
+    assert gs.overlay is None and [c.id for c in gs.hand.cards] == ["3H", "4D", "7S", "2C"]
+    assert gs.left_btn.title == "Players" and gs.right_btn.title == "Discard" and not gs.right_btn.enabled
+    assert "Team damage: 7 to go. Ben" in gs.message.text
+    _tap_card(app, gs, "3H")
+    assert gs.right_btn.enabled and "worth 3" in gs.message.text
+    _tap_card(app, gs, "4D")
+    assert gs.hand.selected == ["4D"]                 # one card at a time
+    _tap_button(app, "Players")                        # back to the picker without discarding
+    assert isinstance(gs.overlay, TeamDamageOverlay) and g.decision["paid"] == 0
+    _tap_button(app, "Ben (4 cards, worth 16)")
+    _tap_card(app, gs, "3H")
+    _tap_button(app, "Discard")
+    assert g.decision["paid"] == 3 and g.discard[0] == "3H"
+    assert isinstance(gs.overlay, TeamDamageOverlay)   # any player may discard the next card
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert "Team damage: 4 to go" in texts
+    _tap_button(app, "Ana (2 cards, worth 9)")
+    _tap_card(app, gs, "8D")
+    assert ", enough" in gs.message.text
+    _tap_button(app, "Discard")
+    assert g.decision is None and g.enemies_defeated == 1 and g.phase == PHASE_PLAY and g.active == 0
+    assert "Team damage satisfied" in gs.message_text and gs.overlay is None
+    assert [c.id for c in gs.hand.cards] == ["AD"] and gs.right_btn.title == "Play"
+    assert "Myla's team damage 7" in gs.zone.title
+
+
+def test_mission6_solo_team_damage_shows_the_hand_at_once(app):
+    from helpers import set_mission_enemy
+    gs, g = _mission_attempt(app, 6)
+    set_mission_enemy(g, "GDQH", hp=5)
+    set_hand(g, ["5S", "8S", "AD", "3C"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["5S"])
+    _tap_button(app, "Play")
+    _tap_button(app, "Move 5♠ to the mission zone")
+    _tap_button(app, "Rescue 5♠ to the discard pile")
+    assert g.decision["kind"] == "team_discard" and gs.overlay is None
+    assert gs.left_btn.title == "Suggest" and "Team damage: 7 to go" in gs.message.text
+    _tap_button(app, "Suggest")
+    assert gs.hand.selected == ["8S"]                  # the smallest card that covers 7
+    _tap_button(app, "Discard")
+    assert g.decision is None and g.enemies_defeated == 1 and sorted(g.players[0].hand) == ["3C", "AD"]
+
+
+def test_mission4_cleanup_top_overlay_and_enemy_bonus(app):
+    from app.screens import PickOverlay
+    from helpers import set_discard, set_mission_enemy
+    gs, g = _mission_attempt(app, 4)
+    set_mission_enemy(g, "LABJD", hp=10)
+    set_hand(g, ["AS", "9C", "3D", "2H"])
+    set_discard(g, ["7D"])
+    gs.refresh(after_action=False)
+    assert g.enemy_attack == 17 and ui.render(app).size[0] > 0   # the panel shows 10 + 7
+    gs.hand.set_selection(["AS", "9C"])
+    _tap_button(app, "Play")
+    assert g.decision["kind"] == "cleanup_top" and isinstance(gs.overlay, PickOverlay)
+    assert ui.button(app, "Put A♠ on top of the discard pile") and ui.button(app, "Put 9♣ on top of the discard pile")
+    assert ui.render(app).size[0] > 0
+    _tap_button(app, "Put A♠ on top of the discard pile")
+    assert g.discard == ["AS", "9C", "LABJD", "7D"] and g.enemies_defeated == 1 and gs.overlay is None
+    assert "A♠ on top of the discard pile" in gs.message_text and g.enemy_attack == 11

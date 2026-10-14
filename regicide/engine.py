@@ -8,8 +8,9 @@ Design notes
   and appends structured events to ``last_events`` (for the UI to animate) and lines to
   ``log``.
 * Rule variations (Legacy missions) are injected through ``rules.BaseRules`` hooks.
-* Mid-turn choices (Legacy: the Kinfolk Flute before an attack resolves, the Mage's pick
-  during its resolution, a mission zone rescue after an exact kill) pause the game in the
+* Mid-turn choices (Legacy: the Kinfolk Flute or Scarlet Whistle before an attack
+  resolves, the Mage's pick or the Reaver's reveal during its resolution, a mission zone
+  rescue, the clean-up order or Myla's team damage after a kill) pause the game in the
   ``decide`` phase with a serialisable ``decision`` dict: the rules object produces the
   decision, lists its legal actions and applies them; the engine stores it together with
   the state needed to resume (``play_index``, and for a pause mid-resolution the suits
@@ -362,8 +363,12 @@ class Game:
                 powers[ev["suit"]] = ev
             if ev["t"] == "mage_peek":
                 peeks.append(int(ev["count"]))
-        defeated = any(ev["t"] == "defeat" for ev in events)
-        exact = any(ev["t"] == "defeat" and ev["exact"] for ev in events)
+        # A kill may pause on the mission's enemy-defeated choice (which zone card to rescue,
+        # the clean-up order): the enemy is down all the same.
+        pending_defeat = g.phase == PHASE_DECIDE and (g.decision or {}).get("resume") == "defeat"
+        defeated = any(ev["t"] == "defeat" for ev in events) or pending_defeat
+        exact = any(ev["t"] == "defeat" and ev["exact"] for ev in events) or (
+            pending_defeat and bool((g.decision or {}).get("exact")))
         return {"ok": True, "kind": kind, "attack": attack, "damage": damage, "powers": powers,
                 "defeats": defeated, "exact": exact, "decision": decision,
                 "decision_kind": decision_kind, "mage_peeks": peeks,
@@ -581,7 +586,7 @@ class Game:
                 self._event("power", suit=suit, value=value, shield=value)
                 self._say("Spades add %d shield (attack now %d)." % (value, self.enemy_attack))
             else:
-                res = self.rules.resolve_power(self, suit, value, cards)
+                res = self.rules.resolve_power(self, suit, value, cards, damage=damage)
                 if isinstance(res, dict) and "damage" in res:
                     damage = int(res["damage"])
                 if isinstance(res, dict) and res.get("decision"):
@@ -799,40 +804,27 @@ class Game:
         # and everything it added) is banished at clean-up, other attacks against the
         # same enemy are not.
         mage_ids = [c for p in self.plays if p.mage for c in p.card_ids]
-        if self.rules.solo_jester_mode(self) == "attack":
-            # Official solo rule: the Jester is never cleaned up to any pile; it goes back
-            # to the side, face down, unusable for the rest of this attempt.
+        if self.n_players == 1 and self.rules.solo_jester_mode(self) == "attack":
+            # Official solo rule (Legacy p.26): the Jester is never cleaned up to any pile;
+            # it goes back to the side, face down, unusable for the rest of this attempt.
+            # With two or more players the Jester is a reserve card cleaned up like the rest.
             spent = [c for c in played if c.is_jester]
             played = [c for c in played if not c.is_jester]
             self.set_aside.extend(c.id for c in spent)
         self._event("defeat", enemy=enemy.card_id, exact=exact, plan=plan, mage_banished=mage_ids)
-        self._say("%s is defeated%s" % (enemy.name, " with exact damage! It joins the tavern deck." if exact else "."))
+        self._say("%s is defeated%s" % (enemy.name, (" with exact damage!" + (
+            " It joins the tavern deck." if plan.get("enemy_to") == "tavern_top" else "")) if exact else "."))
         self.enemies_defeated += 1
-        if plan.get("played_to", "discard") == "discard":
-            self._discard_cards([c for c in played if c.id not in mage_ids])
-            self.banished.extend(c.id for c in played if c.id in mage_ids)
-            if mage_ids:
-                self._say("The mage attack is banished: %s." % " + ".join(self.cards[c].label() for c in mage_ids))
-        elif plan["played_to"] == "banish":
-            self.banished.extend(c.id for c in played)
-        dest = plan.get("enemy_to", "discard")
-        if dest == "tavern_top":
-            self.tavern.insert(0, enemy.card_id)
-        elif dest == "discard":
-            self.discard.insert(0, enemy.card_id)
-        elif dest == "banish":
-            self.banished.append(enemy.card_id)
-        elif dest == "castle_bottom":
-            self.castle.append(enemy.card_id)
-        zone_to = plan.get("zone_to")
-        if zone_to and self.mission_zone:
-            zone = list(self.mission_zone)
-            self.mission_zone = []
-            if zone_to == "banish":
-                self.banished.extend(zone)
-            elif zone_to == "discard":
-                self._discard_cards([self.cards[c] for c in zone])
-            self._event("zone_cleared", cards=zone, to=zone_to)
+        # Legacy p.19: step 1 moves the enemy (and the mission zone) first, step 2 then puts
+        # the played cards on top of the discard pile. The base game keeps its old order
+        # (enemy on top), which changes nothing there.
+        if self.rules.played_on_top:
+            self._move_defeated_enemy(enemy.card_id, plan)
+            self._clear_zone(plan)
+        self._cleanup_played(played, mage_ids, plan)
+        if not self.rules.played_on_top:
+            self._move_defeated_enemy(enemy.card_id, plan)
+            self._clear_zone(plan)
         self.plays = []
         self.immunity_cancelled = False
         self.enemy = None
@@ -842,10 +834,61 @@ class Game:
             self._win()
             return
         self._reveal_next_enemy()
+        carry = int(plan.get("carry_damage", 0) or 0)
+        if carry > 0 and self.enemy is not None:
+            # Legacy mission 5: on an exact kill the next enemy takes damage equal to the
+            # defeated enemy's strength; at 0 or less it falls too and the chain goes on.
+            nxt = self.enemy
+            nxt.hp -= carry
+            self._event("carry_damage", amount=carry, enemy=nxt.card_id, hp=max(0, nxt.hp), max_hp=nxt.max_hp)
+            self._say("%d carry-over damage to %s (%d/%d)." % (carry, nxt.name, max(0, nxt.hp), nxt.max_hp))
+            if nxt.hp <= 0:
+                self._defeat_enemy(exact=nxt.hp == 0)
+                return
         # The player who defeated the enemy takes a new turn (no damage suffered).
         self.turn += 1
         self.phase = PHASE_PLAY
         self._start_turn()
+
+    def _cleanup_played(self, played: List[Card], mage_ids: List[str], plan: Dict[str, Any]) -> None:
+        if plan.get("played_to", "discard") == "discard":
+            self._discard_cards([c for c in played if c.id not in mage_ids])
+            self.banished.extend(c.id for c in played if c.id in mage_ids)
+            if mage_ids:
+                self._say("The mage attack is banished: %s." % " + ".join(self.cards[c].label() for c in mage_ids))
+        elif plan["played_to"] == "banish":
+            self.banished.extend(c.id for c in played)
+
+    def _move_defeated_enemy(self, card_id: str, plan: Dict[str, Any]) -> None:
+        dest = plan.get("enemy_to", "discard")
+        if dest == "tavern_top":
+            self.tavern.insert(0, card_id)
+        elif dest == "discard":
+            self.discard.insert(0, card_id)
+        elif dest == "banish":
+            self.banished.append(card_id)
+        elif dest == "banish_shuffle":
+            self._banish_shuffled([card_id])
+        elif dest == "castle_bottom":
+            self.castle.append(card_id)
+
+    def _clear_zone(self, plan: Dict[str, Any]) -> None:
+        zone_to = plan.get("zone_to")
+        if zone_to and self.mission_zone:
+            zone = list(self.mission_zone)
+            self.mission_zone = []
+            if zone_to == "banish":
+                self.banished.extend(zone)
+            elif zone_to == "banish_shuffle":
+                self._banish_shuffled(zone)
+            elif zone_to == "discard":
+                self._discard_cards([self.cards[c] for c in zone])
+            self._event("zone_cleared", cards=zone, to=zone_to)
+
+    def _banish_shuffled(self, ids: Sequence[str]) -> None:
+        """Shuffle cards into the banished pile without looking: each goes to a random position."""
+        for cid in ids:
+            self.banished.insert(self.rng.randrange(len(self.banished) + 1), cid)
 
     def _reveal_next_enemy(self) -> None:
         cid = self.castle.pop(0)
@@ -860,6 +903,13 @@ class Game:
 
     def _enter_suffer(self) -> None:
         self.pending_damage = self.enemy_attack
+        if self.extra.get("guardian"):
+            # Legacy Guardian (rulebook p.18): players suffer no damage this turn.
+            self.pending_damage = 0
+            self._event("no_damage", player=self.active, guardian=True)
+            self._say("Guardian: %s suffers no damage this turn." % self.active_player.name)
+            self._end_turn()
+            return
         if self.pending_damage <= 0:
             self._event("no_damage", player=self.active)
             self._say("%s suffers no damage." % self.active_player.name)
@@ -892,6 +942,7 @@ class Game:
             return
         self.phase = PHASE_PLAY
         self.pending_damage = 0
+        self.extra.pop("guardian", None)   # a Guardian's protection lasts for its turn only
         self._event("turn", player=self.active, turn=self.turn)
         self.rules.on_turn_start(self)
         self._check_can_act()
@@ -1015,9 +1066,11 @@ def _suit_sort_key(s: str) -> int:
 
 def _action_key(action: dict) -> Tuple[str, Tuple[str, ...], str]:
     """What identifies a decision action: its type, the (order-free) cards it names and
-    the single card or option it picks."""
+    the single card, option or count it picks."""
     cards = action.get("card_ids") or action.get("cards") or []
     single = action.get("card")
     if single is None:
-        single = action.get("option", "")
+        single = action.get("option")
+    if single is None:
+        single = action.get("count", "")
     return str(action.get("type")), tuple(sorted(str(c) for c in cards)), str(single)

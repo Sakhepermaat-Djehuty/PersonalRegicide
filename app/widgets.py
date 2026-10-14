@@ -101,7 +101,8 @@ class CardView(ui.View):
             ui.draw_string(c.name, (2, h * 0.8, w - 4, h * 0.18), (T.FONT, max(8, h * 0.1)), "#333333", ui.ALIGN_CENTER)
         if c.is_royal:
             ui.draw_string("%d" % c.value, (0, h * 0.8, w - 5, h * 0.18), (T.FONT_BOLD, h * 0.12), col, ui.ALIGN_RIGHT)
-        badge = self.badge or ("corrupted" if c.has("corrupted") else "restored" if c.has("restored") else "")
+        badge = self.badge or ("corrupted" if c.has("corrupted") else "restored" if c.has("restored")
+                               else "beast" if c.has("beast") else "")
         if badge:
             ui.set_color("#5a1f6b" if badge == "corrupted" else "#1f6b3a" if badge == "restored" else T.ACCENT)
             ui.Path.rounded_rect(3, 3, w - 6, max(12, h * 0.13), 4).fill()
@@ -158,9 +159,15 @@ class EnemyPanel(ui.View):
         ui.draw_string("Health %d / %d" % (hp, e.max_hp), (bx, by - 1, bw, bh + 2), (T.FONT_BOLD, 12), T.TEXT, ui.ALIGN_CENTER)
         atk = g.enemy_attack
         sh = g.shield
+        bonus = g.rules.attack_bonus(g)
         atk_text = "Attack %d" % atk
-        if sh:
-            atk_text += "  (%d − %d shield)" % (e.attack + g.rules.attack_bonus(g), sh)
+        if sh or bonus:
+            detail = "%d" % e.attack
+            if bonus:
+                detail += " + %d" % bonus   # Legacy mission bonus (discard top, mission zone)
+            if sh:
+                detail += " − %d shield" % sh
+            atk_text += "  (%s)" % detail
         ui.draw_string(atk_text, (tx, 60, tw, 20), (T.FONT_BOLD, 15), T.TEXT)
         if g.immunity_cancelled:
             imm = "Immunity cancelled by the Jester"
