@@ -51,7 +51,7 @@ failure adds coins equal to the failures so far; hired mercenaries stay until th
 is won; same-cost swaps after each failure), the solo Jester text, second-edition
 Mission 6, and every mission's location, story, rules, summary, enemy stat and reward
 cards (missions 1 to 12), with all five relics on both sides, pack C, pack F and pack M.
-Still needed as photos: pack P (the pilgrims), the E box, the "Rules continued" sides
+Still needed as photos: the E box, the "Rules continued" sides
 of missions 3 and 12, one enemy card from mission 7, and the four beasts.
 
 **G3 — answered:** progressive reveal stays on. Campaigns are save files: main menu

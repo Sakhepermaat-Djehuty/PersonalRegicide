@@ -487,18 +487,18 @@ DRUIDS: List[Dict[str, Any]] = [
     {"id": "9U", "rank": "9", "suits": ["U"], "value": 9, "name": "Drakonid Druid", "subtitle": "Drakonid Druid", "flags": []},
 ]
 
-# Pack P, the pilgrim deck (missions 7 and 8). Named from the mission cards: Puppy (A,
-# animal), Traveller (2, gnome), Follower (3, halfling), Servant (4, dwarf), Acolyte (6,
-# human); the 5 and 7 are unnamed. The full contents follow the fan transcription until
-# the pack is photographed: four each of 2 to 7 plus the puppy, no class.
+# Pack P, the pilgrim deck (missions 7 and 8), confirmed by the owner: four classless
+# cards of every strength 2 to 7 (24 cards; each has its own name, e.g. Seeker and
+# Traveller among the gnome 2s, Follower 3, Servant 4, Acolyte 6, an elf 7) plus the
+# puppy, the animal pilgrim, which mission 8 places in the mission zone.
 PUPPY: Dict[str, Any] = {"id": "PILA", "rank": "A", "suits": [], "value": 1, "name": "Puppy",
                          "subtitle": "Animal Pilgrim", "flags": ["pilgrim"]}
-_PILGRIM_NAMES = {"2": ("Traveller", "Gnome Pilgrim"), "3": ("Follower", "Halfling Pilgrim"),
-                  "4": ("Servant", "Dwarf Pilgrim"), "6": ("Acolyte", "Human Pilgrim")}
+_PILGRIM_NAMES = {"2": ("Traveller", "Seeker", "Gnome Pilgrim"), "3": ("Follower", "Follower", "Halfling Pilgrim"),
+                  "4": ("Servant", "Servant", "Dwarf Pilgrim"), "5": ("Pilgrim", "Pilgrim", "Avion Pilgrim"),
+                  "6": ("Acolyte", "Acolyte", "Human Pilgrim"), "7": ("Pilgrim", "Pilgrim", "Elf Pilgrim")}
 PILGRIMS: List[Dict[str, Any]] = [dict(PUPPY)] + [
     {"id": "PIL%s_%d" % (r, i + 1), "rank": r, "suits": [], "value": int(r),
-     "name": _PILGRIM_NAMES.get(r, ("Pilgrim", "Pilgrim"))[0],
-     "subtitle": _PILGRIM_NAMES.get(r, ("Pilgrim", "Pilgrim"))[1], "flags": ["pilgrim"]}
+     "name": _PILGRIM_NAMES[r][i % 2], "subtitle": _PILGRIM_NAMES[r][2], "flags": ["pilgrim"]}
     for r in ("2", "3", "4", "5", "6", "7") for i in range(4)
 ]
 

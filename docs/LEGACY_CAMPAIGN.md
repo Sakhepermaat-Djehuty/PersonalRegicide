@@ -611,9 +611,10 @@ leave players' hands. Enemy defeated: discard cards from the reserve equal to to
 strength in the mission zone; discard mission zone and banish enemy; exact kill: banish
 one card in mission zone.
 
-**Pack P (pilgrims):** not yet photographed. The card example shows 3 Followers and a 6
-Acolyte; the fan transcription says 25 cards, four each of 2 to 7 plus one Ace (the
-animal pilgrim), no class. The app uses that until the pack is read.
+**Pack P (pilgrims), confirmed by the owner:** four classless cards of every strength 2
+to 7 (24 cards, each with its own name: Seeker and Traveller among the gnome 2s,
+Follower 3, Servant 4, Acolyte 6, an elf 7), plus the puppy, the animal pilgrim that
+mission 8 places in the mission zone.
 
 **Story cards:** intro (the driftwood village, the metal spider, trapped pilgrims, the
 pondkin) and outcome (Gøran reborn on the island, the afflicted refuse the cure, on to
@@ -1090,7 +1091,7 @@ Numbers are attack / health.
    banish the enemy; exact kill: banish one zone card first. Rewards: Gøran gains
    Cleric; corrupt another character (random); Alantha (7 Druid) stays, the
    other Druids leave; Glamelyn, Herbod or Dhonatir (the 4s) gains Druid (player's
-   choice). Pack P contents still to be read (fan: 4 × 2 to 7 plus one Ace).
+   choice). Pack P: four classless cards of each strength 2 to 7, plus the puppy.
 8. **Winds of Chaos** (Heaven's Edge; fan name: The Troll Bridge) — **confirmed:** four
    Chanters (3, 5, 7, 9) join for the mission; the puppy starts in the mission zone and
    the other pilgrims are shuffled into the reserve. 6 Trolls 10/20 and 6 Wyverns 25/50,
@@ -1160,7 +1161,7 @@ perfect-kill variant, what joins and leaves the party, and the reward pack conte
 Globally confirm: whether a solo player may yield in Legacy (the base reading forbids it;
 the fan engine allows it unless the previous action was a yield; the solo rules on p.26
 do not mention yielding), whether unspent coins are lost when a mission is won, the
-E-box procedure, and the contents of pack P. Already confirmed from the cards: every
+E-box procedure. Already confirmed from the cards: every
 mission, every relic on both sides, the class-ability text and resolution order, the
 coin and mercenary rules and costs, the Jester claim rules, the 2/5 and Wild Animal
-declarations, pack C's corruption procedure, and pack F (the ten mages).
+declarations, pack C's corruption procedure, pack F (the ten mages) and pack P.
