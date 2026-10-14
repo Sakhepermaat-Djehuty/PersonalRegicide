@@ -461,3 +461,74 @@ def test_ui_plays_two_five_with_a_five_and_asks_once_for_two_two_fives(app):
     b = ui.button(app, "Strength 2")
     ui.tap(app, *ui.root_point(app, b))
     assert g.decision is None and g.plays[-1].value == 4 and g.enemy.hp == 26
+
+
+# ---------------------------------------------------------------- owner's rulings (second playtest)
+def test_mission8_a_two_five_moved_into_the_zone_counts_what_it_was_declared_as():
+    """Owner: a 2/5 moved from play into mission 8's zone counts the value it was declared
+    as, there and for the rest of its stay (not 2)."""
+    from helpers import _pull, set_mission_enemy
+    c, g = campaign_game(number=8, seed=811, mercs=("merc_25H",))
+    for x in ("2C", "3C", "4C", "M25H"):
+        _pull(g, x)
+    g.mission_zone = ["PILA", "2C", "3C", "4C"]            # the next card must be a 5
+    set_mission_enemy(g, "HEJ6", hp=4)
+    set_hand(g, ["M25H", "9S", "8S"])
+    g.play(["M25H"])
+    assert g.decision["kind"] == "declare_value"
+    g.decide({"type": "declare_value", "option": "5"})
+    while g.phase == PHASE_DECIDE and g.decision["kind"] != "zone_build":
+        g.decide(simple_decision(g))
+    assert g.decision["kind"] == "zone_build" and g.decision["options"] == ["M25H"]
+    g = round_trip(g)
+    g.decide({"type": "zone_build", "card": "M25H"})
+    settle(g)
+    assert "M25H" in g.mission_zone and g.rules.zone_highest(g) == 5
+    assert g.rules.attack_bonus(g) == 2 + 3 + 4 + 5          # its declaration was spent with the enemy, its value stays
+    assert "declared_value" not in g.extra or "M25H" not in g.extra["declared_value"]
+    g = round_trip(g)
+    assert g.rules.attack_bonus(g) == 14
+    # once it leaves the zone, the value is forgotten
+    g.mission_zone.remove("M25H")
+    g.discard.append("M25H")
+    assert g.rules.card_strength(g, g.cards["M25H"]) == 2 and "held_value" not in g.extra
+    ids_everywhere(g)
+
+
+def test_solo_flute_a_two_five_is_declared_as_it_is_stored_and_plays_as_that_value():
+    """Owner: storing a 2/5 on the solo Kinfolk Flute is a declaration; the flute's strength
+    then follows it, and it plays from the flute as that value."""
+    c, g = campaign_game(number=2, seed=2601, mercs=("merc_25H", "merc_25S"), relics=("flute",))
+    set_hand(g, ["M25H", "5D", "M25S", "2C", "9S"])
+    stores = [a for a in g.legal_actions() if a.get("name") == "flute_store" and a["card"] == "M25H"]
+    assert sorted(a["value"] for a in stores) == [2, 5] and stores[-1]["label"].endswith("as a 5")
+    with pytest.raises(IllegalAction):
+        g.special({"type": "special", "name": "flute_store", "card": "M25H"})      # 2 or 5 must be said
+    g.special([a for a in stores if a["value"] == 5][0])
+    assert g.extra["flute"] == ["M25H"] and g.extra["held_value"] == {"M25H": 5}
+    # only 5s may join it now (a later turn)
+    g.extra["flute_turn"] = -1
+    joins = [(a["card"], a.get("value")) for a in g.legal_actions() if a.get("name") == "flute_store"]
+    assert ("M25S", 5) in joins and ("M25S", 2) not in joins and not any(cid == "2C" for cid, _ in joins)
+    g = round_trip(g)
+    # played from the flute with a 2/5 from hand: both 5s, no question
+    ok, kind = g.check_play(["M25H", "M25S"])
+    assert ok
+    g.play(["M25H", "M25S"])
+    assert g.decision is None or g.decision["kind"] != "declare_value"
+    assert declared(g) == {"M25H": 5, "M25S": 5} and g.plays[-1].value == 10
+    ids_everywhere(g)
+
+
+def test_a_mage_adding_a_two_five_to_a_set_of_fives_still_asks():
+    """Owner: a 2/5 a mage adds is declared (asked), even when the attack is a set of 5s."""
+    from helpers import _pull, set_tavern_top
+    c, g = campaign_game(number=9, seed=63, mercs=("merc_25H",))
+    enemy_by_suit(g, "H", "Q", hp=60)
+    set_hand(g, ["5M", "5S", "9S", "8S"])
+    _pull(g, "M25H")
+    set_tavern_top(g, ["M25H", "2C", "3C", "4C", "6C"])
+    g.play(["5M", "5S"])
+    g.decide({"type": "mage_pick", "card": "M25H"})
+    assert g.decision["kind"] == "declare_value" and g.decision["cards"] == ["M25H"]
+    assert sorted(a["option"] for a in g.legal_actions() if a.get("type") == "declare_value") == ["2", "5"]

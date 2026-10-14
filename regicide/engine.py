@@ -992,6 +992,7 @@ class Game:
         if not self.rules.played_on_top:
             self._mission_defeat_moves(enemy.card_id, plan)
         if last_ids:
+            self.rules.zone_entered_from_play(self, last_ids)
             self.mission_zone.extend(last_ids)
             self._event("zone_absorb", cards=last_ids, zone=list(self.mission_zone))
             self._say("The killing attack (%s) goes into the mission zone." % " + ".join(self.cards[c].label() for c in last_ids))

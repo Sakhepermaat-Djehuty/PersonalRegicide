@@ -381,7 +381,7 @@ def test_findings_8_16_flute_stores_named_cards_but_never_a_locked_pilgrim():
     set_mission_enemy(g, "GRJH", hp=40)
     set_hand(g, ["3R", "3H", "M25H", "2C"])
     stores = sorted(a["card"] for a in g.legal_actions() if a.get("name") == "flute_store")
-    assert stores == ["2C", "3H", "3R", "M25H"]
+    assert stores == ["2C", "3H", "3R", "M25H", "M25H"]          # the 2/5 goes on as a 2 or as a 5
     c, g = mission(7, seed=31, relics=("flute",))
     pilgrim = [x for x in g.cards if g.cards[x].has("pilgrim") and g.rules.strength(g.cards[x]) in (2, 3, 4, 5)][0]
     _pull(g, pilgrim)

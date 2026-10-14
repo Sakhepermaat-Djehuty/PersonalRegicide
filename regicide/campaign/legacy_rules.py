@@ -181,6 +181,40 @@ class LegacyRules(BaseRules):
                 return int(declared)
         return None
 
+    def _held_value(self, game, card: Card) -> Optional[int]:
+        """The value a 2/5 keeps out of play (owner's rulings): one moved from play into the
+        mission zone counts what it was declared as; one stored on the solo Kinfolk Flute
+        counts the value declared when it was stored. Kept in ``extra["held_value"]`` only
+        while the card is in the zone or on the flute (entries are dropped once it leaves)."""
+        held = game.extra.get("held_value")
+        if not held:
+            return None
+        here = set(game.mission_zone) | set(game.extra.get("flute", []))
+        for cid in [c for c in held if c not in here]:
+            held.pop(cid)
+        if not held:
+            game.extra.pop("held_value", None)
+            return None
+        v = held.get(card.id) if card.has("twofive") else None
+        return None if v is None else int(v)
+
+    def _hold_value(self, game, card_id: str, value: Optional[int]) -> None:
+        if value is not None and game.cards[card_id].has("twofive"):
+            game.extra.setdefault("held_value", {})[card_id] = int(value)
+
+    def card_strength(self, game, card: Card) -> int:
+        """A card's strength where it is: in play the value it was given there, in the
+        mission zone or on the flute a 2/5's held value (``_held_value``), else ``strength``."""
+        v = self._declared_value(game, card)
+        if v is None:
+            v = self._held_value(game, card)
+        return self.strength(card) if v is None else v
+
+    def zone_entered_from_play(self, game, card_ids: Sequence[str]) -> None:
+        """A 2/5 moved from play into the mission zone keeps the value it was declared as."""
+        for cid in card_ids:
+            self._hold_value(game, cid, self._declared_value(game, game.cards[cid]))
+
     def in_play_strength(self, game, card: Card) -> int:
         """A card's strength while it is in play: a 2/5 keeps the value it was given when it
         entered the playmat (rulebook p.25: declared by its player, or the only value its
@@ -190,7 +224,10 @@ class LegacyRules(BaseRules):
 
     def set_strengths(self, game, card: Card) -> Tuple[int, ...]:
         """A 2/5 may join a kinfolk set as a 2 or as a 5 (``Game.legal_plays``)."""
-        return TWOFIVE_VALUES if card.has("twofive") else (self.strength(card),)
+        if card.has("twofive"):
+            held = self._held_value(game, card)       # on the flute: the value it was stored as
+            return (held,) if held is not None else TWOFIVE_VALUES
+        return (self.strength(card),)
 
     def kinfolk_values(self, game, cards: Sequence[Card]) -> List[int]:
         """The strengths a kinfolk set of ``cards`` may have (rulebook p.22 and p.25), lowest
@@ -202,6 +239,8 @@ class LegacyRules(BaseRules):
         free = 0
         for c in cards:
             v = self._declared_value(game, c) if c.has("twofive") else self.strength(c)
+            if v is None and c.has("twofive"):
+                v = self._held_value(game, c)       # a 2/5 played from the flute
             if v is None:
                 free += 1
             else:
@@ -246,7 +285,7 @@ class LegacyRules(BaseRules):
 
     def zone_strength(self, game) -> int:
         """Combined strength of the mission zone (missions 5 and 6)."""
-        return sum(self.strength(game.cards[c]) for c in game.mission_zone)
+        return sum(self.card_strength(game, game.cards[c]) for c in game.mission_zone)
 
     def validate_combo(self, game, cards: Sequence[Card]) -> Tuple[str, Optional[str]]:
         # Kinfolk (rulebook p.22): any number of cards of equal STRENGTH totalling at most
@@ -326,6 +365,9 @@ class LegacyRules(BaseRules):
             return
         flute = game.extra.get("flute", [])
         if card_id in flute:
+            held = self._held_value(game, game.cards[card_id])
+            if held is not None:
+                game.extra.setdefault("flute_carry", {})[card_id] = held
             flute.remove(card_id)
             return
         raise ValueError("card %s is neither in hand nor on the flute" % card_id)
@@ -344,18 +386,26 @@ class LegacyRules(BaseRules):
                 and game.config.players == 1 and not game.is_over):
             if game.extra.get("flute_turn") != game.turn:
                 flute = game.extra.get("flute", [])
-                here = self.strength(game.cards[flute[0]]) if flute else None
+                here = self.card_strength(game, game.cards[flute[0]]) if flute else None
                 suffering = game.phase == "suffer"
                 defence = game.hand_defence_value() if suffering else 0
                 # any 2 to 5 may go there, named characters (Oaken, Tolman, the 2/5s...)
                 # included; mission 7's pilgrims are kept out by the hand lock alone
                 for cid in self.unlocked_hand(game, game.active):
                     c = game.cards[cid]
+                    if suffering and not self._payable_without(game, c, defence):
+                        continue   # storing it would leave the damage unpayable: the mission would be lost
+                    if c.has("twofive"):
+                        # a 2/5 declares 2 or 5 as it goes on the flute (owner); the flute's
+                        # strength decides when cards are already there
+                        for v in TWOFIVE_VALUES:
+                            if here is None or v == here:
+                                acts.append({"type": "special", "name": "flute_store", "card": cid, "value": v,
+                                             "label": "Store %s on the Kinfolk Flute as a %d" % (c.label(), v)})
+                        continue
                     v = self.strength(c)
                     if not (2 <= v <= 5 and c.is_number and (here is None or v == here)):
                         continue
-                    if suffering and not self._payable_without(game, c, defence):
-                        continue   # storing it would leave the damage unpayable: the mission would be lost
                     acts.append({"type": "special", "name": "flute_store", "card": cid,
                                  "label": "Store %s on the Kinfolk Flute" % c.label()})
         return acts
@@ -372,14 +422,23 @@ class LegacyRules(BaseRules):
         if action.get("name") == "flute_store":
             cid = action["card"]
             legal = [a for a in self.special_actions(game) if a.get("name") == "flute_store" and a["card"] == cid]
+            if game.cards[cid].has("twofive"):
+                if "value" in action:
+                    legal = [a for a in legal if int(a["value"]) == int(action["value"])]
+                elif len(legal) > 1:
+                    from ..engine import IllegalAction
+                    raise IllegalAction("Store the 2/5 on the flute as a 2 or as a 5.")
             if not legal:
                 from ..engine import IllegalAction
                 raise IllegalAction("That card cannot go on the flute now.")
+            value = legal[0].get("value")
             game.active_player.hand.remove(cid)
             game.extra.setdefault("flute", []).append(cid)
             game.extra["flute_turn"] = game.turn
-            game._event("flute_store", card=cid)
-            game._say("%s stores %s on the Kinfolk Flute." % (game.active_player.name, game.cards[cid].label()))
+            self._hold_value(game, cid, value)
+            game._event("flute_store", card=cid, value=value)
+            game._say("%s stores %s on the Kinfolk Flute%s." % (game.active_player.name, game.cards[cid].label(),
+                                                                "" if value is None else " as a %d" % int(value)))
             if game.phase == "play":
                 game._check_can_act()
             else:
@@ -1316,6 +1375,12 @@ class LegacyRules(BaseRules):
                     entry["group"] = [x.id for x in cards]
                 for cid in twofives:     # a value from an earlier visit to the playmat is spent
                     (game.extra.get("declared_value") or {}).pop(cid, None)
+                carry = game.extra.get("flute_carry") or {}
+                for cid in twofives:     # ...but one played from the flute keeps its stored value
+                    if cid in carry:
+                        game.extra.setdefault("declared_value", {})[cid] = int(carry.pop(cid))
+                if not carry:
+                    game.extra.pop("flute_carry", None)
                 game.extra.setdefault("declare_pending", []).append(entry)
             if c.has("corrupted"):
                 self._corrupted_banish(game, c, owner)
@@ -1988,6 +2053,7 @@ class Mission6Rules(LegacyRules):
 
     def _decide_zone_move(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
         cid = str(action["card"])
+        self.zone_entered_from_play(game, [cid])
         for play in game.plays:
             if cid in play.card_ids:
                 play.card_ids.remove(cid)
@@ -2178,20 +2244,20 @@ class Mission8Rules(LegacyRules):
     uses_mission_zone = True
 
     def attack_bonus(self, game) -> int:
-        return sum(self.strength(game.cards[c]) for c in game.mission_zone if not game.cards[c].has("pilgrim"))
+        return sum(self.card_strength(game, game.cards[c]) for c in game.mission_zone if not game.cards[c].has("pilgrim"))
 
     def _in_play(self, game) -> List[str]:
         solo = game.n_players == 1 and self.solo_jester_mode(game) == "attack"
         return [c for p in game.plays for c in p.card_ids if not (solo and game.cards[c].is_jester)]
 
     def zone_highest(self, game) -> int:
-        return max([self.strength(game.cards[c]) for c in game.mission_zone] or [0])
+        return max([self.card_strength(game, game.cards[c]) for c in game.mission_zone] or [0])
 
     def _build_options(self, game) -> List[str]:
         if game.extra.get("zone_filled"):
             return []
         want = self.zone_highest(game) + 1
-        return [c for c in self._in_play(game) if self.strength(game.cards[c]) == want]
+        return [c for c in self._in_play(game) if self.card_strength(game, game.cards[c]) == want]
 
     def defeat_plan(self, game, exact: bool) -> Dict[str, Any]:
         return {"enemy_to": "banish", "played_to": "discard"}   # the zone stays
@@ -2224,6 +2290,7 @@ class Mission8Rules(LegacyRules):
         if cid not in self._build_options(game):
             from ..engine import IllegalAction
             raise IllegalAction("%s cannot go to the mission zone now." % cid)
+        self.zone_entered_from_play(game, [cid])     # a 2/5 counts what it was declared as
         for play in game.plays:
             if cid in play.card_ids:
                 play.card_ids.remove(cid)

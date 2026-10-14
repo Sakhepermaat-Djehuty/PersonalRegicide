@@ -246,6 +246,11 @@ class BaseRules:
         """Additional legal plays beyond singles / companions / sets (Legacy: beasts...)."""
         return []
 
+    def zone_entered_from_play(self, game: "Game", card_ids: Sequence[str]) -> None:
+        """Cards in play are about to move into the mission zone (Evergreen bane 14): a
+        Legacy 2/5 keeps its declared value there."""
+        pass
+
     def set_strengths(self, game: "Game", card: Card) -> Tuple[int, ...]:
         """The strengths a card may take in a set, for ``Game.legal_plays``: its value in
         the base game; Legacy's 2/5 mercenary may count 2 or 5 there."""

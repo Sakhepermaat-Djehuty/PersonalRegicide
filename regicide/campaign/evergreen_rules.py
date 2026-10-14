@@ -198,7 +198,7 @@ class EvergreenRules(LegacyRules):
                 game.banish_cards(zone)
                 game._event("zone_cleared", cards=zone, to="banish")
                 game._say("The Cave: the mission zone (%d) reaches %s's base strength (%d): it is banished." % (
-                    sum(self.strength(game.cards[c]) for c in zone), game.enemy.name, game.enemy.attack))
+                    sum(self.card_strength(game, game.cards[c]) for c in zone), game.enemy.name, game.enemy.attack))
                 self._banish_discard_pile(game, "The Cave")
         elif loc in ("C", "D"):
             if game.banished:
@@ -356,7 +356,7 @@ class EvergreenRules(LegacyRules):
 
     def _sibling_options(self, game, play) -> List[str]:
         strengths = set(self._attack_strengths(game, play))
-        return [c for c in game.mission_zone if self.strength(game.cards[c]) in strengths]
+        return [c for c in game.mission_zone if self.card_strength(game, game.cards[c]) in strengths]
 
     def _decision_done(self, game, d: Dict[str, Any]) -> None:
         if str(d.get("resume")) == "attack":
@@ -469,7 +469,7 @@ class EvergreenRules(LegacyRules):
             if task.startswith("match:"):
                 cid = task[6:]
                 strength = self.strength(game.cards[cid])
-                options = [c for c in game.mission_zone if self.strength(game.cards[c]) == strength]
+                options = [c for c in game.mission_zone if self.card_strength(game, game.cards[c]) == strength]
                 if options:
                     game._say("Selfless Rescue: %s matches %s in the mission zone; %s may move it to the discard pile." % (
                         game.cards[cid].label(), " / ".join(game.cards[c].label() for c in options), game.players[game.active].name))

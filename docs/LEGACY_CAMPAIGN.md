@@ -321,16 +321,19 @@ unspent coins on success, which the sticker does not say (unverified).
   or a 2/5 a mage or a Scarlet Whistle adds. A 2/5 a Kinfolk Flute adds to another
   player's attack joins that set and takes its strength. The value is the card's
   strength for everything while it is in play (the attack, a beast's copy, mission 7's
-  pilgrim matches, the Evergreen attack checks, the multiplayer Flute's strength); out of
-  play a 2/5 counts 2 (a bonus to an enemy, the mission zone, the Flute's storing), when
-  discarded to suffer damage or added by a reaver 5. `legal_plays` lists every 2/5
+  pilgrim matches, the Evergreen attack checks, the multiplayer Flute's strength). Owner's
+  rulings: a 2/5 moved from play into the mission zone (missions 6 and 8, Evergreen bane
+  14) counts what it was declared as for as long as it stays there; storing a 2/5 on the
+  solo Kinfolk Flute is a declaration ("as a 2" or "as a 5", only the flute's strength
+  when cards are already there), and it plays from the flute as that value; a 2/5 a mage
+  adds is always asked, even in a set of 5s. Anywhere else out of play a 2/5 counts 2
+  (a pile top's bonus to an enemy, a card entering the zone from a pile), and 5 when
+  discarded to suffer damage or added by a reaver. `legal_plays` lists every 2/5
   combination once (with 2s, with 5s, 2/5s together, singles, companion and beast
   pairs). The declarations end when the next enemy appears. Forecasts assume a warrior
   and, for a free 2/5 choice, 5s (a forced value forecasts as itself); the bots pick a
   class the enemy is not immune to (a warrior when doubling could kill, else a bard when
   the hand is short, else a cleric, else a paladin) and 5 unless 2 kills exactly.
-  Unverified: mission 8 moves cards in play to the zone by their zone strength, so a 2/5
-  moves there as a 2 whatever it counted in play.
 * Relics with separate solo and multiplayer sides. **Done:** Kinfolk Flute, Scarlet
   Whistle (solo: take the top discard into a solitary companion or beast attack; 2+
   players: one other player, asked clockwise, adds any card but a Jester) and Azure
