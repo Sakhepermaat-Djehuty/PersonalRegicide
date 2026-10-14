@@ -418,6 +418,53 @@ they ignore immunity (corrupted, or part of a claimed-Jester attack), the zone i
 banished with the enemy, and an exact kill asks the current player which zone card to
 rescue to the discard pile.
 
+## Mission 4, Fusion of Darkness (confirmed, transcribed from the owner's photos)
+
+**Location card:** Biology Laboratory (a glasshouse lab full of cages, QR code; map
+piece on the back with the lab marked by a cross).
+
+**Enemy stats card:** Phase I 10 / 20, Phase II 15 / 30, Phase III 20 / 40; one of each
+class (cleric, bard, warrior, paladin) per phase, twelve enemies. The example enemy is
+Subject 9, "Phase II Experiment", cleric, strength 15, health 30.
+
+**Mission rules card (front).** Each enemy has additional strength equal to the strength
+of the top card of the discard pile. *Enemy defeated:* place the enemy in the discard
+pile. If the enemy was dealt exact damage, place it on top of the reserve deck instead.
+*Example:* Subject 9 (15) with Vegarian (10, Deccari paladin) on top of the discard pile
+has a total strength of 25.
+
+**Rules continued.** *Remember:* an enemy's strength could increase or decrease during
+your turn, before damage is suffered; for example a cleric shuffles the discard pile and
+may change its top card. *Note:* an enemy's strength does not change while you are
+suffering damage one card at a time. It may be useful to flip the strength tracker token
+to track negative strength values. *Remember:* because enemies are always in corrupted
+sleeves, when you play them you should follow the normal rules for corruption.
+
+**Rules summary card:** The top of the discard adds its strength to the enemy. Enemy
+defeated: place enemy in discard pile; exact kill: on top of the reserve deck instead.
+
+**Story cards:** intro (the tower laboratory, the High Arcana's betrayal, the Evergreen
+in a cage, the Arcana escapes through the window) and outcome (the Evergreen on the four
+veils, the Crimson Grove in danger); texts in the private lore overlay only.
+
+**Reward cards, in order:**
+1. "Add Gøran to your party." Gøran: strength 8, "Feltrix Evergreen", no class icon.
+   (A sticker card with the four class icons sits behind it: his later classes.)
+2. "Keep Gøran's four beasts in the box beside your party. Each mission attempt you may
+   include one of these four beasts in your reserve deck." Four beast cards, rank B, one
+   per class ("Gøran's Beast"): Bonty is the cleric; the bard, paladin and warrior
+   beasts' names were not read.
+3. "Open pack C and corrupt another character in your party." Player's choice.
+4. "Acquire the new relic." Scarlet Whistle. *Two or more players:* "After you form an
+   attack with a solitary Animal Companion or Beast, one other player may add any card
+   from their hand to the attack (except a Jester). This must be done before proceeding to
+   Step 2." *Solo relic:* "When you form an attack with a solitary animal companion or
+   beast you may take the top card of the discard pile and add it to the attack."
+
+**Engine status:** data and rewards are in; the mission rules (discard-top strength bonus
+with the clean-up order chosen by the player, corrupted experiments playable from hand,
+beasts, the Scarlet Whistle) are being added.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
@@ -433,8 +480,10 @@ rescue to the discard pile.
     any time put a 2, 3, 4 or 5 from hand on the flute if no card of a different
     strength is already there; while forming a kinfolk attack, flute cards may be played
     as though from hand.
-  * Scarlet Whistle (after M4): play an Ace or Beast together with the top card of the
-    discard pile as a pair. VERIFY.
+  * Scarlet Whistle (after M4): **confirmed, both sides.** 2+ players: after an attack
+    formed with a solitary animal companion or beast, one other player may add any card
+    from hand except a Jester, before step 2. Solo: when you form such an attack you may
+    take the top card of the discard pile and add it to the attack.
   * Azure Emblem (after M6): after a Mage pick, keep one of the other revealed cards on
     top of the tavern deck instead of discarding them all. VERIFY.
   * Evergreen Mother, corrupted (from M9): the fan engine banishes from the discard
@@ -504,8 +553,14 @@ Numbers are attack / health.
    with the whole zone; exact kill: rescue one zone card to the discard pile first.
    Rewards: open pack C and corrupt another character (player's choice); open pack F
    (contents to be read; assumed to be the Mage class deck A to 10).
-4. **Fusion of Darkness** (fan name: The Gauntlet; Biology Laboratory) — standard 12 royals, all corrupted. Enemy attack + value of the top
-   discard card. Reward: Goran joins, Scarlet Whistle, corrupt a card, Beast picks begin.
+4. **Fusion of Darkness** (Biology Laboratory; fan name: The Gauntlet) — **confirmed:**
+   twelve corrupted experiments, Phase I 10/20, Phase II 15/30, Phase III 20/40, one per
+   class. Each enemy's strength is increased by the strength of the top card of the
+   discard pile (recomputed whenever the pile changes before damage is suffered; fixed
+   while suffering). Enemy defeated: discard pile; exact: top of the reserve deck.
+   Experiments drawn into a hand play as corrupted cards. Rewards: Gøran (8, no class)
+   joins; Gøran's four beasts, one per attempt in the reserve; corrupt another character
+   (player's choice); Scarlet Whistle.
 5. **High and Mighty** (fan name: The Siege) — 4 enemies 10/40 and 4 enemies 15/60 (one per suit per tier). Reavers
    3/5/7/9 (the contents guide says 3/5/7/10; VERIFY) and Myla join for the mission. End of turn: top banished card to the mission
    zone; enemy attack + total mission zone value. Kill: enemy and mission zone shuffled

@@ -44,6 +44,20 @@ def _academy_castle(rng: random.Random) -> List[dict]:
     return tiers[0] + tiers[1] + tiers[2]
 
 
+def _lab_castle(rng: random.Random) -> List[dict]:
+    """Mission 4's enemy stat card: Phase I 10/20, Phase II 15/30, Phase III 20/40, one
+    experiment of each class per phase. Enemies are always in corrupted sleeves, so a
+    defeated experiment drawn into a hand plays as a corrupted card."""
+    tiers = []
+    for rank, phase, atk, hp in (("J", "I", 10, 20), ("Q", "II", 15, 30), ("K", "III", 20, 40)):
+        tier = [{"id": "LAB%s%s" % (rank, s), "rank": rank, "suits": [s], "value": RANK_VALUE[rank],
+                 "name": "Phase %s Experiment" % phase, "attack": atk, "health": hp, "flags": ["corrupted"]}
+                for s in BASIC_SUITS]
+        rng.shuffle(tier)
+        tiers.append(tier)
+    return tiers[0] + tiers[1] + tiers[2]
+
+
 def _hydra_castle(rng: random.Random) -> List[dict]:
     hydras = []
     for i, (a, b) in enumerate(itertools.combinations(BASIC_SUITS, 2)):
@@ -83,9 +97,14 @@ MISSIONS: List[Dict[str, Any]] = [
      "rewards_text": "Open pack C and corrupt another character in your party. Open pack F (contents still "
                      "to be read: the app assumes the Mage class deck joins the party)."},
     {"number": 4, "title": "Fusion of Darkness", "fan_title": "The Gauntlet", "location": "Biology Laboratory",
-     "rules_id": "legacy_m4", "playable": False, "verified": False,
-     "summary": "The twelve royals return, corrupted. Their strength grows by the top card of the discard pile.",
-     "rewards_text": "Goran and four Beasts join; the Scarlet Whistle."},
+     "rules_id": "legacy_m4", "playable": False, "verified": True,
+     "summary": "Twelve corrupted experiments: Phase I (10/20), Phase II (15/30), Phase III (20/40), one of "
+                "each class. Each enemy has additional strength equal to the strength of the top card of the "
+                "discard pile, so what you leave on top matters. Enemy defeated: discard pile, or the top of "
+                "the reserve deck on exact damage; experiments drawn into a hand play as corrupted cards.",
+     "rewards_text": "Gøran (8, no class) joins. Gøran's four beasts wait beside the party: each attempt you may "
+                     "include one in the reserve. Open pack C and corrupt another character. Acquire the "
+                     "Scarlet Whistle."},
     {"number": 5, "title": "High and Mighty", "fan_title": "The Siege", "location": "unknown",
      "rules_id": "legacy_m5", "playable": False, "verified": False,
      "summary": "Eight enemies (10/40 and 15/60). The banished pile feeds the mission zone, which adds to "
@@ -134,8 +153,15 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
         castle = _hydra_castle(rng)
     elif number == 3:
         castle = _academy_castle(rng)
+    elif number == 4:
+        castle = _lab_castle(rng)
     else:
         raise NotImplementedError("Mission %d is not implemented yet (see PLAN.md stage ladder)." % number)
+    # Gøran's beast chosen for this attempt (reward of mission 4)
+    if camp.beast and camp.flags.get("beasts"):
+        beast = beast_by_id(camp.beast)
+        if beast is not None and P.find(party, str(beast["id"])) is None:
+            party.append(dict(beast))
     # mercenaries hired for this mission
     extra_jesters = 0
     for mid in camp.mercenaries:
@@ -189,7 +215,37 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
         steps.append({"kind": "add_cards", "cards": MAGE_DECK,
                       "label": "Open pack F: the Mage class deck joins the party (unverified)"})
+    elif number == 4:
+        # Reward cards (confirmed, in order): "Add Gøran to your party"; "Keep Gøran's four
+        # beasts in the box beside your party. Each mission attempt you may include one of
+        # these four beasts in your reserve deck"; "Open pack C and corrupt another
+        # character in your party"; "Acquire the new relic" (Scarlet Whistle).
+        steps.append({"kind": "add_card", "card": GORAN, "label": "Gøran (8, Feltrix Evergreen) joins the party"})
+        steps.append({"kind": "set_flag", "flag": "beasts", "value": True,
+                      "label": "Gøran's four beasts wait beside the party: one may join each attempt"})
+        steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
+        steps.append({"kind": "relic", "relic": "whistle", "label": "Relic: Scarlet Whistle"})
     return steps
+
+
+GORAN: Dict[str, Any] = {"id": "GOR8", "rank": "8", "suits": [], "value": 8, "name": "Gøran",
+                         "subtitle": "Feltrix Evergreen", "flags": []}
+
+# Gøran's beasts (mission 4 reward): rank B, one per basic class, strength 0 on their own
+# and equal to the paired card's strength while attacking. Only Bonty's name was read.
+BEASTS: List[Dict[str, Any]] = [
+    {"id": "B_H", "rank": "B", "suits": ["H"], "value": 0, "name": "Bonty", "flags": ["beast"]},
+    {"id": "B_D", "rank": "B", "suits": ["D"], "value": 0, "name": "Bard beast", "flags": ["beast"]},
+    {"id": "B_C", "rank": "B", "suits": ["C"], "value": 0, "name": "Warrior beast", "flags": ["beast"]},
+    {"id": "B_S", "rank": "B", "suits": ["S"], "value": 0, "name": "Paladin beast", "flags": ["beast"]},
+]
+
+
+def beast_by_id(bid: str) -> Optional[Dict[str, Any]]:
+    for b in BEASTS:
+        if b["id"] == bid:
+            return b
+    return None
 
 
 MAGE_DECK: List[Dict[str, Any]] = [
@@ -259,6 +315,9 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
     if kind == "remove_card":
         c = P.remove_card(camp.party, step["card_id"])
         return "%s leaves the party." % ((c or {}).get("name") or step["card_id"])
+    if kind == "set_flag":
+        camp.flags[str(step["flag"])] = step.get("value", True)
+        return str(step.get("label", "Flag %s set." % step["flag"]))
     if kind == "add_cards":
         added = []
         for card in step["cards"]:
