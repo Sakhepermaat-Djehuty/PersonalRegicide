@@ -233,15 +233,17 @@ class BaseRules:
 
     def discard_top_matters(self, game: "Game") -> bool:
         """Does the TOP card of the discard pile change the game right now (Legacy mission
-        4's enemy bonus, the solo Scarlet Whistle, ...)? When it does, the player is asked
-        which card ends on top whenever two or more cards go to the pile at once (the
-        clean-up, a mage's unchosen cards); otherwise the default order is used."""
+        4's enemy bonus, the solo Scarlet Whistle, ...)? When it does, the player names the
+        order of cards the app cannot order by itself (a Legacy mage's unchosen cards) and
+        the clean-up announces which card ended on top (the played cards always go in the
+        order they entered play); otherwise the default order is used silently."""
         return False
 
     def banished_top_matters(self, game: "Game") -> bool:
         """Does the TOP card of the banished pile change the game (Legacy missions 5, 11 and
-        12 feed it into the mission zone)? When it does, the player orders the cards a
-        reaver or a mage attack banishes together."""
+        12 feed it into the mission zone)? When it does, the player names the order of a
+        reaver's revealed cards, and the clean-up announces which card of a mage attack
+        ended on top (in the order they entered play)."""
         return False
 
     def extra_plays(self, game: "Game", hand: Sequence[Card]) -> List[List[str]]:
@@ -283,11 +285,12 @@ class BaseRules:
                        banish_ids: Sequence[str]) -> Optional[Dict[str, Any]]:
         """Called once the mission's enemy-defeated choices are made and before the played
         cards are cleaned up: ``discard_ids`` go on top of the discard pile, ``banish_ids``
-        (a mage attack) on the banished pile. Return a decision dict (with a ``player``) to
-        ask about their order (Legacy: which card ends on top); the rules' ``decide`` must
-        then end with ``game.resume_defeat()``, which asks here again, so the rules must
-        record the choice where this hook can see it (``order_for_discard`` and
-        ``order_for_banish`` then apply it). None cleans up at once."""
+        (a mage attack) on the banished pile, both in the order they entered play (the last
+        on top). Return a decision dict (with a ``player``) to ask about something first;
+        the rules' ``decide`` must then end with ``game.resume_defeat()``, which asks here
+        again, so the rules must record the choice where this hook can see it
+        (``order_for_discard`` and ``order_for_banish`` may apply it). None cleans up at
+        once (every rule set today: Legacy no longer asks, see ``LegacyRules``)."""
         return None
 
     def immune_suits(self, game: "Game") -> Tuple[str, ...]:
@@ -363,11 +366,13 @@ class BaseRules:
         return {"enemy_to": "tavern_top" if exact else "discard", "played_to": "discard"}
 
     def order_for_discard(self, game: "Game", cards: List[Card]) -> List[Card]:
-        """Order in which a batch of cards is put on the discard pile (last = on top)."""
+        """Order in which a batch of cards is put on the discard pile (last = on top). The
+        clean-up passes the played cards in the order they entered play."""
         return cards
 
     def order_for_banish(self, game: "Game", ids: List[str]) -> List[str]:
-        """Order in which a mage attack's cards are banished at clean-up (last = on top)."""
+        """Order in which a mage attack's cards are banished at clean-up (last = on top),
+        given in the order they entered play."""
         return list(ids)
 
     def on_enemy_revealed(self, game: "Game") -> None:

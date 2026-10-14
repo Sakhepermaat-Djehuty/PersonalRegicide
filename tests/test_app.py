@@ -808,17 +808,24 @@ def test_reaver_count_grid_then_pick_overlay(app):
     assert adds == ["Add 7♥'s strength (+7)", "Add 2♦'s strength (+2)"]
     assert ui.render(app).size[0] > 0
     _tap_button(app, "Add 7♥'s strength (+7)")
-    # mission 5 feeds the zone from the top of the banished pile: the player picks the top card
-    from app.screens import TopChoiceOverlay
-    assert g.decision["kind"] == "banish_top" and g.decision["options"] == ["7H", "2D"]
-    assert isinstance(gs.overlay, TopChoiceOverlay)
+    # mission 5 feeds the zone from the top of the banished pile: "What order?", the revealed
+    # cards numbered as they are tapped, the last one on top
+    from app.screens import OrderOverlay
+    assert g.decision["kind"] == "reaver_order" and g.decision["options"] == ["7H", "2D"]
+    assert isinstance(gs.overlay, OrderOverlay) and sorted(gs.overlay.card_views) == ["2D", "7H"]
     texts = [v.text for v in ui.find(gs.overlay, lambda v: isinstance(v, ui.Label))]
-    assert "Which card ends on top?" in texts and any("banished in any order" in t for t in texts)
-    assert ui.render(app).size[0] > 0
-    _tap_button(app, "Put 2♦ on top")
+    assert "What order?" in texts
+    assert any("banished in any order" in t and "into the mission zone at the end of the turn" in t for t in texts)
+    _assert_nothing_cut(gs.overlay)
+    assert not ui.button(app, "Confirm the order (0 of 2)").enabled and ui.render(app).size[0] > 0
+    ui.tap(app, *ui.root_point(app, gs.overlay.card_views["7H"]))
+    ui.tap(app, *ui.root_point(app, gs.overlay.card_views["2D"]))
+    assert gs.overlay.picked == ["7H", "2D"] and gs.overlay.card_views["2D"].badge == "2"
+    _tap_button(app, "Confirm the order (2 of 2)")
     assert g.decision is None and g.enemy.hp == 100 - 68 and g.banished == ["MYLA7", "7H", "2D"]
     assert gs.overlay is None and gs.right_btn.title == "Discard"
     assert "doubled to 34" in gs.message_text and "68 damage" in gs.message_text
+    assert "2♦ on top of the banished pile" in gs.message_text
     assert "suffers 10 damage" in gs.message.text
 
 
@@ -854,16 +861,12 @@ def test_scarlet_whistle_solo_pick_overlay_and_the_beast_choice(app):
     assert ui.button(app, "Add 6♦ from the discard pile") and ui.button(app, "Skip")
     assert ui.render(app).size[0] > 0
     _tap_button(app, "Add 6♦ from the discard pile")
-    # beast + 6♦ is a 12, doubled by the beast's warrior class: the Justicar falls; with the
-    # Scarlet Whistle solo the player chooses which played card ends on top of the pile
-    from app.screens import TopChoiceOverlay
-    assert g.decision["kind"] == "cleanup_top" and isinstance(gs.overlay, TopChoiceOverlay)
+    # beast + 6♦ is a 12, doubled by the beast's warrior class: the Justicar falls; the solo
+    # Scarlet Whistle reads the discard pile, yet nothing is asked: the played cards go in the
+    # order they entered play and the Whistle's 6♦, added last, ends on top
+    assert g.decision is None and g.enemies_defeated == 1 and gs.overlay is None and g.discard[:2] == ["6D", "B_C"]
     assert "adds 6♦ from the discard pile (Scarlet Whistle, attack 12)" in gs.message_text
-    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
-    assert any("Scarlet Whistle can add the top card" in t for t in texts)
-    _tap_button(app, "Put 6♦ on top")
-    assert g.decision is None and g.enemies_defeated == 1 and gs.overlay is None and g.discard[0] == "6D"
-    assert "6♦ on top of the discard pile" in gs.message_text
+    assert "6♦ ends on top of the discard pile" in gs.message_text
 
 
 def test_scarlet_whistle_two_players_hand_decision_overlay(app):
@@ -980,8 +983,7 @@ def test_mission6_solo_team_damage_shows_the_hand_at_once(app):
     assert g.decision is None and g.enemies_defeated == 1 and sorted(g.players[0].hand) == ["3C", "AD"]
 
 
-def test_mission4_cleanup_top_overlay_and_enemy_bonus(app):
-    from app.screens import PickOverlay
+def test_mission4_cleanup_follows_the_selection_order_and_enemy_bonus(app):
     from helpers import set_discard, set_mission_enemy
     gs, g = _mission_attempt(app, 4)
     set_mission_enemy(g, "LABJD", hp=10)
@@ -989,16 +991,76 @@ def test_mission4_cleanup_top_overlay_and_enemy_bonus(app):
     set_discard(g, ["7D"])
     gs.refresh(after_action=False)
     assert g.enemy_attack == 17 and ui.render(app).size[0] > 0   # the panel shows 10 + 7
-    gs.hand.set_selection(["AS", "9C"])
+    gs.hand.set_selection(["9C", "AS"])                # 9♣ selected first, the ace last
     _tap_button(app, "Play")
-    assert g.decision["kind"] == "cleanup_top" and isinstance(gs.overlay, PickOverlay)
-    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
-    assert "Which card ends on top?" in texts and any("strength adds to the enemy" in t for t in texts)
-    assert ui.button(app, "Put A♠ on top") and ui.button(app, "Put 9♣ on top")
+    # no question: the played cards go to the discard pile in the order they were selected,
+    # the ace on top, so the next experiment gains only 1
+    assert g.decision is None and gs.overlay is None
+    assert g.discard == ["AS", "9C", "LABJD", "7D"] and g.enemies_defeated == 1
+    assert "A♠ ends on top of the discard pile" in gs.message_text and g.enemy_attack == 11
+
+
+def _mage_leftovers_to_order(app):
+    """Mission 4: a 3 mage reveals 4♣, 10♥ and 2♦; 4♣ joins the attack, the other two go to
+    the discard pile, whose top adds to the enemy: the app asks for their order."""
+    from helpers import set_discard, set_mission_enemy
+    gs, g = _mission_attempt(app, 4)
+    set_mission_enemy(g, "LABJD")
+    set_discard(g, ["2S"])
+    set_hand(g, ["3M", "9S", "8S", "AS"])
+    set_tavern_top(g, ["4C", "10H", "2D"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["3M"])
+    _tap_button(app, "Play")
+    assert g.decision["kind"] == "mage_peek"
+    _tap_button(app, "Add 4♣ to the attack")
+    assert g.decision["kind"] == "discard_order"
+    return gs, g
+
+
+def test_mage_leftovers_what_order_overlay_numbers_the_cards_as_tapped(app):
+    from app.screens import OrderOverlay
+    gs, g = _mage_leftovers_to_order(app)
+    assert isinstance(gs.overlay, OrderOverlay) and sorted(gs.overlay.card_views) == ["10H", "2D"]
+    texts = [v.text for v in _labels(gs.overlay)]
+    assert "What order?" in texts
+    assert any("did not choose" in t and "the last ends on top" in t and "strength adds to the enemy" in t for t in texts)
+    _assert_nothing_cut(gs.overlay)
+    assert not ui.button(app, "Confirm the order (0 of 2)").enabled and ui.render(app).size[0] > 0
+    # a tap numbers a card, a second tap takes the number back
+    ui.tap(app, *ui.root_point(app, gs.overlay.card_views["2D"]))
+    assert gs.overlay.picked == ["2D"] and gs.overlay.card_views["2D"].badge == "1"
+    assert not ui.button(app, "Confirm the order (1 of 2)").enabled
+    ui.tap(app, *ui.root_point(app, gs.overlay.card_views["2D"]))
+    assert gs.overlay.picked == [] and gs.overlay.card_views["2D"].badge == ""
+    ui.tap(app, *ui.root_point(app, gs.overlay.card_views["10H"]))
+    ui.tap(app, *ui.root_point(app, gs.overlay.card_views["2D"]))
+    assert [gs.overlay.card_views[c].badge for c in ("10H", "2D")] == ["1", "2"]
     assert ui.render(app).size[0] > 0
-    _tap_button(app, "Put A♠ on top")
-    assert g.discard == ["AS", "9C", "LABJD", "7D"] and g.enemies_defeated == 1 and gs.overlay is None
-    assert "A♠ on top of the discard pile" in gs.message_text and g.enemy_attack == 11
+    _tap_button(app, "Confirm the order (2 of 2)")
+    # the first tapped went first, the last ends on top: 10 + 2 against the next attack
+    assert g.decision is None and gs.overlay is None and g.discard[:3] == ["2D", "10H", "2S"]
+    assert g.phase == PHASE_SUFFER and g.pending_damage == 12
+    assert "10♥ + 2♦ to the discard pile, 2♦ on top." in gs.message_text
+
+
+def test_a_game_saved_on_the_old_top_card_question_still_shows_it(app):
+    from app import store
+    from app.screens import TopChoiceOverlay
+    from regicide.engine import Game
+    gs, g = _mage_leftovers_to_order(app)
+    data = g.to_dict()
+    data["decision"]["kind"] = "discard_top"           # what the app saved before the order questions
+    store.save_attempt(Game.from_dict(data), app.campaign.slot)
+    assert app.resume_attempt()
+    gs, g = _game_screen(app), app.game
+    assert g.decision["kind"] == "discard_top" and isinstance(gs.overlay, TopChoiceOverlay)
+    texts = [v.text for v in _labels(gs.overlay)]
+    assert "Which card ends on top?" in texts and any("strength adds to the enemy" in t for t in texts)
+    assert ui.render(app).size[0] > 0
+    _tap_button(app, "Put 2♦ on top")
+    assert g.decision is None and gs.overlay is None and g.discard[:3] == ["2D", "10H", "2S"]
+    assert g.phase == PHASE_SUFFER and "10♥ + 2♦ to the discard pile, 2♦ on top." in gs.message_text
 
 
 
@@ -1816,7 +1878,7 @@ def test_finding_30_an_unreadable_attempt_can_be_deleted_from_the_campaign_scree
 
 
 def test_finding_17_ui_declarations_use_pick_buttons(app):
-    from app.screens import DeclareOverlay, TopChoiceOverlay
+    from app.screens import DeclareOverlay
     from helpers import set_mission_enemy, set_discard
     app.new_campaign(1, ["Solo"])
     camp = app.campaign

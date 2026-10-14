@@ -10,8 +10,8 @@ Design notes
 * Rule variations (Legacy missions) are injected through ``rules.BaseRules`` hooks.
 * Mid-turn choices (Legacy: the Kinfolk Flute or Scarlet Whistle before an attack
   resolves, the Mage's pick or the Reaver's reveal during its resolution, a Druid's
-  sorting of the discard pile or a Chanter's draw, a mission zone rescue, the clean-up
-  order or Myla's team damage after a kill, a mission's end-of-turn choice) pause the game
+  sorting of the discard pile or a Chanter's draw, a mission zone rescue or Myla's team
+  damage after a kill, a mission's end-of-turn choice) pause the game
   in the ``decide`` phase with a serialisable ``decision`` dict: the rules object produces
   the decision, lists its legal actions and applies them; the engine stores it together
   with the state needed to resume (``play_index``, and for a pause mid-resolution the
@@ -419,7 +419,7 @@ class Game:
             if ev["t"] == "mage_peek":
                 peeks.append(int(ev["count"]))
         # A kill may pause on the mission's enemy-defeated choice (which zone card to rescue,
-        # the clean-up order): the enemy is down all the same.
+        # the order a mission zone is banished): the enemy is down all the same.
         pending_defeat = g.phase == PHASE_DECIDE and (g.decision or {}).get("resume") in ("defeat", "defeat_tail")
         defeated = any(ev["t"] == "defeat" for ev in events) or pending_defeat
         exact = any(ev["t"] == "defeat" and ev["exact"] for ev in events) or (
@@ -991,9 +991,10 @@ class Game:
             played = [c for c in played if c.id not in last_ids]
             mage_ids = [c for c in mage_ids if c not in last_ids]
         # Rulebook p.19: the played cards go on the discard pile "in any order you wish" (and
-        # a mage attack is banished in the player's order, mission 5). The rules ask only when
-        # the top of the pile matters; ``resume_defeat`` comes back here (``resumed``) and the
-        # rules see the recorded choice.
+        # a mage attack is banished in the player's order, mission 5): the order they entered
+        # play, the last card on top (``_cleanup_played``). A rule set may still ask before
+        # cleaning up (``before_cleanup``); ``resume_defeat`` then comes back here
+        # (``resumed``) and the rules see the recorded choice.
         to_discard = [c.id for c in played if c.id not in mage_ids] if plan.get("played_to", "discard") == "discard" else []
         decision = self.rules.before_cleanup(self, exact, plan, to_discard, list(mage_ids))
         if decision is not None:
@@ -1090,13 +1091,29 @@ class Game:
             len(moved), "" if len(moved) == 1 else "s"))
 
     def _cleanup_played(self, played: List[Card], mage_ids: List[str], plan: Dict[str, Any]) -> None:
+        """Put the played cards away in the order they entered play (``played``: the attacks
+        in sequence, each in its ``card_ids`` order: as selected, then the cards added to it),
+        so the last card to enter play ends on top of its pile; the rules may reorder a batch
+        (``order_for_discard`` / ``order_for_banish``). Where the top of a pile matters the
+        result is announced (event ``cleanup_order``)."""
         if plan.get("played_to", "discard") == "discard":
-            self._discard_cards([c for c in played if c.id not in mage_ids])
-            self.banish_cards(self.rules.order_for_banish(self, [c.id for c in played if c.id in mage_ids]))
+            to_discard = [c for c in played if c.id not in mage_ids]
+            self._discard_cards(to_discard)
+            banished = self.banish_cards(self.rules.order_for_banish(self, [c.id for c in played if c.id in mage_ids]))
             if mage_ids:
                 self._say("The mage attack is banished: %s." % " + ".join(self.cards[c].label() for c in mage_ids))
+            if len(to_discard) >= 2 and self.rules.discard_top_matters(self):
+                self._announce_cleanup("discard", list(reversed(self.discard[:len(to_discard)])))
+            if len(banished) >= 2 and self.rules.banished_top_matters(self):
+                self._announce_cleanup("banished", banished)
         elif plan["played_to"] == "banish":
             self.banish_cards([c.id for c in played])
+
+    def _announce_cleanup(self, pile: str, order: List[str]) -> None:
+        """``order``: the cards just put on ``pile``, the first put there first, the last on top."""
+        self._event("cleanup_order", pile=pile, cards=list(order))
+        self._say("The played cards go on top of the %s pile in this order: %s (%s ends on top)." % (
+            pile, ", ".join(self.cards[c].label() for c in order), self.cards[order[-1]].label()))
 
     def _mission_defeat_moves(self, enemy_id: str, plan: Dict[str, Any]) -> None:
         """The mission's enemy-defeated moves in the plan's order: the enemy and the zone
