@@ -321,8 +321,8 @@ and three reward cards. The card texts are kept out of this public repository; s
 private lore overlay described in regicide/campaign/lore.py.
 
 **Reward cards, in order:**
-1. "Open pack C and corrupt a character in your party." The player chooses the
-   character; the rules of pack C (which characters qualify) are still to be read.
+1. "Open pack C and corrupt a character in your party." Random in the app (pack C
+   section).
 2. "Add the High Arcana to your party." The High Arcana: strength 25, subtitle "Elf
    Mage", no class icon on the card (so no class ability; to be confirmed).
 3. "Acquire the new relic." Kinfolk Flute, relic, two sides. *Two or more players:*
@@ -334,8 +334,8 @@ private lore overlay described in regicide/campaign/lore.py.
    While forming a Kinfolk Attack you may play cards from here as though they were from
    your hand."
 
-**Engine status:** mission 1 is marked verified. The corruption is a player choice in the
-app (candidates still follow the fan constraints until pack C is read). The flute's
+**Engine status:** mission 1 is marked verified. The corruption is random (pack C in a
+themeless deck, see the Pack C section). The flute's
 multiplayer side is implemented as the engine's first "decide" phase: after the active
 player forms an attack that could be kinfolk (equal strengths, no companion, beast or
 Jester) the other players are asked in clockwise order from the attacker's left; each may
@@ -405,8 +405,14 @@ mission 2.
 up into the mission zone if able. Enemies have immunity to the classes of every card in
 the mission zone. *Enemy defeated:* banish the enemy (put it in the banished pile) along
 with all cards in the mission zone. If the enemy was dealt exact damage, put one card
-from the mission zone into the discard pile before banishing the mission zone. The card
-says "continued": the back ("Rules continued") has not been photographed yet.
+from the mission zone into the discard pile before banishing the mission zone.
+
+**Rules continued.** *Example:* Blast (10, Artifact Instructor, mage, 30 health) with
+Plates (A, animal paladin) and Pūriri (5, avion cleric) in the mission zone: Blast is
+now immune to paladins and clerics. *Remember:* skip end of turn effects when you
+defeat an enemy (i.e. don't put a card from the reserve deck into the mission zone).
+But also remember you don't skip the end of turn effects if you yield! (The engine
+already does both: yielding goes through the normal end of turn.)
 
 **Rules summary card:** Enemies have immunity to classes in the mission zone. End of
 turn: put top card of reserve deck into the mission zone. Enemy defeated: banish enemy
@@ -419,9 +425,10 @@ private lore overlay only.
 
 **Reward cards, in order:**
 1. "Open pack C and corrupt another character in your party." Player's choice.
-2. "A party member takes Tōtara aside for a chat. Open pack F." Pack F's contents are
-   not read yet. The fan transcription says the Mage class deck (A to 10) joins the party
-   permanently after this mission; the app assumes that until the pack is photographed.
+2. "A party member takes Tōtara aside for a chat. Open pack F." **Pack F (confirmed):**
+   an F card (the Head Prefect: "We shall join you, those of us who can") reading "Add
+   the 10 mages to your party": the Mage class A to 10 (flame icon); Quill, Animal Mage,
+   is the ace.
 
 **Engine status:** mission 3 is playable and its rules are marked verified. The reserve
 card enters the zone at the end of every turn that is not a kill (end-of-turn effects
@@ -646,9 +653,10 @@ leave players' hands. Enemy defeated: discard cards from the reserve equal to to
 strength in the mission zone; discard mission zone and banish enemy; exact kill: banish
 one card in mission zone.
 
-**Pack P (pilgrims):** not yet photographed. The card example shows 3 Followers and a 6
-Acolyte; the fan transcription says 25 cards, four each of 2 to 7 plus one Ace (the
-animal pilgrim), no class. The app uses that until the pack is read.
+**Pack P (pilgrims), confirmed by the owner:** four classless cards of every strength 2
+to 7 (24 cards, each with its own name: Seeker and Traveller among the gnome 2s,
+Follower 3, Servant 4, Acolyte 6, an elf 7), plus the puppy, the animal pilgrim that
+mission 8 places in the mission zone.
 
 **Story cards:** intro (the driftwood village, the metal spider, trapped pilgrims, the
 pondkin) and outcome (Gøran reborn on the island, the afflicted refuse the cure, on to
@@ -784,10 +792,10 @@ overlay only.
 4. "Add Ash (B, Mage) to your party." Ash: B, Beast, Mage class, a permanent party
    member (not one of Gøran's four).
 
-**Open questions.** "No stickers" for the mage student: the app excludes cards with a
-class sticker and also corrupted cards, assuming corruption is a sticker (pack C still
-to be read). The outcome card says the pilgrims depart; no reward card returns pack P,
-so the app keeps the pilgrims in the pack until a later mission says otherwise.
+**Notes.** "No stickers" for the mage student: the app excludes cards with a class
+sticker; pack C showed corruption is a sleeve, so a corrupted card may be chosen. The
+outcome card says the pilgrims depart; no reward card returns pack P, so the app keeps
+the pilgrims in the pack (mission 8's puppy and Evergreen boons use it again).
 
 **Engine status:** data, setup description and rewards are in; the mission rules (the
 three captured piles, the end-of-turn banish-to-rescue or rotate choice, the exact-kill
@@ -967,6 +975,59 @@ in; the mission rules (banished-top into the zone, zone strength and immunity, b
 zone + enemy + discard pile, exact-kill skip, the restored relic and the corrupted-card
 rule) are to be built. All twelve missions' cards are now transcribed.
 
+## Pack C, corruption (confirmed, transcribed from the owner's photos)
+
+**C card:** story text ("Corruption is as old as the land itself...").
+
+**Corruption rules card.** To corrupt a card: 1. Take the race cards in this box,
+shuffle them and reveal one. Set aside all characters from your party with that race.
+2. Take the feature cards in this box, shuffle them and reveal one. From the characters
+you set aside in 1, choose one that has the feature in their image. 3. Take the chosen
+character, remove its sleeve and put it in a corrupted sleeve. This is now a corrupted
+card. 4. Since the selected race and feature cards can't be used again, do not return
+them to the corruption box. Return the rest of the unselected race and feature cards to
+the corruption box.
+
+**Race cards** ("First, find all the Dwarves..."): one per race, and races go by
+strength (gnomes 2, halflings 3, dwarves 4, avions 5, humans 6, elves 7, feltrix 8,
+drakonids 9), so the eight corruptions of the campaign are one of each strength 2 to 9,
+as mission 10's enemy stat card shows. **Feature cards** ("Then corrupt one that has a
+badge"): a picture detail that narrows the set-aside characters to one or a few.
+
+**Owner's decision:** the app plays a themeless deck, so corruption is simply random:
+a random strength among 2 to 9 not yet corrupted, then a random eligible card of that
+strength. Eligible cards have a class, are not corrupted or restored, are not special
+characters (Gøran, Myla, the Evergreens, beasts, pilgrims, mercenaries) and are not
+class-deck visitors that leave after the mission. Corruption is a sleeve, not a sticker,
+so a corrupted card still counts as "no stickers" for mission 9's mage student. Mission
+11's rip-up takes the corrupted 6, whatever its class, since the reborn Evergreen is a 6.
+
+## Map and game mat (the owner's photos)
+
+**Map:** the inside of the box lid shows Deccaria: a forested west, a great tree in the
+middle, mountains and a crater in the east, with the mission locations drawn as small
+white landmarks. The location cards' backs are pieces of it. The app's map screen keeps
+its themeless serpentine of twelve stops (owner's choice).
+
+**Game mat:** the same map as a playmat with boxes for the reserve deck, the discard
+pile, the mission zone (a tall box in the middle), the enemy deck, the enemy stats card,
+the banished pile, the relics, and three unlabelled boxes on the right edge (relics
+overflow and set-aside cards). Two trackers run along the long edges: enemy strength
+along the top and enemy health along the bottom, both numbered 0 to 60 with a token
+each (mission 4 notes the strength token is flipped for negative values; enemies above
+60 health, Myla and the High Arcana, need the track counted twice). The app shows the
+same two numbers on the enemy panel.
+
+**Coverage check (everything the owner photographed):** rulebook pages 2 and 5 to 26
+(3 and 4 are the contents list), the four player helper cards, all twelve missions
+(location, story, setup, rules, summary, enemy stats and reward cards, with an example
+enemy for most), every relic on both sides, packs C, F, M, P and E in full, the map and
+the mat. Not photographed and not needed: the 40 party card fronts (names are not
+wanted), the 12s' and 2/5s' names, the 5 and 7 pilgrims' names. Still open, small: the
+"Rules continued" side of mission 12 if the card has one, the fronts of Gøran's four
+beasts (names and classes; only Bonty the cleric is known), and whether mission 7's
+pondkin sit in corrupted sleeves.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
@@ -1017,17 +1078,19 @@ rule) are to be built. All twelve missions' cards are now transcribed.
   after each of M5–M8, ignores immunity after M9, removed after M10), Myla (7; joins
   after M5, leaves at M6, is the boss of M9), Esme (the 6♣; removed for M11, returns with
   all four suits).
-* **Mercenaries ("M" box, opened after your first loss)**: **confirmed by the owner and
-  the p.25 sticker:** each time you lose a mission you gain coins equal to the number of
-  times you have lost it (1 after the first loss, 2 more after the second, 3 more after
-  the third: 1, 3, 6, 10 in total). Hired mercenaries stay for the next attempt of the
-  same mission and unspent coins carry over; after each failure you may swap a hired
-  mercenary for another of the same cost. When the mission is won every mercenary
-  returns to the box and the next mission starts with none (the engine also drops unspent
-  coins at that point; unverified). Spend coins on mercenaries with a printed cost: 4 ×
-  "12" (one per basic class), 4 × "2/5" (declare 2 or 5 when it enters play), 2 × "19"
-  (no class), 2 × Wild Animal (declare one of four classes when it enters play), 2 ×
-  extra Jesters. VERIFY the printed costs.
+* **Mercenaries ("M" box, opened after your first loss)**: **confirmed from the cards.**
+  Mercenary rules card: "When you fail a mission, you gain coins equal to the number of
+  losses you've had for this mission. You can use those coins to hire mercenaries to join
+  you on your next attempt. You may also swap any mercenaries currently in your deck with
+  other mercenaries of the same cost. When you successfully complete a mission, all the
+  mercenaries you've hired will return to the mercenary box. As you have just tasted
+  defeat, you may spend 1 coin now!" The M card itself is story text. Costs (coins in the
+  top-right corner): 4 × "12" (one per class; Hella is the paladin) cost 1; 4 × "2/5"
+  (one per class; Zimis & Ora are the clerics) cost 1; 2 × "19" (Raki, Mountain Warden;
+  Taitonga, Forest Warden; no class) cost 3; 2 × Wild Animal (Bristle the squirrel,
+  Thistle the sparrow; A, all four class icons, declare one when entering a playmat) cost
+  3; 2 × Jester (Nelle, Xam) cost 5. The engine's coin and swap rules match; unspent
+  coins on success are still assumed lost.
 * **Feign death** is official (see above); regicide-js' "6 or more cards" is a
   simplification of "entire hand while at the hand limit".
 * **Jester**: regicide-js treats Jesters as a pool of 2 (plus bought extras), played from
@@ -1044,13 +1107,12 @@ Numbers are attack / health.
 1. **Call to Arms** (Ostrana; fan name: The Beginning) — **confirmed:** 4 Justicars
    10/20, 4 Queens 15/30, 4 Kings 20/40, one per class. Enemy defeated: discard pile;
    exact damage: top of the reserve deck. Rewards: open pack C and corrupt a character
-   of your choice (qualifying characters per pack C, still to be read; the fan
-   constraints are value 2–9, never repeating a rank, never the same suit more than
-   twice), add the High Arcana (25, no class icon), acquire the Kinfolk Flute.
+   (random in the app, one strength 2 to 9 each; see the Pack C section), add the High
+   Arcana (25, no class icon), acquire the Kinfolk Flute.
 2. **Shadow and Mist** (Umbra Cavern; fan name: The Hydra Assault) — **confirmed:** 6
    Hydra Heads 10/20, each with a distinct pair of classes (immune to both). Imperfect
    kill: face down to the bottom of the enemy deck. Exact kill: banished. Rewards: open
-   pack C and corrupt another character (player's choice); reveal the first 3, 5, 7 and 9
+   pack C and corrupt another character (random); reveal the first 3, 5, 7 and 9
    from the shuffled party and give each one class sticker (each class once, never the
    card's own class; the player assigns). No card removes the High Arcana here.
 3. **Lessons in Flames** (Magic Academy; fan name: The Mage Tower) — **confirmed:** the
@@ -1058,8 +1120,8 @@ Numbers are attack / health.
    Mages. End of each turn (skipped on a kill): top reserve card face up into the
    mission zone. Enemies are immune to every class in the zone. Enemy defeated: banish it
    with the whole zone; exact kill: rescue one zone card to the discard pile first.
-   Rewards: open pack C and corrupt another character (player's choice); open pack F
-   (contents to be read; assumed to be the Mage class deck A to 10).
+   Rewards: open pack C and corrupt another character (random); open pack F: the
+   ten mages (A to 10) join the party.
 4. **Fusion of Darkness** (Biology Laboratory; fan name: The Gauntlet) — **confirmed:**
    twelve corrupted experiments, Phase I 10/20, Phase II 15/30, Phase III 20/40, one per
    class. Each enemy's strength is increased by the strength of the top card of the
@@ -1084,7 +1146,7 @@ Numbers are attack / health.
    play into the zone; exact kill: one zone card except Myla to the discard pile; then
    team damage equal to the zone's strength (Myla's 7 included), discarded one card at a
    time by any players; a Guardian in the killing attack prevents it. Rewards: Gøran
-   gains Paladin; corrupt another character (player's choice); Azure Emblem; Bronze,
+   gains Paladin; corrupt another character (random); Azure Emblem; Bronze,
    Snow or Shadow (the 8s of cleric, bard, warrior) gains Guardian (player's choice);
    Runo (3 Guardian) stays, the other Guardians leave.
 7. **Tales of Rebirth** (Well of Tears; fan name: The Pilgrimage) — **confirmed:** four
@@ -1094,9 +1156,9 @@ Numbers are attack / health.
    the same strength (once per card). Pilgrims never leave players' hands. Enemy
    defeated: discard reserve cards equal to the zone's total strength, discard the zone,
    banish the enemy; exact kill: banish one zone card first. Rewards: Gøran gains
-   Cleric; corrupt another character (player's choice); Alantha (7 Druid) stays, the
+   Cleric; corrupt another character (random); Alantha (7 Druid) stays, the
    other Druids leave; Glamelyn, Herbod or Dhonatir (the 4s) gains Druid (player's
-   choice). Pack P contents still to be read (fan: 4 × 2 to 7 plus one Ace).
+   choice). Pack P: four classless cards of each strength 2 to 7, plus the puppy.
 8. **Winds of Chaos** (Heaven's Edge; fan name: The Troll Bridge) — **confirmed:** four
    Chanters (3, 5, 7, 9) join for the mission; the puppy starts in the mission zone and
    the other pilgrims are shuffled into the reserve. 6 Trolls 10/20 and 6 Wyverns 25/50,
@@ -1105,7 +1167,7 @@ Numbers are attack / health.
    a time, each exactly one higher than the zone's highest; a 10 clears the zone to the
    discard pile, lets you banish any discards, and heals the rest under the reserve (no
    more moves afterwards). Exact kill: any discard pile card to the top of the reserve.
-   Rewards: Gøran gains Bard; corrupt another character (player's choice); Druldox (9
+   Rewards: Gøran gains Bard; corrupt another character (random); Druldox (9
    Chanter) stays, the other Chanters leave; Sprinkle, Dinky or Wicket (the 2s) gains
    Chanter (player's choice); the puppy goes back in the box.
 9. **Hope From Ashes** (Twinseed Temple; fan name: The Rescue) — **confirmed:** Gøran, the
@@ -1150,12 +1212,115 @@ Numbers are attack / health.
     Corrupted cards never enter the reserve (bottom of the banished pile). Reward: open
     pack E; the campaign is complete.
 
-## Eternal mode ("E" box)
+## Evergreen mode (pack E; confirmed, transcribed from the owner's photos)
 
-A mission generator for the finished party deck: 5 Location cards (Shrine, Cave,
-Forest, Hills, Lake), Bane cards 1–23 and Boon cards 24–35, plus "Evergreen rules". How
-they combine per game is not public. VERIFY: the user will need to transcribe the
-cards; the engine models it as "a location + N banes + M boons" from a data file.
+The pack's own name for the mode is **Evergreen mode**. The owner wants it offered from
+the game menu of a finished campaign as an "Evergreen mission" button.
+
+**Evergreen rules card.** "Evergreen mode allows you to play Regicide Legacy over and
+over again using your party deck from the end of Mission 12. Use the Evergreen cards in
+this pack to construct unique missions. Set the game up like a normal mission (rulebook
+pg. 7) with the following changes: use the 4 Phase III Experiments and 4 Phase II
+Experiments (from mission box 4) as your 8 enemies. From this box randomly select: one
+location card; two grey banes, one yellow bane and one red bane; one grey boon and one
+yellow boon. Greys are low complexity and mostly affect the setup. Yellows are medium
+complexity and usually introduce a rule change. Reds are high complexity and often
+introduce new rules along with changes to the game state as you play. Keep boons and
+banes by the mat as you play as reminders of the rules." *Rules continued:* "To increase
+complexity you can swap one of the grey banes with a second red bane. For an extra
+challenge just add another bane! Feel free to try any combination of cards you'd like
+or check out our pre-constructed setups via the QR code below."
+
+**Location cards (five, lettered A to E; back: "Location").**
+* **A, Shrine.** End of turn: put the top card of the reserve deck into the mission
+  zone. Special rules: each enemy has immunity to the classes of cards in the mission
+  zone. Enemy defeated: banish the enemy, or discard it if exact damage was dealt; then
+  banish cards in the mission zone.
+* **B, Cave.** End of turn: put the top card of the reserve deck into the mission zone;
+  if the combined strength of cards in the mission zone equals or exceeds the base
+  strength of the current enemy, banish the mission zone and the entire discard pile.
+  Enemy defeated: banish the enemy, or discard it if exact damage was dealt; then
+  discard cards in the mission zone.
+* **C, Forest.** Setup: shuffle Phase I Experiment enemies (from mission box 4) into the
+  banished pile. Special rules: each enemy has additional strength equal to the
+  combined strength of cards in the mission zone. End of turn: put the top card of the
+  banished pile into the mission zone. Enemy defeated: put the enemy and cards in the
+  mission zone into the banished pile then shuffle the banished pile; if exact damage
+  was dealt, you may first discard one card from the mission zone.
+* **D, Hills.** End of turn: put the top card of the banished pile into the mission
+  zone; players suffer team damage equal to the combined strength of cards in the
+  mission zone (same rules as team damage in mission 6); if the damage can't be
+  satisfied the game is lost. Enemy defeated: as the Forest.
+* **E, Lake.** Setup: shuffle pilgrims and place in a pilgrim deck in the mission zone.
+  Start of turn: put the top card of the pilgrim deck (or reserve deck if the pilgrim
+  deck is empty) into the mission zone. Enemy defeated: for each card in the mission
+  zone banish a card from the reserve deck, then move the cards in the mission zone to
+  the discard pile in any order; then banish the enemy, or discard it if exact damage
+  was dealt.
+
+**Bane cards (23, numbered; the chevron colour is the tier; back: a banner over hills,
+"Bane").** Grey (setup), 1 to 8: 1 Six is the New Four (replace the Phase II Experiments
+with the Hydra enemies from mission box 2; a Hydra not dealt exact damage goes to the
+bottom of the enemy deck, overriding the location's cleanup rule for the enemy); 2
+Mental Health Day (put 30 cards from the top of the reserve deck into the discard
+pile); 3 A Dozen Ways to Die (replace the Phase III Experiments with the Wyvern enemies
+from mission box 8); 4 Seeds of Corruption (replace the Restored Evergreen Mother relic
+with the Corrupted one); 5 Somehow, Myla Returned (add Myla, High Arcana's Apprentice,
+to the bottom of the enemy deck); 6 Full Moon (set aside Ash and Quill, the mage beast
+and animal); 7 Solstice (set aside all five Deccari, the 10s); 8 Ghosts From The Past
+(add the High Arcana to the bottom of the enemy deck; he is immune to the four base
+classes). Yellow (rule changes), 9 to 15: 9 Lethal Warriors (enemies with a warrior
+icon have double strength, other bonuses included); 10 Poisonous Clerics (end of turn:
+if the current enemy has a cleric icon, the top card of the discard pile goes into the
+mission zone); 11 Immovable Paladins (enemies with a paladin icon reduce damage dealt to
+them by 10); 12 Duplicitous Bards (end of turn: if the current enemy has a bard icon,
+put a card from your hand into the mission zone); 13 Explosive Spores (enemy defeated:
+team damage equal to the defeated enemy's base strength, mission 6 style; lost if it
+cannot be satisfied); 14 Absorbtion (enemy defeated: after the location's rules, the
+cards of the killing attack go into the mission zone); 15 Tread Carefully (enemy
+defeated without exact damage: the entire discard pile goes to the banished pile before
+the location's rules). Red (ongoing), 16 to 23: 16 Lingering Dread (start of turn: top
+discard into the banished pile); 17 Beastly Vigor (enemies gain the strength of the top
+discard); 18 Mutated Beasts (enemies gain the strength of the top banished card); 19
+Shapeshift (enemies are immune to the classes of the top discard); 20 Fused Bones
+(immune to the classes of the top banished card); 21 Eye-Level Sticks (after forming an
+attack containing a card of strength 8 or more, discard a hand card if you can); 22 The
+Fiery Crucible (start of turn: top reserve card into the discard pile); 23 Choose Your
+Poison (end of turn: discard a hand card, or the top reserve card goes into the mission
+zone).
+
+**Boon cards (12, numbered 24 to 35; back: a banner over green hills, "Boon").** Grey
+(setup), 24 to 29: 24 This Is Noble, Sir (spend 5 coins on mercenaries from pack M and
+add them to the reserve deck); 25 There Are Two of Them! (add Gøran the Evergreen, from
+mission box 10, to the reserve deck); 26 Call for Help (add all four of Gøran's Beasts
+to the reserve deck instead of one); 27 Too Easy! (the hand size limit is increased by
+1); 28 Best Friend (add the puppy from mission box 8 to the reserve deck; when played it
+has all four base classes for that attack); 29 Second Breakfast (add Oaken, 3 reaver,
+Tolman, 3 druid, and Roslyn, 3 chanter, to the reserve deck). Yellow (rule changes), 30
+to 35: 30 Squad of Siblings (immediately after forming an attack you may move one
+mission zone card of the same strength as a card in the attack to the discard pile); 31
+Selfless Rescue (immediately after discarding a card to satisfy damage, if it matches
+the strength of a mission zone card you may move that card to the discard pile); 32
+Precision Strike (exact kill: put any mission zone card, or the top discard, into your
+hand); 33 Restored Arrows (exact kill: you may put any one banished card on the bottom
+of the reserve deck); 34 An Alliance (the Kinfolk Attack strength limit rises from 10 to
+12, so two 6s or three 4s are legal); 35 A Close Call (when you satisfy damage for the
+exact amount suffered, not team damage and not 0, the discarded cards go to the bottom
+of the reserve deck instead of the discard pile, then put any discard pile card on top
+of the reserve deck).
+
+**Names learned here:** Gøran's Beasts (Call for Help): a griffin, a boar, a moose and a
+tortoise-shelled panther. Roslyn is the 3 chanter, Tolman the 3 druid, Oaken the 3
+reaver (already recorded).
+
+**Races by strength (from Solstice and the mission cards):** gnomes 2, halflings 3,
+dwarves 4, avions 5, humans 6, elves 7, feltrix 8, drakonids 9, Deccari 10; the party
+holds five 10s (the four basic classes and the mage).
+
+**Engine status:** the whole pack is transcribed in `regicide/campaign/evergreen.py`
+with a random setup generator; the game menu of a finished campaign shows a disabled
+"Evergreen mission" button until the location, bane and boon rules are built on the
+mission engine (after missions 4 to 12).
 
 ## Verification checklist for the owner (gate G2 in PLAN.md)
 
@@ -1166,7 +1331,7 @@ perfect-kill variant, what joins and leaves the party, and the reward pack conte
 Globally confirm: whether a solo player may yield in Legacy (the base reading forbids it;
 the fan engine allows it unless the previous action was a yield; the solo rules on p.26
 do not mention yielding), whether unspent coins are lost when a mission is won, the
-Evergreen Mother effects, the Mission 6 second-printing rules, the E-box procedure, and
-what pack F is. Already confirmed from the rulebook: the class-ability text and
-resolution order for every class, the coin and mercenary-persistence rules, the Jester
-claim rules, and the 2/5 and Wild Animal declarations.
+nothing else: pack E is complete. Already confirmed from the cards: every
+mission, every relic on both sides, the class-ability text and resolution order, the
+coin and mercenary rules and costs, the Jester claim rules, the 2/5 and Wild Animal
+declarations, pack C's corruption procedure, pack F (the ten mages) and pack P.

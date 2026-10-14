@@ -32,7 +32,7 @@ points where I need you. The gates where I need you are marked **G0–G4**.
 | 3b | **Rulebook reconciliation** (as the owner's photos arrive): a serialisable decision phase in the engine for mid-turn choices (done; used by the Kinfolk Flute's multiplayer side, next by Mage, Reaver, Druid and Chanter); per-attack ignores-immunity flag so Jester and corrupted paladins keep their strength reduction after an enemy gains paladin immunity; Legacy kinfolk as any number of equal-strength cards; beasts; one-at-a-time discards; player-chosen clean-up order; 2/5 and Wild Animal declarations; relic solo/multiplayer sides | all twelve missions transcribed from the cards; 1 to 3 playable, 4 to 12 have data and rewards, rules in progress |
 | 4 | **Alpha 3 — Missions 3–6**: Mage class with the interactive reveal/pick, mission zone, dynamic immunities, shield recalculation, Reavers, Guardians, Beasts, Scarlet Whistle, Azure Emblem, carry-over damage, mission-zone damage | after G2 answers where they matter, otherwise built on the transcription |
 | 5 | **Alpha 4 — Missions 7–9**: Druids (discard sorting), Pilgrim deck, Chanters, ascending placement, captured piles, Evergreen Mother | same |
-| 6 | **Alpha 5 — Missions 10–12 and Eternal mode**: corrupted party as enemies, Beast hunt, restored cards, final boss, Location/Bane/Boon generator | needs E-box transcription (G2) |
+| 6 | **Alpha 5 — Missions 10–12 and Evergreen mode**: corrupted party as enemies, Beast hunt, restored cards, final boss, Location/Bane/Boon generator from pack E (an "Evergreen mission" button on a finished campaign's game menu) | pack E fully transcribed |
 | 7 | **Polish**: bot teammates in solo-multiplayer, undo, animations, statistics and medals history, BGA-style difficulty modifiers, daily seeded challenge, iPad layout, optional web build | shaped by G4 |
 
 ## Where I need you
@@ -50,10 +50,10 @@ docs/LEGACY_CAMPAIGN.md), the player helper card, the coin and mercenary rule (e
 failure adds coins equal to the failures so far; hired mercenaries stay until the mission
 is won; same-cost swaps after each failure), the solo Jester text, second-edition
 Mission 6, and every mission's location, story, rules, summary, enemy stat and reward
-cards (missions 1 to 12), with all five relics on both sides. Still needed as photos:
-pack C (corruption rules), pack P (the pilgrims), pack F, pack M (the M card and the
-mercenary costs), the E box, mission 3's "Rules continued" side, and one enemy card from
-mission 7.
+cards (missions 1 to 12), with all five relics on both sides, pack C, pack F and pack M.
+The owner has photographed the whole box. Small open
+points: the "Rules continued" side of mission 12 if it exists, the fronts of
+Gøran's four beasts, and whether mission 7's enemies are in corrupted sleeves.
 
 **G3 — answered:** progressive reveal stays on. Campaigns are save files: main menu
 Continue / Load game / New game / Quick play / Lore (all games); game menu Next

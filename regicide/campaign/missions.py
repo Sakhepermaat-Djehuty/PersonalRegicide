@@ -208,8 +208,8 @@ MISSIONS: List[Dict[str, Any]] = [
                 "(20/60), all Mages. End of turn: the top reserve card goes face up into the mission zone. "
                 "Enemies are immune to the classes of every card in the zone. A defeated enemy is banished "
                 "with the whole zone; on exact damage one zone card is rescued to the discard pile first.",
-     "rewards_text": "Open pack C and corrupt another character in your party. Open pack F (contents still "
-                     "to be read: the app assumes the Mage class deck joins the party)."},
+     "rewards_text": "Open pack C and corrupt another character in your party. Open pack F: the ten mages "
+                     "join the party."},
     {"number": 4, "title": "Fusion of Darkness", "fan_title": "The Gauntlet", "location": "Biology Laboratory",
      "rules_id": "legacy_m4", "playable": True, "verified": True,
      "summary": "Twelve corrupted experiments: Phase I (10/20), Phase II (15/30), Phase III (20/40), one of "
@@ -446,12 +446,13 @@ def start_steps(camp, number: int) -> List[Step]:
     if number == 11 and not camp.flags.get("vine_ripped"):
         # Card (confirmed): "From your corrupted party members, choose one of them that has
         # a cloak of the Eternal Vine. Rip up the chosen card." The reborn Evergreen is Esme
-        # (6), so Esme, the 6 of warriors, is the cloaked member the app knows; if she is
-        # not corrupted every corrupted card is offered and the player picks the cloaked one.
+        # (6), the 6 of warriors in the physical game.
+        # Corruption is random in the app, so the corrupted 6 (whatever its class) dies and
+        # the reborn Evergreen, a 6, takes its place.
         corrupted = P.corrupted_ids(camp.party)
-        options = ["6C"] if "6C" in corrupted else corrupted
-        steps.append({"kind": "choice_rip", "phase": "setup", "options": options,
-                      "label": "A member of the Eternal Vine dies at the machine: rip up one corrupted character"})
+        sixes = [cid for cid in corrupted if P.find(camp.party, cid)["rank"] == "6"]
+        steps.append({"kind": "rip_up", "card_id": sixes[0] if sixes else None,
+                      "label": "A member of the Eternal Vine dies at the machine"})
     if number == 12:
         # Setup cards (confirmed): "Take all the corrupted party members, remove their
         # corrupted sleeve and replace them with restored sleeves. These cards are no longer
@@ -486,18 +487,18 @@ DRUIDS: List[Dict[str, Any]] = [
     {"id": "9U", "rank": "9", "suits": ["U"], "value": 9, "name": "Drakonid Druid", "subtitle": "Drakonid Druid", "flags": []},
 ]
 
-# Pack P, the pilgrim deck (missions 7 and 8). Named from the mission cards: Puppy (A,
-# animal), Traveller (2, gnome), Follower (3, halfling), Servant (4, dwarf), Acolyte (6,
-# human); the 5 and 7 are unnamed. The full contents follow the fan transcription until
-# the pack is photographed: four each of 2 to 7 plus the puppy, no class.
+# Pack P, the pilgrim deck (missions 7 and 8), confirmed by the owner: four classless
+# cards of every strength 2 to 7 (24 cards; each has its own name, e.g. Seeker and
+# Traveller among the gnome 2s, Follower 3, Servant 4, Acolyte 6, an elf 7) plus the
+# puppy, the animal pilgrim, which mission 8 places in the mission zone.
 PUPPY: Dict[str, Any] = {"id": "PILA", "rank": "A", "suits": [], "value": 1, "name": "Puppy",
                          "subtitle": "Animal Pilgrim", "flags": ["pilgrim"]}
-_PILGRIM_NAMES = {"2": ("Traveller", "Gnome Pilgrim"), "3": ("Follower", "Halfling Pilgrim"),
-                  "4": ("Servant", "Dwarf Pilgrim"), "6": ("Acolyte", "Human Pilgrim")}
+_PILGRIM_NAMES = {"2": ("Traveller", "Seeker", "Gnome Pilgrim"), "3": ("Follower", "Follower", "Halfling Pilgrim"),
+                  "4": ("Servant", "Servant", "Dwarf Pilgrim"), "5": ("Pilgrim", "Pilgrim", "Avion Pilgrim"),
+                  "6": ("Acolyte", "Acolyte", "Human Pilgrim"), "7": ("Pilgrim", "Pilgrim", "Elf Pilgrim")}
 PILGRIMS: List[Dict[str, Any]] = [dict(PUPPY)] + [
     {"id": "PIL%s_%d" % (r, i + 1), "rank": r, "suits": [], "value": int(r),
-     "name": _PILGRIM_NAMES.get(r, ("Pilgrim", "Pilgrim"))[0],
-     "subtitle": _PILGRIM_NAMES.get(r, ("Pilgrim", "Pilgrim"))[1], "flags": ["pilgrim"]}
+     "name": _PILGRIM_NAMES[r][i % 2], "subtitle": _PILGRIM_NAMES[r][2], "flags": ["pilgrim"]}
     for r in ("2", "3", "4", "5", "6", "7") for i in range(4)
 ]
 
@@ -544,11 +545,11 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         steps.append(_class_sticker_choice(camp, rng))
     elif number == 3:
         # Reward cards (confirmed): "Open pack C and corrupt another character in your party";
-        # "Open pack F". Pack F's contents are not read yet: the fan transcription says the
-        # Mage class deck (A to 10) joins the party permanently, so that is assumed.
+        # "Open pack F": "Add the 10 mages to your party" (A to 10 of the Mage class; Quill
+        # the owl is the animal mage).
         steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
         steps.append({"kind": "add_cards", "cards": MAGE_DECK,
-                      "label": "Open pack F: the Mage class deck joins the party (unverified)"})
+                      "label": "Open pack F: the ten mages join the party"})
     elif number == 4:
         # Reward cards (confirmed, in order): "Add Gøran to your party"; "Keep Gøran's four
         # beasts in the box beside your party. Each mission attempt you may include one of
@@ -685,8 +686,10 @@ def beast_by_id(bid: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+# Pack F (confirmed): the ten mages, A to 10. Quill (A) is the animal mage.
 MAGE_DECK: List[Dict[str, Any]] = [
-    {"id": "%sM" % r, "rank": r, "suits": ["M"], "value": RANK_VALUE[r], "flags": []}
+    dict({"id": "%sM" % r, "rank": r, "suits": ["M"], "value": RANK_VALUE[r], "flags": []},
+         **({"name": "Quill", "subtitle": "Animal Mage"} if r == "A" else {}))
     for r in ("A", "2", "3", "4", "5", "6", "7", "8", "9", "10")
 ]
 
@@ -717,8 +720,9 @@ def _class_sticker_choice(camp, rng: random.Random) -> Step:
 
 
 def _corrupt_choice(camp, label: str) -> Step:
-    """A player choice among the party cards that may be corrupted now."""
-    return {"kind": "choice_corrupt", "label": label, "options": P.corruption_candidates(camp.party)}
+    """Pack C's corruption: a random strength 2 to 9 not yet corrupted, then a random card
+    of that strength (the owner plays a themeless deck, so no race or feature cards)."""
+    return {"kind": "corrupt_random", "label": label}
 
 
 def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = None) -> str:
@@ -740,7 +744,7 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
                 return "No card left to corrupt."
         P.add_flag(camp.party, target, "corrupted")
         camp.corrupted.append(target)
-        return "%s is corrupted." % P.to_card(P.find(camp.party, target)).label()
+        return "%s: %s is corrupted." % (step.get("label", "Corruption"), P.to_card(P.find(camp.party, target)).label())
     if kind == "relic":
         if step["relic"] not in camp.relics:
             camp.relics.append(step["relic"])
@@ -776,10 +780,11 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
             raise ValueError("%s is not one of the choices" % option)
         # "Flip cards from your reserve until you reveal one of the chosen race (except
         # Gøran or a mage) that has no stickers on them": a random card of that strength
-        # with its single original class, no class sticker and (assumed) no corruption.
+        # with its single original class and no class sticker (pack C: corruption is a
+        # sleeve, not a sticker, so a corrupted card may be picked).
         pool = sorted(str(c["id"]) for c in camp.party
                       if c["rank"] == str(option) and not c.get("name") and len(c.get("suits", [])) == 1
-                      and c["suits"][0] in BASIC_SUITS and "corrupted" not in c.get("flags", []))
+                      and c["suits"][0] in BASIC_SUITS)
         if not pool:
             return "No unstickered %s left in the party: the mages find no student." % option
         target = rng.choice(pool)
@@ -807,6 +812,15 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
         if step["new"] not in camp.relics:
             camp.relics.append(step["new"])
         return str(step.get("label", "Relic %s replaces %s." % (step["new"], step["old"])))
+    if kind == "rip_up":
+        camp.flags["vine_ripped"] = True
+        cid = step.get("card_id")
+        if not cid:
+            return "No corrupted 6 wears the cloak of the Eternal Vine; nobody is ripped up."
+        c = P.remove_card(camp.party, str(cid))
+        if str(cid) in camp.corrupted:
+            camp.corrupted.remove(str(cid))
+        return "%s dies at the machine: the card is ripped up." % (P.to_card(c).label() if c else cid)
     if kind == "choice_rip":
         options = [str(x) for x in step.get("options", [])]
         if not options:

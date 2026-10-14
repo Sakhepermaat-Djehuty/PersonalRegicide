@@ -1319,6 +1319,11 @@ class CampaignScreen(Screen):
         if camp.finished:
             self.add_subview(make_label("Campaign complete!", (m, y, w - 2 * m, 30), 18, True, T.OK, ui.ALIGN_CENTER))
             y += 40
+            # Pack E: Evergreen mode, generated missions with the finished party deck
+            b = make_button("Evergreen mission (arrives with the rest of pack E)", lambda s: None, (x, y, bw, 46))
+            set_enabled(b, False)
+            self.add_subview(b)
+            y += 54
         else:
             self.add_subview(make_label("Mission %d · %s" % (camp.mission, info["title"]), (m, y, w - 2 * m, 28), 18, True, T.ACCENT))
             y += 28
