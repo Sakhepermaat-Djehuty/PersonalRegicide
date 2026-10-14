@@ -582,11 +582,12 @@ def test_finding_17_declarations_end_with_the_enemy_and_the_card_is_classless_ag
     assert g.decision["kind"] == "declare_class"
 
 
-def test_finding_17_two_five_declares_its_value_only_when_played_alone():
+def test_finding_17_two_five_takes_its_sets_strength_and_declares_when_free():
+    # (more in test_twofive.py: 2/5 + 5, two 2/5s asked once, companions, beasts, the flute)
     c, g = _wild(enemy=("H", "Q"), hp=30)
     set_hand(g, ["M25C", "2D", "2S", "9S"])
-    g.play(["M25C", "2D"])                              # a kinfolk set: it counts 2, nothing asked
-    assert g.decision is None and g.plays[-1].value == 4
+    g.play(["M25C", "2D"])                              # a kinfolk set of 2s: it counts 2, nothing asked
+    assert g.decision is None and g.plays[-1].value == 4 and g.extra["declared_value"] == {"M25C": 2}
     c, g = _wild(enemy=("H", "Q"), hp=30)
     set_hand(g, ["M25C", "9S", "8S"])
     g.play(["M25C"])

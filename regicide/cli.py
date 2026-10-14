@@ -299,7 +299,9 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
         elif d.get("kind") == "declare_class":
             print("%s enters play: declare its class." % game.card(str(d.get("card"))).label())
         elif d.get("kind") == "declare_value":
-            print("%s enters play alone: declare its strength, 2 or 5." % game.card(str(d.get("card"))).label())
+            print("%s %s declares%s; it is kept while in play." % (
+                game.rules.declare_value_question(game, d), game.players[game.deciding].name,
+                " one value for all of them" if len(d.get("cards") or ()) > 1 else ""))
         elif d.get("kind") in ("precision_strike", "restored_arrows", "close_call", "zone_discard", "zone_sibling",
                                "zone_match", "attack_discard", "poison"):
             print("%s: %s" % (d.get("kind").replace("_", " ").capitalize(), game.log[-1] if game.log else ""))

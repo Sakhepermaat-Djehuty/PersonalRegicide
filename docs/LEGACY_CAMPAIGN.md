@@ -270,7 +270,8 @@ unspent coins on success, which the sticker does not say (unverified).
   reduction even after the enemy gains paladin immunity; plain paladins lose theirs.
 * Enemies gaining immunity mid-mission (mission rules), with the paladin recalculation.
 * Legacy kinfolk: any number of equal-strength cards totalling at most 10 (no four-card
-  cap, strength-based rather than rank-based so 2/5 cards work).
+  cap, strength-based rather than rank-based so 2/5 cards work: a 2/5 joins 2s or 5s,
+  see the declarations below).
 * **Done:** beasts (a beast with any one other card copies that card's strength, so beast
   + 7 attacks as 14 and companion + beast as 2; alone, in hand, in the discard pile or
   the mission zone it is 0; never in a kinfolk set, never with a Jester), companions
@@ -307,12 +308,29 @@ unspent coins on success, which the sticker does not say (unverified).
   or added by a Kinfolk Flute, a Scarlet Whistle or a mage) declares a basic class
   (`declare_class`), asked first among the effects of cards entering play; it has that
   class while it is in play (an enemy immune to it blocks it) and none anywhere else. A
-  2/5 declares 2 or 5 (`declare_value`) when it is the attack's single card (a beast
-  beside it copies the value); in a kinfolk set or with a companion it counts 2, as a
-  bonus to an enemy 2, when discarded or added by a reaver 5. The declarations end when
-  the next enemy appears. Forecasts assume a warrior and a 5; the bots pick a class the
-  enemy is not immune to (a warrior when doubling could kill, else a bard when the hand
-  is short, else a cleric, else a paladin) and 5 unless 2 kills exactly.
+  2/5's strength is 2 or 5, fixed when it enters play and kept while it is in play
+  (confirmed by the owner). In a kinfolk set (p.22: equal strength, total within the
+  kinfolk limit, normally 10, 12 with Evergreen boon 34) it takes whichever value makes
+  the set legal: 2/5 + 5 is a set of 5s (10), 2/5 + 2 (+ 2 ...) a set of 2s, and three
+  2/5s can only be 2s (6) under 10; 2/5 + 2 + 5 has no common strength and 2/5 + 5 + 5
+  is 15, both illegal. Every 2/5 of one set has the same value. Such a forced value is
+  recorded and logged without a question. When the value is a genuine choice the player
+  is asked once per attack (`declare_value`, naming the cards: "2/5♥ + 2/5♠: strength 2
+  or 5?") and every 2/5 of that attack takes the answer: two 2/5s on their own (4 or 10),
+  a 2/5 alone, with a companion (which adds 1) or with a beast (which copies the value),
+  or a 2/5 a mage or a Scarlet Whistle adds. A 2/5 a Kinfolk Flute adds to another
+  player's attack joins that set and takes its strength. The value is the card's
+  strength for everything while it is in play (the attack, a beast's copy, mission 7's
+  pilgrim matches, the Evergreen attack checks, the multiplayer Flute's strength); out of
+  play a 2/5 counts 2 (a bonus to an enemy, the mission zone, the Flute's storing), when
+  discarded to suffer damage or added by a reaver 5. `legal_plays` lists every 2/5
+  combination once (with 2s, with 5s, 2/5s together, singles, companion and beast
+  pairs). The declarations end when the next enemy appears. Forecasts assume a warrior
+  and, for a free 2/5 choice, 5s (a forced value forecasts as itself); the bots pick a
+  class the enemy is not immune to (a warrior when doubling could kill, else a bard when
+  the hand is short, else a cleric, else a paladin) and 5 unless 2 kills exactly.
+  Unverified: mission 8 moves cards in play to the zone by their zone strength, so a 2/5
+  moves there as a 2 whatever it counted in play.
 * Relics with separate solo and multiplayer sides. **Done:** Kinfolk Flute, Scarlet
   Whistle (solo: take the top discard into a solitary companion or beast attack; 2+
   players: one other player, asked clockwise, adds any card but a Jester) and Azure

@@ -1481,14 +1481,14 @@ class TopChoiceOverlay(PickOverlay):
 
 
 class DeclareOverlay(PickOverlay):
-    """Rulebook p.25: a Wild Animal declares a class, a 2/5 played alone a strength, when it
-    enters a playmat; it keeps the declaration while it is in play."""
+    """Rulebook p.25: a Wild Animal declares a class, 2/5s whose strength is a free choice a
+    strength (one for all of them), when they enter a playmat; they keep it while in play."""
 
     def heading(self, g: Game, d: dict) -> tuple:
         card = g.card(str(d.get("card"))).label() if str(d.get("card")) in g.cards else "The card"
         if str(d.get("kind")) == "declare_value":
-            return ("2 or 5?", "%s is played alone: declare its strength. It keeps it while it is in play "
-                               "(discarded to suffer damage it always counts 5)." % card)
+            return ("2 or 5?", "%s Declare it now; it is kept while in play (discarded to suffer damage a "
+                               "2/5 always counts 5)." % g.rules.declare_value_question(g, d))
         imm = [CLASS_NAME.get(s, s) + "s" for s in g.rules.immune_suits(g) if s in BASIC_SUITS] if g.enemy else []
         text = "%s enters play: declare its class. It keeps it while it is in play." % card
         if imm and not g.extra.get("jester_attack"):
@@ -1500,7 +1500,7 @@ class DeclareOverlay(PickOverlay):
         if cid not in g.cards:
             return None
         strip = CardStrip(frame=(0, 0, 10, 84))
-        strip.set_cards([g.card(cid)], "Entering play")
+        strip.set_cards([g.card(str(c)) for c in d.get("cards") or [cid] if str(c) in g.cards], "Entering play")
         return strip
 
 
@@ -3035,7 +3035,8 @@ def describe_events(g: Game) -> str:
         elif t == "decide" and ev.get("kind") == "declare_class":
             parts.append("%s: declare a class for %s." % (g.players[int(ev["player"])].name, g.card(ev["card"]).label()))
         elif t == "decide" and ev.get("kind") == "declare_value":
-            parts.append("%s: declare 2 or 5 for %s." % (g.players[int(ev["player"])].name, g.card(ev["card"]).label()))
+            parts.append("%s: declare 2 or 5 for %s." % (g.players[int(ev["player"])].name,
+                                                          " + ".join(g.card(c).label() for c in ev.get("cards") or [ev["card"]])))
         elif t == "declare":
             if ev.get("suit"):
                 parts.append("%s is a %s while in play." % (g.card(ev["card"]).label(), CLASS_NAME.get(str(ev["suit"]), ev["suit"])))

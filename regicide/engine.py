@@ -283,12 +283,14 @@ class Game:
                 if other.is_ace and other.id < a.id:
                     continue  # count Ace+Ace once
                 plays.append([a.id, other.id])
-        # Sets: grouped by single-card strength (the rank in the base game; Legacy's 2/5
-        # cards count as 2). Sizes and mixes the rules reject are vetoed below.
+        # Sets: grouped by the strengths a card may take in a set (the rank in the base
+        # game; Legacy's 2/5 cards join both the 2s and the 5s). Sizes and mixes the rules
+        # reject are vetoed below, and a set listed under two strengths is kept once.
         by_strength: Dict[int, List[Card]] = {}
         for c in hand:
             if c.is_number and not c.is_ace:
-                by_strength.setdefault(self.rules.play_value(self, [c]), []).append(c)
+                for s in self.rules.set_strengths(self, c):
+                    by_strength.setdefault(s, []).append(c)
         limit = self.rules.kinfolk_limit(self)
         for strength, group in by_strength.items():
             if len(group) < 2 or strength * 2 > limit:
@@ -299,9 +301,14 @@ class Game:
                 for combo in itertools.combinations(group, n):
                     plays.append([c.id for c in combo])
         plays.extend(self.rules.extra_plays(self, hand))
-        # keep only what the rules accept (lets a mission veto base plays)
+        # keep only what the rules accept (lets a mission veto base plays), each set once
         out = []
+        seen = set()
         for p in plays:
+            key = frozenset(p)
+            if key in seen:
+                continue
+            seen.add(key)
             kind, err = self.rules.validate_combo(self, [self.cards[c] for c in p])
             if not err:
                 out.append(p)
@@ -382,6 +389,8 @@ class Game:
                 damage = ev["amount"]
             if ev["t"] in ("play", "add_to_play"):
                 attack = ev["value"]
+            if ev["t"] == "declare" and "attack" in ev:
+                attack = ev["attack"]     # a Legacy 2/5's declared strength changed the attack
             if ev["t"] == "power":
                 powers[ev["suit"]] = ev
             if ev["t"] == "mage_peek":
