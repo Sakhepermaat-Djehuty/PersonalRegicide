@@ -1191,18 +1191,40 @@ or check out our pre-constructed setups via the QR code below."
   the discard pile in any order; then banish the enemy, or discard it if exact damage
   was dealt.
 
-**Bane cards (numbered; the chevron colour is the tier; back: a banner over hills,
-"Bane").** Red banes seen so far: 23 Choose Your Poison (end of turn: you may discard a
-card from hand; if you don't, put the top card of the reserve deck into the mission
-zone); 22 The Fiery Crucible (start of turn: put the top card of the reserve deck into
-the discard pile); 21 Eye-Level Sticks (special: immediately after you form an attack
-that contains a card with 8 or more strength discard a card from your hand, if you can);
-20 Fused Bones (each enemy is immune to the classes of the card on top of the banished
-pile); 19 Shapeshift (each enemy is immune to the classes of the card on top of the
-discard pile); 18 Mutated Beasts (each enemy has additional strength equal to the
-strength of the top card of the banished pile); 17 Beastly Vigor (each enemy has
-additional strength equal to the strength of the top card of the discard pile). Banes 1
-to 16 (grey and yellow) and the boons are in parts 2 and 3.
+**Bane cards (23, numbered; the chevron colour is the tier; back: a banner over hills,
+"Bane").** Grey (setup), 1 to 8: 1 Six is the New Four (replace the Phase II Experiments
+with the Hydra enemies from mission box 2; a Hydra not dealt exact damage goes to the
+bottom of the enemy deck, overriding the location's cleanup rule for the enemy); 2
+Mental Health Day (put 30 cards from the top of the reserve deck into the discard
+pile); 3 A Dozen Ways to Die (replace the Phase III Experiments with the Wyvern enemies
+from mission box 8); 4 Seeds of Corruption (replace the Restored Evergreen Mother relic
+with the Corrupted one); 5 Somehow, Myla Returned (add Myla, High Arcana's Apprentice,
+to the bottom of the enemy deck); 6 Full Moon (set aside Ash and Quill, the mage beast
+and animal); 7 Solstice (set aside all five Deccari, the 10s); 8 Ghosts From The Past
+(add the High Arcana to the bottom of the enemy deck; he is immune to the four base
+classes). Yellow (rule changes), 9 to 15: 9 Lethal Warriors (enemies with a warrior
+icon have double strength, other bonuses included); 10 Poisonous Clerics (end of turn:
+if the current enemy has a cleric icon, the top card of the discard pile goes into the
+mission zone); 11 Immovable Paladins (enemies with a paladin icon reduce damage dealt to
+them by 10); 12 Duplicitous Bards (end of turn: if the current enemy has a bard icon,
+put a card from your hand into the mission zone); 13 Explosive Spores (enemy defeated:
+team damage equal to the defeated enemy's base strength, mission 6 style; lost if it
+cannot be satisfied); 14 Absorbtion (enemy defeated: after the location's rules, the
+cards of the killing attack go into the mission zone); 15 Tread Carefully (enemy
+defeated without exact damage: the entire discard pile goes to the banished pile before
+the location's rules). Red (ongoing), 16 to 23: 16 Lingering Dread (start of turn: top
+discard into the banished pile); 17 Beastly Vigor (enemies gain the strength of the top
+discard); 18 Mutated Beasts (enemies gain the strength of the top banished card); 19
+Shapeshift (enemies are immune to the classes of the top discard); 20 Fused Bones
+(immune to the classes of the top banished card); 21 Eye-Level Sticks (after forming an
+attack containing a card of strength 8 or more, discard a hand card if you can); 22 The
+Fiery Crucible (start of turn: top reserve card into the discard pile); 23 Choose Your
+Poison (end of turn: discard a hand card, or the top reserve card goes into the mission
+zone). The boons are in part 3.
+
+**Races by strength (from Solstice and the mission cards):** gnomes 2, halflings 3,
+dwarves 4, avions 5, humans 6, elves 7, feltrix 8, drakonids 9, Deccari 10; the party
+holds five 10s (the four basic classes and the mage).
 
 **Engine status:** the pack's text is in `regicide/campaign/evergreen.py` with a random
 setup generator; the game menu of a finished campaign shows a disabled "Evergreen
@@ -1218,7 +1240,7 @@ perfect-kill variant, what joins and leaves the party, and the reward pack conte
 Globally confirm: whether a solo player may yield in Legacy (the base reading forbids it;
 the fan engine allows it unless the previous action was a yield; the solo rules on p.26
 do not mention yielding), whether unspent coins are lost when a mission is won, the
-remaining banes and boons of pack E. Already confirmed from the cards: every
+boons of pack E. Already confirmed from the cards: every
 mission, every relic on both sides, the class-ability text and resolution order, the
 coin and mercenary rules and costs, the Jester claim rules, the 2/5 and Wild Animal
 declarations, pack C's corruption procedure, pack F (the ten mages) and pack P.
