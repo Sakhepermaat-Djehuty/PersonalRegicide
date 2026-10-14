@@ -981,17 +981,19 @@ rule) are to be built. All twelve missions' cards are now transcribed.
   after each of M5–M8, ignores immunity after M9, removed after M10), Myla (7; joins
   after M5, leaves at M6, is the boss of M9), Esme (the 6♣; removed for M11, returns with
   all four suits).
-* **Mercenaries ("M" box, opened after your first loss)**: **confirmed by the owner and
-  the p.25 sticker:** each time you lose a mission you gain coins equal to the number of
-  times you have lost it (1 after the first loss, 2 more after the second, 3 more after
-  the third: 1, 3, 6, 10 in total). Hired mercenaries stay for the next attempt of the
-  same mission and unspent coins carry over; after each failure you may swap a hired
-  mercenary for another of the same cost. When the mission is won every mercenary
-  returns to the box and the next mission starts with none (the engine also drops unspent
-  coins at that point; unverified). Spend coins on mercenaries with a printed cost: 4 ×
-  "12" (one per basic class), 4 × "2/5" (declare 2 or 5 when it enters play), 2 × "19"
-  (no class), 2 × Wild Animal (declare one of four classes when it enters play), 2 ×
-  extra Jesters. VERIFY the printed costs.
+* **Mercenaries ("M" box, opened after your first loss)**: **confirmed from the cards.**
+  Mercenary rules card: "When you fail a mission, you gain coins equal to the number of
+  losses you've had for this mission. You can use those coins to hire mercenaries to join
+  you on your next attempt. You may also swap any mercenaries currently in your deck with
+  other mercenaries of the same cost. When you successfully complete a mission, all the
+  mercenaries you've hired will return to the mercenary box. As you have just tasted
+  defeat, you may spend 1 coin now!" The M card itself is story text. Costs (coins in the
+  top-right corner): 4 × "12" (one per class; Hella is the paladin) cost 1; 4 × "2/5"
+  (one per class; Zimis & Ora are the clerics) cost 1; 2 × "19" (Raki, Mountain Warden;
+  Taitonga, Forest Warden; no class) cost 3; 2 × Wild Animal (Bristle the squirrel,
+  Thistle the sparrow; A, all four class icons, declare one when entering a playmat) cost
+  3; 2 × Jester (Nelle, Xam) cost 5. The engine's coin and swap rules match; unspent
+  coins on success are still assumed lost.
 * **Feign death** is official (see above); regicide-js' "6 or more cards" is a
   simplification of "entire hand while at the hand limit".
 * **Jester**: regicide-js treats Jesters as a pool of 2 (plus bought extras), played from

@@ -684,7 +684,7 @@ def test_corruption_targets_respect_esme_and_class_limits():
     assert P.pick_corruption_target(party, rng) is None
 
 
-def test_mercenary_costs_follow_fan_shop():
+def test_mercenary_costs_match_the_cards():
     from regicide.campaign.mercenaries import by_id
     assert by_id("merc_12H")["cost"] == 1 and by_id("merc_25H")["cost"] == 1
     assert by_id("merc_19_1")["cost"] == 3 and by_id("merc_ace_1")["cost"] == 3
