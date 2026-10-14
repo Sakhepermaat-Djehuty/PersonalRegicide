@@ -26,6 +26,7 @@ from regicide.campaign import missions as M  # noqa: E402
 from regicide.campaign import party as P  # noqa: E402
 from regicide.campaign.mercenaries import MERCENARIES  # noqa: E402
 from regicide.cards import Card  # noqa: E402
+from regicide.engine import Enemy  # noqa: E402
 
 STORY_IDS = {"GOR8", "GOR8E", "MYLA7", "ESME6E", "ARC25"}
 # Names printed on the physical cards (and races) that the app no longer shows.
@@ -57,7 +58,7 @@ def test_plain_labels_read_like_playing_cards():
     assert [label(d) for d in M.REAVERS] == ["3⚔", "5⚔", "7⚔", "9⚔"]
     assert label(M.PUPPY) == "Pilgrim A" and {label(d) for d in M.PILGRIMS if d["rank"] == "4"} == {"Pilgrim 4"}
     mercs = {m["id"]: (m["name"], label(m["card"])) for m in MERCENARIES}
-    assert mercs["merc_12H"] == ("12 Cleric", "12♥") and mercs["merc_25S"] == ("2/5 Paladin", "2♠")
+    assert mercs["merc_12H"] == ("12 Cleric", "12♥") and mercs["merc_25S"] == ("2/5 Paladin", "2/5♠")
     assert mercs["merc_19_1"] == mercs["merc_19_2"] == ("19 (no class)", "19")
     assert mercs["merc_ace_1"] == ("Wild Animal (choose a class)", "Wild Animal")
     assert mercs["merc_jester_2"] == ("Jester", "Jester")
@@ -105,26 +106,33 @@ def test_card_faces_show_rank_and_class_and_names_only_the_story_characters():
         assert face(nineteen) == ["19", "19"]
         assert face(M.GORAN) == ["8", "8", "Gøran"]
         # corrupted and restored cards are shown by their sleeve (a purple or green edge),
-        # not by a word; a restored card adds the restoration pip, a tree, after its classes
+        # not by a word; the tree replaces the four basic class icons on a card that has all
+        # four (a restored card, an Evergreen card), a sticker class keeps its own icon
         corrupted = {"id": "6C", "rank": "6", "suits": ["C"], "value": 6, "flags": ["corrupted"]}
-        restored = {"id": "6C", "rank": "6", "suits": ["C"], "value": 6, "flags": ["restored"]}
-        assert face(corrupted) == ["6", "♣", "♣"] and face(restored) == ["6", "♣", "♣"]
+        restored = {"id": "6C", "rank": "6", "suits": ["H", "D", "C", "S"], "value": 6, "flags": ["restored"]}
+        stickered = {"id": "4D", "rank": "4", "suits": ["H", "D", "C", "S", "U"], "value": 4, "flags": ["restored"]}
+        assert face(corrupted) == ["6", "♣", "♣"]
+        assert face(restored) == ["6"] and face(dict(M.GORAN_RENEWED)) == ["8", "Gøran"]   # pips are trees
+        assert face(stickered) == ["4", "✿", "✿"]
     finally:
         ui.draw_string = real
     assert widgets.sleeve_color(P.to_card(corrupted)) == T.CORRUPTED
     assert widgets.sleeve_color(P.to_card(restored)) == T.RESTORED
-    assert widgets.sleeve_color(P.to_card(M.BEASTS[0])) == ""
+    assert widgets.sleeve_color(P.to_card(M.GORAN_RENEWED)) == "" and widgets.sleeve_color(P.to_card(M.BEASTS[0])) == ""
+    assert widgets.face_pips(P.to_card(stickered)) == [widgets.TREE_PIP, "U"]
+    assert widgets.card_color(P.to_card(restored)) == T.EVERGREEN
     trees = []
     real_tree = widgets.draw_tree
     widgets.draw_tree = lambda *a: trees.append(a)
     try:
-        for d, small in ((restored, False), (restored, True), (corrupted, False)):
+        for d, small in ((restored, False), (restored, True), (corrupted, False), (M.ESME_REBORN, False)):
             v = CardView(P.to_card(d), frame=(0, 0, 80, 114))
             v.small = small
             ui.render(v)
     finally:
         widgets.draw_tree = real_tree
-    assert len(trees) == 3 and all(t[-1] == T.RESTORED for t in trees)   # corner + centre, small: one; none when corrupted
+    # corner + centre, small: one, none when corrupted, corner + centre for Esme
+    assert len(trees) == 5 and all(t[-1] == T.EVERGREEN for t in trees)
     assert card_caption(P.to_card(M.BEASTS[0])) == "" and card_caption(P.to_card(M.PUPPY)) == "pilgrim"
     assert card_caption(P.to_card([m["card"] for m in MERCENARIES if m["id"] == "merc_ace_1"][0])) == "any class"
 
@@ -158,3 +166,73 @@ def test_saves_from_before_lose_the_flavour_names(tmp_path, monkeypatch):
     g2 = store.load_attempt(c2.slot)
     assert g2.cards["B_H"].name == "" and g2.cards["B_H"].label() == "B♥"
     assert g2.cards["GOR8"].name == "Gøran" and g2.cards[g2.enemy.card_id].name == enemy_name
+
+
+def test_restored_cards_are_all_four_basic_classes_and_keep_sticker_classes():
+    """Owner's reading: the restoration tree represents all classes. Mission 12's setup
+    restores the corrupted members as clerics, bards, warriors and paladins at once,
+    keeping any sticker class; old saves are upgraded the same way."""
+    c = CampaignState.new(1, ["Ana"], seed=4)
+    for cid in ("3H", "4D"):
+        P.add_flag(c.party, cid, "corrupted")
+        c.corrupted.append(cid)
+    P.add_suit(c.party, "4D", "U")
+    M.apply_step(c, {"kind": "restore_all", "label": "x"}, random.Random(1))
+    assert P.find(c.party, "3H")["suits"] == ["H", "D", "C", "S"] and P.find(c.party, "3H")["base_suits"] == ["H"]
+    assert P.find(c.party, "4D")["suits"] == ["H", "D", "C", "S", "U"]
+    assert P.to_card(P.find(c.party, "3H")).label() == "3♥♦♣♠"
+    # an old save with a one-class restored card
+    d = c.to_dict()
+    for card in d["party"]:
+        if card["id"] == "3H":
+            card["suits"] = ["H"]
+            card.pop("base_suits")
+    c2 = CampaignState.from_dict(json.loads(json.dumps(d)))
+    assert P.find(c2.party, "3H")["suits"] == ["H", "D", "C", "S"]
+
+
+def test_old_save_text_and_attempt_enemy_are_rewritten(tmp_path, monkeypatch):
+    monkeypatch.setenv("REGICIDE_SAVE_DIR", str(tmp_path))
+    c = CampaignState.new(1, ["Ash"], seed=5)        # a player called Ash keeps the name
+    d = c.to_dict()
+    d["flags"].pop("plain_text")
+    d["log"] += ["Oaken leaves the party.", "Hired Hella (12, Paladin) for 1 coin.", "Ash wins the mission.",
+                 "Follower (3) banished from the mission zone."]
+    d["pending"] = [
+        {"kind": "choice_suit", "suit": "R", "options": ["6H"],
+         "label": "Harore teaches a 6: James (Cleric), Jakhim (Bard) or Lee (Paladin) gains the Reaver class"},
+        {"kind": "choice_mage_student", "options": ["4", "8"],
+         "label": "A new student: choose dwarves (4) or feltrix (8); the first unstickered one revealed gains the Mage class"},
+        {"kind": "remove_card", "card_id": "5G", "label": "Teko stays to rebuild the garden"},
+    ]
+    c2 = CampaignState.from_dict(json.loads(json.dumps(d)))
+    assert c2.log[-4:] == ["3⚔ leaves the party.", "Hired 12 Paladin for 1 coin.", "Ash wins the mission.",
+                           "Pilgrim 3 banished from the mission zone."]
+    assert [s["label"] for s in c2.pending] == [M.CHOICE_SUIT_LABELS["R"], M.MAGE_STUDENT_LABEL,
+                                                "5⛨ stays to rebuild the garden"]
+    assert c2.flags["plain_text"] is True
+    c3 = CampaignState.from_dict(json.loads(json.dumps(c2.to_dict())))
+    assert c3.log == c2.log                                   # rewritten once only
+    # a saved attempt whose current enemy is a once-named party card (mission 10)
+    c2.pending = []
+    g = c2.start_attempt(seed=6)
+    g.cards["5R"] = Card(id="5R", rank="5", suits=("R",), value=5, name="Harore", flags=("corrupted",))
+    g.castle.append(g.enemy.card_id)
+    g.enemy = Enemy("5R", "Harore", ("R",), 5, 25, 25)
+    store.save_attempt(g, c2.slot)
+    g2 = store.load_attempt(c2.slot)
+    assert g2.cards["5R"].name == "" and g2.enemy.name == "5 of Reavers" and g2.enemy.hp == 25
+
+
+def test_small_faces_show_their_tag():
+    drawn = []
+    real = ui.draw_string
+    ui.draw_string = lambda text, *a, **kw: (drawn.append(text), real(text, *a, **kw))[1]
+    try:
+        v = CardView(P.to_card({"id": "7S", "rank": "7", "suits": ["S"], "value": 7}), frame=(0, 0, 32, 46))
+        v.small = True
+        v.badge = "2"
+        ui.render(v)
+    finally:
+        ui.draw_string = real
+    assert drawn == ["7", "♠", "2"]

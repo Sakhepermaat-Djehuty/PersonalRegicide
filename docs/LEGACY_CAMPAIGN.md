@@ -1114,6 +1114,15 @@ under the reserve; their abilities ignore immunity) was already in `on_cards_pla
 and is tested here, as is the card's Edward example (strength 35, immune to clerics,
 bards and paladins). All twelve missions are transcribed and playable.
 
+**Restored cards are all four basic classes (owner's reading).** The owner reads the
+restoration tree as representing all classes, so the setup's restoration makes every
+restored member a cleric, bard, warrior and paladin at once (like an Evergreen), keeping
+any sticker class; its own abilities ignore immunity (p.15). The printed classes are kept
+in `base_suits`, and older saves are upgraded on load. Note: the p.15 transcription above
+gives "cleric, bard, warrior and paladin at once" only to the Evergreen and says of
+Restoration only that the card returns the top banished card and its own abilities ignore
+immunity; the owner's reading of the physical card decides.
+
 ## Themeless cards (owner's decision)
 
 The owner plays a themeless deck: "for the same reason as not giving the reserve or
@@ -1139,10 +1148,13 @@ printed on the physical cards; the app shows none of them.
   card. A 2/5 shows "2/5".
 * **Sleeves (owner's choice):** a corrupted card sits in a purple sleeve and a restored
   card in a green one, drawn as a thick coloured edge around the face instead of a word.
-  A restored card also carries the restoration icon, a small geometric tree, as an extra
-  pip after its classes (in the corner, in the middle and on small faces). Other tags
-  ("stuck" for a pilgrim, "flute" for a stored card, an order number) keep a gold band
-  along the bottom.
+  There is no corrupted class icon: the purple icon on mission 12's cards depicts the
+  corrupted sleeve (owner). Other tags ("stuck" for a pilgrim, "flute" for a stored card,
+  an order number) keep a gold band along the bottom, on small faces too.
+* **The tree (owner's choice):** a small geometric tree stands for all four basic classes
+  and *replaces* the cleric, bard, warrior and paladin icons on any card that has all four:
+  the Evergreen cards (the renewed Gøran, Esme) and every restored card. A sticker class
+  (Mage, Reaver, Guardian, Druid, Chanter) keeps its own icon beside the tree.
 * **Saves:** campaigns and attempts saved before the change lose these names when loaded.
 
 ## Pack C, corruption (confirmed, transcribed from the owner's photos)

@@ -10,7 +10,7 @@ from typing import Callable, Dict, List, Optional, Sequence
 
 import ui
 
-from regicide.cards import CLASS_NAME, SUIT_NAME, SUIT_SYMBOL, Card
+from regicide.cards import BASIC_SUITS, CLASS_NAME, SUIT_NAME, SUIT_SYMBOL, Card
 from regicide.engine import Enemy, Game
 
 from . import theme as T
@@ -89,12 +89,30 @@ def fit_label(text: str, width: float, size: int = 13, bold: bool = False, color
 def card_color(card: Card) -> str:
     if card.is_jester:
         return T.JESTER_COLOR
+    if all_classes(card):
+        return T.EVERGREEN
     if card.suits:
         return T.SUIT_COLOR.get(card.suits[0], T.TEXT)
     return "#444444"
 
 
-RESTORED_PIP = "restored"   # pseudo-suit: the restoration icon drawn after a restored card's classes
+TREE_PIP = "tree"   # pseudo-suit: the geometric tree that stands for all four basic classes
+
+
+def all_classes(card: Card) -> bool:
+    """Whether the card is a cleric, bard, warrior and paladin at once: an Evergreen card
+    (the renewed Gøran, Esme) or a restored one."""
+    return all(s in card.suits for s in BASIC_SUITS)
+
+
+def face_pips(card: Card) -> List[str]:
+    """The class pips on a card's face. The tree replaces the four basic class icons on a
+    card that has all four (owner's choice: the tree represents all classes); a sticker
+    class (Mage, Reaver, Guardian, Druid, Chanter) keeps its own icon beside it."""
+    suits = list(card.suits)
+    if all_classes(card):
+        return [TREE_PIP] + [s for s in suits if s not in BASIC_SUITS]
+    return suits
 
 
 def sleeve_color(card: Card) -> str:
@@ -190,14 +208,25 @@ class CardView(ui.View):
         # restored card adds the restoration pip, a small tree, after its classes.
         rank = "2/5" if c.has("twofive") else c.rank
         suits = list(c.suits)
-        pips = suits + ([RESTORED_PIP] if c.has("restored") else [])
+        pips = face_pips(c)
         caption = card_caption(c)
         if self.small:
+            # a tag (an order number, a Druid's slot) takes a band along the bottom and the
+            # rank and pips move up above it
+            band = max(9.0, h * 0.24) if self.badge else 0.0
+            a = h - band
             if suits:
-                ui.draw_string(rank, (ox, oy + h * 0.08, w, h * 0.45), (T.FONT_BOLD, h * 0.36), col, ui.ALIGN_CENTER)
-                self._pips(pips, ox + 2, oy + h * 0.5, w - 4, h * 0.34, ui.ALIGN_CENTER)
+                ui.draw_string(rank, (ox, oy + a * 0.08, w, a * 0.45), (T.FONT_BOLD, a * 0.36), col, ui.ALIGN_CENTER)
+                self._pips(pips, ox + 2, oy + a * 0.5, w - 4, a * 0.34, ui.ALIGN_CENTER)
             else:
-                ui.draw_string(rank, (ox, oy + h * 0.27, w, h * 0.46), (T.FONT_BOLD, h * 0.36), col, ui.ALIGN_CENTER)
+                ui.draw_string(rank, (ox, oy + a * 0.27, w, a * 0.46), (T.FONT_BOLD, a * 0.36), col, ui.ALIGN_CENTER)
+            if self.badge:
+                text = str(self.badge)
+                size = max(7.0, min(band * 0.62, (w - 2) / (0.62 * max(1, len(text)))))
+                ui.set_color(T.ACCENT)
+                ui.Path.rounded_rect(ox + 1, oy + h - band - 1, w - 2, band, 3).fill()
+                ui.draw_string(text, (ox + 1, oy + h - band - 1 + (band - size * 1.2) / 2.0, w - 2, size * 1.3),
+                               (T.FONT_BOLD, size), T.BG, ui.ALIGN_CENTER)
             return
         badge = self.badge
         band = max(12.0, h * 0.13) if badge else 0.0
@@ -209,6 +238,7 @@ class CardView(ui.View):
             self._pips(pips, ox + 5, oy + h * 0.22, w - 10, h * 0.16, ui.ALIGN_LEFT)
             top = h * 0.38
             size = min(h * 0.42, (low - top) * 0.85)
+            size = min(size, min(size * 0.95, (w - 8) / float(len(pips))) / 0.95)   # as _pips shrinks it
             self._pips(pips, ox + 4, oy + top + max(0.0, (low - top) - size * 1.15) / 2.0, w - 8, size, ui.ALIGN_CENTER)
         else:
             top = h * 0.36
@@ -238,8 +268,8 @@ class CardView(ui.View):
         total = step * len(pips)
         x0 = x + (width - total) / 2.0 if align == ui.ALIGN_CENTER else x
         for i, s in enumerate(pips):
-            if s == RESTORED_PIP:
-                draw_tree(x0 + i * step + step * 0.08, y + size * 0.18, step * 0.84, size * 0.92, T.RESTORED)
+            if s == TREE_PIP:
+                draw_tree(x0 + i * step + step * 0.08, y + size * 0.18, step * 0.84, size * 0.92, T.EVERGREEN)
                 continue
             ui.draw_string(SUIT_SYMBOL.get(s, s), (x0 + i * step, y, step, size * 1.3), (T.FONT_BOLD, size),
                            T.SUIT_COLOR.get(s, T.TEXT), ui.ALIGN_CENTER)

@@ -105,7 +105,8 @@ class Card:
                 return "Pilgrim %s" % self.rank
             if self.has("choosable"):
                 return "Wild Animal"
-        return self.rank + "".join(SUIT_SYMBOL.get(s, s) for s in self.suits)
+        rank = "2/5" if self.has("twofive") else self.rank
+        return rank + "".join(SUIT_SYMBOL.get(s, s) for s in self.suits)
 
     def __str__(self) -> str:  # pragma: no cover - convenience
         return self.label()

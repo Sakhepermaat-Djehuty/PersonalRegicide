@@ -88,15 +88,31 @@ class CampaignState:
 
     def _migrate_plain_cards(self) -> None:
         """The app's cards are themeless: beasts, class decks, mages, pilgrims and
-        mercenaries carry no names. Older saves stored names on the party's cards and on
-        cards waiting in reward steps; drop them."""
+        mercenaries carry no names. Older saves stored names on the party's cards, on
+        cards waiting in reward steps, in those steps' labels and in the campaign log;
+        replace them with the plain wording (once for the log: ``flags["plain_text"]``).
+        Restored cards play as all four basic classes (the restoration tree)."""
+        from . import old_names
         M.strip_flavour_names(self.party)
         M.strip_flavour_names(self.away)
+        for c in self.party:
+            if "restored" in c.get("flags", []):
+                M.make_all_classes(c)
+        keep = [str(n) for n in self.names]
         for step in self.pending:
             if isinstance(step.get("card"), dict):
                 M.strip_flavour_names([step["card"]])
             if isinstance(step.get("cards"), list):
                 M.strip_flavour_names(step["cards"])
+            if step.get("kind") == "choice_suit" and str(step.get("suit")) in M.CHOICE_SUIT_LABELS:
+                step["label"] = M.CHOICE_SUIT_LABELS[str(step["suit"])]
+            elif step.get("kind") == "choice_mage_student":
+                step["label"] = M.MAGE_STUDENT_LABEL
+            elif isinstance(step.get("label"), str):
+                step["label"] = old_names.rewrite(step["label"], keep)
+        if not self.flags.get("plain_text"):
+            self.log = [old_names.rewrite(line, keep) if isinstance(line, str) else line for line in self.log]
+            self.flags["plain_text"] = True
 
     def _migrate_coin_rule(self) -> None:
         """Saves from before the rulebook coin rule gave coins = failures of the current
@@ -128,6 +144,7 @@ class CampaignState:
         if seed is not None:
             c.seed = seed
         c.log.append("Campaign started with %d player%s." % (players, "" if players == 1 else "s"))
+        c.flags["plain_text"] = True    # born themeless: no old names to rewrite
         c.reveal_lore("m1_intro")
         return c
 

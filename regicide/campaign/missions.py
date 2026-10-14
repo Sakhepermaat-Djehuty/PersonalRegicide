@@ -515,6 +515,17 @@ MYLA: Dict[str, Any] = {"id": "MYLA7", "rank": "7", "suits": [], "value": 7, "na
 
 
 # --------------------------------------------------------------------------- rewards
+# The class-sticker choices of missions 5 to 8 and mission 9's mage student, named the
+# plain way (the cards name reserve characters and races; the app shows none).
+CHOICE_SUIT_LABELS: Dict[str, str] = {
+    "R": "The 5 Reaver teaches a 6: the Cleric, Bard or Paladin 6 gains the Reaver class",
+    "G": "The 3 Guardian teaches an 8: the Cleric, Bard or Warrior 8 gains the Guardian class",
+    "U": "The 7 Druid teaches a 4: the Bard, Warrior or Paladin 4 gains the Druid class",
+    "T": "The 9 Chanter teaches a 2: the Cleric, Warrior or Paladin 2 gains the Chanter class",
+}
+MAGE_STUDENT_LABEL = "A new student: choose the 4s or the 8s; the first unstickered one revealed gains the Mage class"
+
+
 def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
     """Reward steps for completing ``number``; 'auto' steps apply at once, 'choice'
     steps wait for the player. Each step is JSON-serialisable."""
@@ -561,7 +572,7 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
                 steps.append({"kind": "remove_card", "card_id": r["id"], "label": "The %s stays to defend the veil" % plain_name(r)})
         steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
         steps.append({"kind": "choice_suit", "suit": "R", "options": [c for c in ("6H", "6D", "6S") if P.find(camp.party, c)],
-                      "label": "The 5 Reaver teaches a 6: the Cleric, Bard or Paladin 6 gains the Reaver class"})
+                      "label": CHOICE_SUIT_LABELS["R"]})
     elif number == 6:
         # Reward cards (confirmed, in order): "Add a Paladin sticker to Gøran"; "Open pack C
         # and corrupt another character in your party"; "Acquire the new relic" (Azure
@@ -572,7 +583,7 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
         steps.append({"kind": "relic", "relic": "emblem", "label": "Relic: Azure Emblem"})
         steps.append({"kind": "choice_suit", "suit": "G", "options": [c for c in ("8H", "8D", "8C") if P.find(camp.party, c)],
-                      "label": "The 3 Guardian teaches an 8: the Cleric, Bard or Warrior 8 gains the Guardian class"})
+                      "label": CHOICE_SUIT_LABELS["G"]})
         for g in GUARDIANS:
             if g["id"] != "3G":
                 steps.append({"kind": "remove_card", "card_id": g["id"], "label": "The %s stays to rebuild the garden" % plain_name(g)})
@@ -588,7 +599,7 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
             if d["id"] != "7U":
                 steps.append({"kind": "remove_card", "card_id": d["id"], "label": "The %s stays at the Well" % plain_name(d)})
         steps.append({"kind": "choice_suit", "suit": "U", "options": [c for c in ("4D", "4C", "4S") if P.find(camp.party, c)],
-                      "label": "The 7 Druid teaches a 4: the Bard, Warrior or Paladin 4 gains the Druid class"})
+                      "label": CHOICE_SUIT_LABELS["U"]})
     elif number == 8:
         # Reward cards (confirmed, in order): "Add a Bard sticker to Gøran"; "Open pack C and
         # corrupt another character in your party"; "Druldox (9 Chanter) remains in your
@@ -601,7 +612,7 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
             if d["id"] != "9T":
                 steps.append({"kind": "remove_card", "card_id": d["id"], "label": "The %s stays with the order" % plain_name(d)})
         steps.append({"kind": "choice_suit", "suit": "T", "options": [c for c in ("2H", "2C", "2S") if P.find(camp.party, c)],
-                      "label": "The 9 Chanter teaches a 2: the Cleric, Warrior or Paladin 2 gains the Chanter class"})
+                      "label": CHOICE_SUIT_LABELS["T"]})
         steps.append({"kind": "set_flag", "flag": "puppy_boxed", "value": True,
                       "label": "The pilgrim ace stays at Heaven's Edge (back in the mission 8 box)"})
     elif number == 9:
@@ -616,7 +627,7 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         steps.append({"kind": "add_card", "card": GORAN_RENEWED,
                       "label": "The renewed Gøran (8, Evergreen: all four classes, ignores immunity) joins the party"})
         steps.append({"kind": "choice_mage_student", "options": ["4", "8"],
-                      "label": "A new student: choose the 4s or the 8s; the first unstickered one revealed gains the Mage class"})
+                      "label": MAGE_STUDENT_LABEL})
         steps.append({"kind": "add_card", "card": ASH, "label": "Myla's beast, a B of the Mage class (B★), joins the party"})
     elif number == 10:
         # Reward cards (confirmed, in order): "Remove Gøran (8, Evergreen) from your party";
@@ -694,14 +705,43 @@ def strip_flavour_names(cards: List[Any]) -> int:
     return changed
 
 
+def all_class_suits(suits: List[str]) -> List[str]:
+    """A restored card's classes: the restoration tree stands for all four basic classes
+    (owner's reading), so cleric, bard, warrior and paladin, plus any other class it has
+    from a sticker (a Mage, Reaver, Guardian, Druid or Chanter)."""
+    return list(BASIC_SUITS) + [str(s) for s in suits if s not in BASIC_SUITS]
+
+
+def make_all_classes(card: Dict[str, Any]) -> bool:
+    """Give a restored card dict all four basic classes, remembering its printed classes
+    in ``base_suits``. Returns whether anything changed."""
+    suits = [str(s) for s in card.get("suits", [])]
+    if all(s in suits for s in BASIC_SUITS):
+        return False
+    card.setdefault("base_suits", list(suits))
+    card["suits"] = all_class_suits(suits)
+    return True
+
+
 def strip_game_names(game) -> int:
-    """The same for an attempt saved before the change: its plain cards lose their names."""
+    """The same for an attempt saved before the change: its plain cards lose their names
+    (the current enemy too, when it is one of them: mission 10 fights the corrupted party
+    members), and a restored card plays as all four basic classes."""
     ids = plain_card_ids()
     changed = 0
     for cid, card in list(game.cards.items()):
         if cid in ids and card.name:
-            game.cards[cid] = card.with_changes(name="")
+            card = card.with_changes(name="")
+            game.cards[cid] = card
             changed += 1
+        if card.has("restored") and not all(s in card.suits for s in BASIC_SUITS):
+            game.cards[cid] = card.with_changes(suits=tuple(all_class_suits(list(card.suits))))
+            changed += 1
+    enemy = getattr(game, "enemy", None)
+    if enemy is not None and enemy.card_id in ids:
+        card = game.cards[enemy.card_id]
+        enemy.name = card.name or ("%s of %s" % ({"J": "Jack", "Q": "Queen", "K": "King"}.get(card.rank, card.rank),
+                                                SUIT_NAME.get(card.suit or "", "no suit")))
     return changed
 
 
@@ -824,6 +864,7 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
                 if "restored" not in flags:
                     flags.append("restored")
                 c["flags"] = flags
+                make_all_classes(c)
                 changed.append(P.to_card(c).label())
             elif c["id"] == ESME_REBORN["id"] and "restored" not in flags:
                 flags.append("restored")
