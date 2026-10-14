@@ -629,6 +629,69 @@ Heaven's Edge); texts in the private lore overlay only.
 deck, matching banishes, pilgrims stuck in hands, the reserve discard at defeat) and the
 Druid ability are to be built.
 
+## Mission 8, Winds of Chaos (confirmed, transcribed from the owner's photos)
+
+**Location card:** Heaven's Edge (red cliffs, waterfalls, QR code; map piece on the back
+with the edge marked by a cross).
+
+**Setup card.** "Add the four Chanters to your party": Roslyn (3, Halfling Chanter), a 5
+(Avion Chanter), a 7 (Elf Chanter) and Druldox (9, Drakonid Chanter), all of the
+Chanter class (drum icon).
+
+**Enemy stats card:** Trolls 10 / 20 (six, one for every pair of the four classes) and
+Wyverns 25 / 50 (six, the same pairs). Each is immune to both of its classes.
+
+**Mission rules card (front).** *Setup:* place the pilgrim puppy into the mission zone.
+Open pack P and shuffle the pilgrims into the reserve deck. Each enemy has additional
+strength equal to the combined strength of non-pilgrim cards in the mission zone.
+*Enemy defeated:* banish the enemy. Then, from the cards in play, you may move them one
+at a time to the mission zone provided each card you move has strength exactly one
+higher than the highest-strength card in the mission zone (the stray puppy has strength
+1). If the enemy was dealt exact damage you may place any one card from the discard pile
+on top of the reserve deck.
+
+**Rules continued.** *Mission zone filled:* when you move a 10-strength card to the
+mission zone, you gain the following bonus instantly (in order): 1. place the entire
+mission zone into the discard pile; 2. search through the discard pile and banish any
+cards you want from it; 3. shuffle the remaining cards in the discard pile and put them
+on the bottom of the reserve deck. You may no longer move cards to the mission zone.
+*Example:* mission zone Puppy (A, animal pilgrim), Traveller (2, gnome pilgrim), River
+(3, halfling bard), Servant (4, dwarf pilgrim): +3 enemy strength. After the enemy is
+defeated, a 2, 3, then 4 are moved to the mission zone. (So pilgrims drawn from the
+reserve are playable cards this mission and may be moved into the zone, where they add
+nothing to the enemy.)
+
+**Rules summary card:** Non-pilgrims in mission zone add their strength to enemy. Enemy
+defeated: banish enemy; you may add cards in play to mission zone; cards must be added
+in numerical order (2 to 10); exact kill: put any one card from discard pile on top of
+reserve deck. Mission zone filled: when a 10 is added, discard all cards from mission
+zone, banish any cards in discard pile, heal the rest.
+
+**Pilgrim names from the card:** Puppy (A, Animal Pilgrim), Traveller (2, Gnome Pilgrim),
+Follower (3, Halfling Pilgrim), Servant (4, Dwarf Pilgrim), Acolyte (6, Human Pilgrim).
+
+**Story cards:** intro (Heaven's Edge untouched, trolls at the base, wyverns on the
+horizon, Gøran: do not kill the trolls) and outcome (the corrupted got carried away,
+Gøran's stolen memory of the Twinseed Temple); texts in the private lore overlay only.
+
+**Reward cards, in order:**
+1. "Add a Bard sticker to Gøran." (Gøran now has all four basic classes.)
+2. "Open pack C and corrupt another character in your party." Player's choice.
+3. "Druldox (9 Chanter) remains in your party. Remove the other three Chanters from your
+   party and return them to the mission 8 box."
+4. "Choose either Sprinkle (2 cleric), Dinky (2 warrior) or Wicket (2 paladin), then put
+   a Chanter sticker on them." Player's choice.
+5. "Put the puppy back in the mission 8 box."
+
+**Open question:** nothing on these cards says where the other pilgrims go after the
+mission (back into pack P, presumably, since mission 9's fan transcription shuffles them
+into the reserve again). The app keeps them in the pack.
+
+**Engine status:** data, setup steps and rewards are in; the mission rules (puppy in the
+zone, pilgrims in the reserve as playable classless cards, the ascending move-to-zone
+choice, the 10 bonus with its banish-any-discards choice, the exact-kill discard pick)
+and the Chanter ability are to be built.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
@@ -757,14 +820,17 @@ Numbers are attack / health.
    Cleric; corrupt another character (player's choice); Alantha (7 Druid) stays, the
    other Druids leave; Glamelyn, Herbod or Dhonatir (the 4s) gains Druid (player's
    choice). Pack P contents still to be read (fan: 4 × 2 to 7 plus one Ace).
-8. **Winds of Chaos** (fan name: The Troll Bridge; Heaven's Edge) — 6 Trolls 10/20 then 6 Wyverns 25/50, dual-suited. Drums
-   3/5/7/9 join; the pilgrim Ace starts in the zone. Enemy attack + total of non-pilgrim
-   zone cards. During cleanup you may move played cards into the zone in strictly
-   ascending value (starting one above the current highest); placing a 10 clears the
-   zone to the discard, lets you banish any discard cards, shuffles the rest under the
-   tavern, and ends placements for the mission. Perfect kill: top discard card to the
-   top of the tavern. Reward: Drum 9 stays; pilgrim Ace removed; choose a 2 (♠♣♥) to get
-   the Drum suit; Goran gains ♦; corrupt a card.
+8. **Winds of Chaos** (Heaven's Edge; fan name: The Troll Bridge) — **confirmed:** four
+   Chanters (3, 5, 7, 9) join for the mission; the puppy starts in the mission zone and
+   the other pilgrims are shuffled into the reserve. 6 Trolls 10/20 and 6 Wyverns 25/50,
+   each immune to a distinct pair of classes. Non-pilgrim zone cards add their strength
+   to the enemy. Enemy defeated: banish it; cards in play may be moved to the zone one at
+   a time, each exactly one higher than the zone's highest; a 10 clears the zone to the
+   discard pile, lets you banish any discards, and heals the rest under the reserve (no
+   more moves afterwards). Exact kill: any discard pile card to the top of the reserve.
+   Rewards: Gøran gains Bard; corrupt another character (player's choice); Druldox (9
+   Chanter) stays, the other Chanters leave; Sprinkle, Dinky or Wicket (the 2s) gains
+   Chanter (player's choice); the puppy goes back in the box.
 9. **Hope From Ashes** (fan name: The Rescue; Twinseed Temple) — gain Evergreen Mother (corrupted). Goran, the chosen Beast and any
    mercenaries are set aside; 30 random party cards form three captured piles of 10;
    the pilgrim deck, the rest of the party and the set-aside cards form the tavern.

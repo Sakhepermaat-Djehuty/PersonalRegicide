@@ -1010,3 +1010,39 @@ def test_mission7_setup_and_rewards_follow_the_cards():
     assert step["kind"] == "choice_suit" and step["options"] == ["4D", "4C", "4S"]
     c.resolve_choice("4S")
     assert P.find(c.party, "4S")["suits"] == ["S", "U"] and not c.pending
+
+
+def test_mission8_setup_and_rewards_follow_the_cards():
+    c = CampaignState.new(1, ["Solo"], seed=100)
+    c.mission = 8
+    c.completed = [1, 2, 3, 4, 5, 6, 7]
+    P.add_card(c.party, dict(M.GORAN))
+    rng = random.Random(5)
+    for step in M.start_steps(c, 8):
+        M.apply_step(c, step, rng)
+    assert [P.find(c.party, x)["name"] for x in ("3T", "5T", "7T", "9T")] == ["Roslyn", "Avion Chanter", "Elf Chanter", "Druldox"]
+    assert M.start_steps(c, 8) == []
+    extra = M.build_setup(c, 8, rng)
+    enemies = extra["castle"]
+    assert [e["name"] for e in enemies] == ["Troll"] * 6 + ["Wyvern"] * 6
+    assert all(len(e["suits"]) == 2 for e in enemies)
+    assert len({tuple(sorted(e["suits"])) for e in enemies[:6]}) == 6 and len({tuple(sorted(e["suits"])) for e in enemies[6:]}) == 6
+    assert (enemies[0]["attack"], enemies[0]["health"], enemies[-1]["attack"], enemies[-1]["health"]) == (10, 20, 25, 50)
+    assert [d["id"] for d in extra["zone_start"]] == ["PILA"] and extra["pilgrims"] == []
+    assert len(extra["pilgrims_in_reserve"]) == 24 and all(d["id"] != "PILA" for d in extra["pilgrims_in_reserve"])
+    names = {d["value"]: d["name"] for d in extra["pilgrims_in_reserve"]}
+    assert names[2] == "Traveller" and names[3] == "Follower" and names[4] == "Servant" and names[6] == "Acolyte"
+    steps = M.reward_steps(c, 8, rng)
+    assert [s["kind"] for s in steps] == ["add_suit", "choice_corrupt", "remove_card", "remove_card", "remove_card", "choice_suit", "set_flag"]
+    for s in steps:
+        if s["kind"].startswith("choice"):
+            c.pending.append(s)
+        else:
+            M.apply_step(c, s, rng)
+    assert P.find(c.party, "GOR8")["suits"] == ["D"] and c.flags.get("puppy_boxed") is True
+    assert P.find(c.party, "9T") is not None and all(P.find(c.party, x) is None for x in ("3T", "5T", "7T"))
+    c.resolve_choice(c.pending_choice()["options"][0])
+    step = c.pending_choice()
+    assert step["kind"] == "choice_suit" and step["options"] == ["2H", "2C", "2S"]
+    c.resolve_choice("2C")
+    assert P.find(c.party, "2C")["suits"] == ["C", "T"] and not c.pending

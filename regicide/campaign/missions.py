@@ -94,6 +94,20 @@ def _well_castle(rng: random.Random) -> List[dict]:
     return tiers[0] + tiers[1] + tiers[2]
 
 
+def _edge_castle(rng: random.Random) -> List[dict]:
+    """Mission 8's enemy stat card: six Trolls 10/20 and six Wyverns 25/50, each with a
+    distinct pair of the four classes (immune to both)."""
+    tiers = []
+    for rank, name, atk, hp in (("J", "Troll", 10, 20), ("K", "Wyvern", 25, 50)):
+        tier = []
+        for i, (a, b) in enumerate(itertools.combinations(BASIC_SUITS, 2)):
+            tier.append({"id": "HE%s%d" % (rank, i + 1), "rank": rank, "suits": [a, b], "value": RANK_VALUE[rank],
+                         "name": name, "attack": atk, "health": hp, "flags": []})
+        rng.shuffle(tier)
+        tiers.append(tier)
+    return tiers[0] + tiers[1]
+
+
 def _hydra_castle(rng: random.Random) -> List[dict]:
     hydras = []
     for i, (a, b) in enumerate(itertools.combinations(BASIC_SUITS, 2)):
@@ -175,9 +189,18 @@ MISSIONS: List[Dict[str, Any]] = [
                      "Druid) stays and the other three Druids leave. Choose Glamelyn (4 Bard), Herbod (4 "
                      "Warrior) or Dhonatir (4 Paladin) to gain the Druid class."},
     {"number": 8, "title": "Winds of Chaos", "fan_title": "The Troll Bridge", "location": "Heaven's Edge",
-     "rules_id": "legacy_m8", "playable": False, "verified": False,
-     "summary": "Six Trolls (10/20) then six Wyverns (25/50), all two-class. Build the mission zone in "
-                "ascending order; a 10 clears it. Chanters help.", "rewards_text": "A Chanter stays."},
+     "rules_id": "legacy_m8", "playable": False, "verified": True,
+     "summary": "Four Chanters join for the mission. The pilgrim puppy starts in the mission zone and the "
+                "other pilgrims are shuffled into the reserve. Six Trolls (10/20) then six Wyverns (25/50), "
+                "each immune to two classes. Non-pilgrim cards in the zone add their strength to the "
+                "enemy. Enemy defeated: banish it, then cards in play may be moved into the zone one at a "
+                "time, each exactly one strength higher than the zone's highest (the puppy is 1); a 10 "
+                "clears the zone into the discard pile, lets you banish any discards and heals the rest "
+                "under the reserve. Exact damage: any discard pile card goes on top of the reserve.",
+     "rewards_text": "Gøran gains the Bard class. Open pack C and corrupt another character. Druldox (9, "
+                     "Chanter) stays and the other three Chanters leave. Choose Sprinkle (2 Cleric), Dinky "
+                     "(2 Warrior) or Wicket (2 Paladin) to gain the Chanter class. The puppy goes back in "
+                     "the box."},
     {"number": 9, "title": "Hope From Ashes", "fan_title": "The Rescue", "location": "Twinseed Temple",
      "rules_id": "legacy_m9", "playable": False, "verified": False,
      "summary": "Thirty party cards are captured in three piles. Eight enemies, then Myla (20/80).",
@@ -218,6 +241,8 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
         castle = _garden_castle(rng)
     elif number == 7:
         castle = _well_castle(rng)
+    elif number == 8:
+        castle = _edge_castle(rng)
     else:
         raise NotImplementedError("Mission %d is not implemented yet (see PLAN.md stage ladder)." % number)
     banished_start: List[dict] = []
@@ -230,11 +255,17 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
         # Mission rules (confirmed): "Place Myla (7) face up into the mission zone."
         zone_start.append(dict(MYLA))
     pilgrims: List[dict] = []
+    pilgrims_in_reserve: List[dict] = []
     if number == 7:
         # Mission rules (confirmed): "Open pack P. Shuffle the pilgrims and place them in a
         # facedown pilgrim deck in the mission zone."
         pilgrims = [dict(c) for c in PILGRIMS]
         rng.shuffle(pilgrims)
+    if number == 8:
+        # Mission rules (confirmed): "Place the pilgrim puppy into the mission zone. Open
+        # pack P and shuffle the pilgrims into the reserve deck."
+        zone_start.append(dict(PUPPY))
+        pilgrims_in_reserve = [dict(c) for c in PILGRIMS if c["id"] != PUPPY["id"]]
     # Gøran's beast chosen for this attempt (reward of mission 4)
     if camp.beast and camp.flags.get("beasts"):
         beast = beast_by_id(camp.beast)
@@ -255,7 +286,7 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
         "party": party, "castle": castle, "relics": list(camp.relics),
         "extra_jesters": extra_jesters, "discard_low_to_high": bool(camp.flags.get("discard_low_to_high")),
         "mission": number, "banished_start": banished_start, "zone_start": zone_start,
-        "pilgrims": pilgrims,
+        "pilgrims": pilgrims, "pilgrims_in_reserve": pilgrims_in_reserve,
     }
 
 
@@ -281,7 +312,20 @@ def start_steps(camp, number: int) -> List[Step]:
     if number == 7 and any(P.find(camp.party, str(d["id"])) is None for d in DRUIDS):
         # Card (confirmed): "Add the four Druids to your party."
         steps.append({"kind": "add_cards", "cards": DRUIDS, "label": "The druids draw out scythes, swords and shields"})
+    if number == 8 and any(P.find(camp.party, str(d["id"])) is None for d in CHANTERS):
+        # Card (confirmed): "Add the four Chanters to your party."
+        steps.append({"kind": "add_cards", "cards": CHANTERS, "label": "Thrum. Thrum. Thrum. The chanters beat their drums"})
     return steps
+
+
+# Mission 8's Chanters: Roslyn (3, halfling), an avion (5), an elf (7) and Druldox (9,
+# drakonid). Only Druldox stays after the mission.
+CHANTERS: List[Dict[str, Any]] = [
+    {"id": "3T", "rank": "3", "suits": ["T"], "value": 3, "name": "Roslyn", "subtitle": "Halfling Chanter", "flags": []},
+    {"id": "5T", "rank": "5", "suits": ["T"], "value": 5, "name": "Avion Chanter", "subtitle": "Avion Chanter", "flags": []},
+    {"id": "7T", "rank": "7", "suits": ["T"], "value": 7, "name": "Elf Chanter", "subtitle": "Elf Chanter", "flags": []},
+    {"id": "9T", "rank": "9", "suits": ["T"], "value": 9, "name": "Druldox", "subtitle": "Drakonid Chanter", "flags": []},
+]
 
 
 # Mission 7's Druids: Tolman (3, halfling), an avion (5), Alantha (7, elf) and a drakonid
@@ -293,15 +337,18 @@ DRUIDS: List[Dict[str, Any]] = [
     {"id": "9U", "rank": "9", "suits": ["U"], "value": 9, "name": "Drakonid Druid", "subtitle": "Drakonid Druid", "flags": []},
 ]
 
-# Pack P, the pilgrim deck (mission 7). The mission card shows Followers (3, halfling
-# pilgrims) and an Acolyte (6, human pilgrim); the full contents follow the fan
-# transcription until the pack is photographed: four each of 2 to 7 plus one Ace (the
-# animal pilgrim), no class.
-PILGRIMS: List[Dict[str, Any]] = [
-    {"id": "PILA", "rank": "A", "suits": [], "value": 1, "name": "Puppy", "subtitle": "Animal Pilgrim", "flags": ["pilgrim"]},
-] + [
+# Pack P, the pilgrim deck (missions 7 and 8). Named from the mission cards: Puppy (A,
+# animal), Traveller (2, gnome), Follower (3, halfling), Servant (4, dwarf), Acolyte (6,
+# human); the 5 and 7 are unnamed. The full contents follow the fan transcription until
+# the pack is photographed: four each of 2 to 7 plus the puppy, no class.
+PUPPY: Dict[str, Any] = {"id": "PILA", "rank": "A", "suits": [], "value": 1, "name": "Puppy",
+                         "subtitle": "Animal Pilgrim", "flags": ["pilgrim"]}
+_PILGRIM_NAMES = {"2": ("Traveller", "Gnome Pilgrim"), "3": ("Follower", "Halfling Pilgrim"),
+                  "4": ("Servant", "Dwarf Pilgrim"), "6": ("Acolyte", "Human Pilgrim")}
+PILGRIMS: List[Dict[str, Any]] = [dict(PUPPY)] + [
     {"id": "PIL%s_%d" % (r, i + 1), "rank": r, "suits": [], "value": int(r),
-     "name": {"3": "Follower", "6": "Acolyte"}.get(r, "Pilgrim"), "subtitle": "Pilgrim", "flags": ["pilgrim"]}
+     "name": _PILGRIM_NAMES.get(r, ("Pilgrim", "Pilgrim"))[0],
+     "subtitle": _PILGRIM_NAMES.get(r, ("Pilgrim", "Pilgrim"))[1], "flags": ["pilgrim"]}
     for r in ("2", "3", "4", "5", "6", "7") for i in range(4)
 ]
 
@@ -404,6 +451,21 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
                 steps.append({"kind": "remove_card", "card_id": d["id"], "label": "%s stays at the Well" % d["name"]})
         steps.append({"kind": "choice_suit", "suit": "U", "options": [c for c in ("4D", "4C", "4S") if P.find(camp.party, c)],
                       "label": "Alantha teaches a 4: Glamelyn (Bard), Herbod (Warrior) or Dhonatir (Paladin) gains the Druid class"})
+    elif number == 8:
+        # Reward cards (confirmed, in order): "Add a Bard sticker to Gøran"; "Open pack C and
+        # corrupt another character in your party"; "Druldox (9 Chanter) remains in your
+        # party. Remove the other three Chanters..."; "Choose either Sprinkle (2 cleric), Dinky
+        # (2 warrior) or Wicket (2 paladin), then put a Chanter sticker on them"; "Put the
+        # puppy back in the mission 8 box."
+        steps.append({"kind": "add_suit", "card_id": GORAN["id"], "suit": "D", "label": "Gøran gains the Bard class"})
+        steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
+        for d in CHANTERS:
+            if d["id"] != "9T":
+                steps.append({"kind": "remove_card", "card_id": d["id"], "label": "%s stays with the order" % d["name"]})
+        steps.append({"kind": "choice_suit", "suit": "T", "options": [c for c in ("2H", "2C", "2S") if P.find(camp.party, c)],
+                      "label": "A song or two: Sprinkle (Cleric), Dinky (Warrior) or Wicket (Paladin) gains the Chanter class"})
+        steps.append({"kind": "set_flag", "flag": "puppy_boxed", "value": True,
+                      "label": "The puppy stays at Heaven's Edge (back in the mission 8 box)"})
     return steps
 
 
