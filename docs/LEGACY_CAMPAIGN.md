@@ -517,6 +517,58 @@ reductions). If the table plays it as the printed strength only, say so.
 pile feeding the zone, zone strength bonus, shuffle into the banished pile, carry-over
 damage, the Reaver ability) are being added together with the Mage ability.
 
+## Mission 6, Shards of Memory (second edition; part 1 of the owner's photos)
+
+**Location card:** Garden of Remembrance (statues and stone arches, QR code; map piece
+on the back with the garden marked by a cross).
+
+**Setup cards.** "Remove Myla from your party. She will be in the mission zone for this
+mission." "Add the four Guardians to your party": Rung… (3, Halfling Guardian), Teko (5,
+Avion Guardian), a 7 (Elf Guardian) and a 9 (Drakonid Guardian), all of the Guardian
+class (broken-rock icon).
+
+**Enemy stats card:** Guardians 15 / 30 (four statues, one per class) and Evergreens
+20 / 40 (four statues, one per class).
+
+**Mission rules card (front).** *Setup:* place Myla (7) face up into the mission zone.
+*Enemy defeated:* banish the enemy. Choose one card in play (on any player's playmat)
+and move it to the mission zone. If the enemy was dealt exact damage, choose any one
+card from the mission zone, except Myla, and move it to the discard pile. Myla then
+deals team damage to the players equal to the combined strength of cards in the mission
+zone (including her strength of 7). To satisfy this damage, cards are discarded one at
+a time by any player until a total strength at least equal to the damage has been
+discarded. This can be done by any player in any order, without communication. If this
+team damage cannot be satisfied the mission is lost.
+
+**Rules continued.** *Notes:* if a mage is moved to the mission zone in this way, the
+remaining cards in the attack are still banished as normal during the Enemy Defeated
+step. *Remember:* if an attack with a Guardian defeats an enemy, players take no team
+damage, as the class ability means all players take no damage for the turn. *Example:*
+mission zone Myla (7), a 2 (gnome cleric), Mānuka (A, animal warrior) and River (3,
+halfling bard): 13 team damage.
+
+**Rules summary card:** Enemy defeated: banish the enemy; move one card in play into the
+mission zone; exact kill: move one card, except Myla, from the mission zone to the
+discard pile; players take team damage equal to the strength in the mission zone.
+
+**Story cards:** intro (the Garden of stone and wind, the Arcana's machines, Myla's
+betrayal) and outcome (the statues crumble, the cursed ring, on to the Well of Tears);
+texts in the private lore overlay only.
+
+**Reward cards read so far, in order:**
+1. "Add a Paladin sticker to Gøran."
+2. "Open pack C and corrupt another character in your party." Player's choice.
+3. "Acquire the new relic." Azure Emblem, two-or-more-players side: "When you form an
+   attack with a mage, before peeking at any cards, each other player may place one card
+   from their hand on the top of the reserve deck. This power only happens once per
+   attack: if you use a mage to add an additional mage to an attack, this relic power
+   does not happen another time." The solo side and the remaining reward cards (what
+   becomes of the Guardians) are in the owner's second batch.
+
+**Engine status:** data, setup steps and the rewards read so far are in; the mission
+rules (Myla in the zone, the move-to-zone choice, team damage discarded by any players,
+Guardian prevention) and the Guardian ability are being added with the Mage work.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
@@ -536,8 +588,10 @@ damage, the Reaver ability) are being added together with the Mage ability.
     formed with a solitary animal companion or beast, one other player may add any card
     from hand except a Jester, before step 2. Solo: when you form such an attack you may
     take the top card of the discard pile and add it to the attack.
-  * Azure Emblem (after M6): after a Mage pick, keep one of the other revealed cards on
-    top of the tavern deck instead of discarding them all. VERIFY.
+  * Azure Emblem (after M6): **confirmed (2+ players side):** when you form an attack
+    with a mage, before peeking, each other player may place one card from hand on top
+    of the reserve deck; once per attack even if a mage adds another mage. Solo side:
+    VERIFY (the fan engine keeps one of the revealed cards on top of the reserve).
   * Evergreen Mother, corrupted (from M9): the fan engine banishes from the discard
     pile instead of the reserve; the owner remembers it banishing a card from another
     player's hand instead. VERIFY from the card (photo pending). Replaced in M12 by
@@ -622,12 +676,14 @@ Numbers are attack / health.
    gains Warrior; Myla joins; Harore (5 Reaver) stays, the other Reavers leave; corrupt
    another character (player's choice); James, Jakhim or Lee (the 6s) gains Reaver
    (player's choice).
-6. **Shards of Memory** (fan name: The Evergreen Siege; Garden of Remembrance; rules changed in the 2nd printing) — 4 Guardians 15/30 and 4 Evergreens 20/40. Myla starts in
-   the mission zone; Guardians 3/5/7/9 join. On each kill: banish the enemy, move one
-   played card into the mission zone, then suffer damage equal to the mission zone total
-   (skipped if a Guardian was active that turn; perfect kill ignores the highest zone
-   card). Reward: Azure Emblem; Guardian 3 stays; choose an 8 (♦♥♣) to get the Guardian
-   suit; Goran gains ♠; corrupt a card.
+6. **Shards of Memory** (Garden of Remembrance; second edition, fan name: The Evergreen
+   Siege) — **confirmed (part 1):** Myla leaves the party and starts face up in the
+   mission zone; four Guardians (3, 5, 7, 9) join. 4 Guardian statues 15/30 and 4
+   Evergreen statues 20/40, one per class. Enemy defeated: banish it; move one card in
+   play into the zone; exact kill: one zone card except Myla to the discard pile; then
+   team damage equal to the zone's strength (Myla's 7 included), discarded one card at a
+   time by any players; a Guardian in the killing attack prevents it. Rewards so far:
+   Gøran gains Paladin; corrupt another character (player's choice); Azure Emblem.
 7. **Tales of Rebirth** (fan name: The Pilgrimage; Well of Tears) — standard royals (corrupted). Druids 3/5/7/9 join. A 25-card
    pilgrim deck (four each of 2–7 plus one Ace, no suits). Start of turn: top pilgrim to
    the mission zone. Playing a card banishes a pilgrim of the same value. Pilgrims in
