@@ -149,7 +149,8 @@ MISSIONS: List[Dict[str, Any]] = [
                 "zone's combined strength, discarded one card at a time by any players. A Guardian in the "
                 "killing attack prevents the team damage.",
      "rewards_text": "Gøran gains the Paladin class. Open pack C and corrupt another character. Acquire the "
-                     "Azure Emblem. (Second reward batch still to be read.)"},
+                     "Azure Emblem. Choose Bronze (8 Cleric), Snow (8 Bard) or Shadow (8 Warrior) to gain the "
+                     "Guardian class. Runo (3, Guardian) stays; the other three Guardians leave."},
     {"number": 7, "title": "Tales of Rebirth", "fan_title": "The Pilgrimage", "location": "Well of Tears",
      "rules_id": "legacy_m7", "playable": False, "verified": False,
      "summary": "Royals again, with a deck of pilgrims wandering into the mission zone; match their values "
@@ -252,10 +253,10 @@ def start_steps(camp, number: int) -> List[Step]:
     return steps
 
 
-# Mission 6's Guardians: Rung... (3, halfling), Teko (5, avion), an elf (7) and a drakonid
-# (9); only Teko's full name was read.
+# Mission 6's Guardians: Runo (3, halfling), Teko (5, avion), an elf (7) and a drakonid
+# (9). Only Runo stays after the mission.
 GUARDIANS: List[Dict[str, Any]] = [
-    {"id": "3G", "rank": "3", "suits": ["G"], "value": 3, "name": "Halfling Guardian", "subtitle": "Halfling Guardian", "flags": []},
+    {"id": "3G", "rank": "3", "suits": ["G"], "value": 3, "name": "Runo", "subtitle": "Halfling Guardian", "flags": []},
     {"id": "5G", "rank": "5", "suits": ["G"], "value": 5, "name": "Teko", "subtitle": "Avion Guardian", "flags": []},
     {"id": "7G", "rank": "7", "suits": ["G"], "value": 7, "name": "Elf Guardian", "subtitle": "Elf Guardian", "flags": []},
     {"id": "9G", "rank": "9", "suits": ["G"], "value": 9, "name": "Drakonid Guardian", "subtitle": "Drakonid Guardian", "flags": []},
@@ -324,12 +325,19 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         steps.append({"kind": "choice_suit", "suit": "R", "options": [c for c in ("6H", "6D", "6S") if P.find(camp.party, c)],
                       "label": "Harore teaches a 6: James (Cleric), Jakhim (Bard) or Lee (Paladin) gains the Reaver class"})
     elif number == 6:
-        # Reward cards read so far (confirmed, in order): "Add a Paladin sticker to Gøran";
-        # "Open pack C and corrupt another character in your party"; "Acquire the new relic"
-        # (Azure Emblem). The second batch of mission 6 cards is still to be read.
+        # Reward cards (confirmed, in order): "Add a Paladin sticker to Gøran"; "Open pack C
+        # and corrupt another character in your party"; "Acquire the new relic" (Azure
+        # Emblem); "Choose either Bronze (8 cleric), Snow (8 bard) or Shadow (8 warrior), then
+        # put a Guardian sticker on them"; "Runo (3 Guardian) remains in your party. Remove
+        # the other three Guardians from your party and return them to the mission 6 box."
         steps.append({"kind": "add_suit", "card_id": GORAN["id"], "suit": "S", "label": "Gøran gains the Paladin class"})
         steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
         steps.append({"kind": "relic", "relic": "emblem", "label": "Relic: Azure Emblem"})
+        steps.append({"kind": "choice_suit", "suit": "G", "options": [c for c in ("8H", "8D", "8C") if P.find(camp.party, c)],
+                      "label": "Runo teaches an 8: Bronze (Cleric), Snow (Bard) or Shadow (Warrior) gains the Guardian class"})
+        for g in GUARDIANS:
+            if g["id"] != "3G":
+                steps.append({"kind": "remove_card", "card_id": g["id"], "label": "%s stays to rebuild the garden" % g["name"]})
     return steps
 
 

@@ -517,13 +517,13 @@ reductions). If the table plays it as the printed strength only, say so.
 pile feeding the zone, zone strength bonus, shuffle into the banished pile, carry-over
 damage, the Reaver ability) are being added together with the Mage ability.
 
-## Mission 6, Shards of Memory (second edition; part 1 of the owner's photos)
+## Mission 6, Shards of Memory (second edition; confirmed, transcribed from the owner's photos)
 
 **Location card:** Garden of Remembrance (statues and stone arches, QR code; map piece
 on the back with the garden marked by a cross).
 
 **Setup cards.** "Remove Myla from your party. She will be in the mission zone for this
-mission." "Add the four Guardians to your party": Rung… (3, Halfling Guardian), Teko (5,
+mission." "Add the four Guardians to your party": Runo (3, Halfling Guardian), Teko (5,
 Avion Guardian), a 7 (Elf Guardian) and a 9 (Drakonid Guardian), all of the Guardian
 class (broken-rock icon).
 
@@ -555,19 +555,25 @@ discard pile; players take team damage equal to the strength in the mission zone
 betrayal) and outcome (the statues crumble, the cursed ring, on to the Well of Tears);
 texts in the private lore overlay only.
 
-**Reward cards read so far, in order:**
+**Reward cards, in order:**
 1. "Add a Paladin sticker to Gøran."
 2. "Open pack C and corrupt another character in your party." Player's choice.
-3. "Acquire the new relic." Azure Emblem, two-or-more-players side: "When you form an
+3. "Acquire the new relic." Azure Emblem. *Two or more players:* "When you form an
    attack with a mage, before peeking at any cards, each other player may place one card
    from their hand on the top of the reserve deck. This power only happens once per
    attack: if you use a mage to add an additional mage to an attack, this relic power
-   does not happen another time." The solo side and the remaining reward cards (what
-   becomes of the Guardians) are in the owner's second batch.
+   does not happen another time." *Solo relic:* "When resolving a mage class ability,
+   after selecting a card to be added to the attack, you may put one of the other cards
+   you looked at on top of the reserve deck before discarding the rest."
+4. "Choose either Bronze (8 cleric), Snow (8 bard) or Shadow (8 warrior), then put a
+   Guardian sticker on them." Player's choice; the chosen 8 gains the Guardian class.
+5. "Runo (3 Guardian) remains in your party. Remove the other three Guardians from your
+   party and return them to the mission 6 box."
 
-**Engine status:** data, setup steps and the rewards read so far are in; the mission
-rules (Myla in the zone, the move-to-zone choice, team damage discarded by any players,
-Guardian prevention) and the Guardian ability are being added with the Mage work.
+**Engine status:** data, setup steps and all rewards are in; the mission rules (Myla in
+the zone, the move-to-zone choice, team damage discarded by any players, Guardian
+prevention), the Guardian ability and both sides of the Azure Emblem are being added
+with the Mage work.
 
 ## Permanent mechanics (as transcribed)
 
@@ -588,10 +594,11 @@ Guardian prevention) and the Guardian ability are being added with the Mage work
     formed with a solitary animal companion or beast, one other player may add any card
     from hand except a Jester, before step 2. Solo: when you form such an attack you may
     take the top card of the discard pile and add it to the attack.
-  * Azure Emblem (after M6): **confirmed (2+ players side):** when you form an attack
-    with a mage, before peeking, each other player may place one card from hand on top
-    of the reserve deck; once per attack even if a mage adds another mage. Solo side:
-    VERIFY (the fan engine keeps one of the revealed cards on top of the reserve).
+  * Azure Emblem (after M6): **confirmed, both sides.** 2+ players: when you form an
+    attack with a mage, before peeking, each other player may place one card from hand
+    on top of the reserve deck; once per attack even if a mage adds another mage. Solo:
+    when resolving a mage ability, after selecting the card to add, you may put one of
+    the other cards you looked at on top of the reserve deck before discarding the rest.
   * Evergreen Mother, corrupted (from M9): the fan engine banishes from the discard
     pile instead of the reserve; the owner remembers it banishing a card from another
     player's hand instead. VERIFY from the card (photo pending). Replaced in M12 by
@@ -677,13 +684,15 @@ Numbers are attack / health.
    another character (player's choice); James, Jakhim or Lee (the 6s) gains Reaver
    (player's choice).
 6. **Shards of Memory** (Garden of Remembrance; second edition, fan name: The Evergreen
-   Siege) — **confirmed (part 1):** Myla leaves the party and starts face up in the
+   Siege) — **confirmed:** Myla leaves the party and starts face up in the
    mission zone; four Guardians (3, 5, 7, 9) join. 4 Guardian statues 15/30 and 4
    Evergreen statues 20/40, one per class. Enemy defeated: banish it; move one card in
    play into the zone; exact kill: one zone card except Myla to the discard pile; then
    team damage equal to the zone's strength (Myla's 7 included), discarded one card at a
-   time by any players; a Guardian in the killing attack prevents it. Rewards so far:
-   Gøran gains Paladin; corrupt another character (player's choice); Azure Emblem.
+   time by any players; a Guardian in the killing attack prevents it. Rewards: Gøran
+   gains Paladin; corrupt another character (player's choice); Azure Emblem; Bronze,
+   Snow or Shadow (the 8s of cleric, bard, warrior) gains Guardian (player's choice);
+   Runo (3 Guardian) stays, the other Guardians leave.
 7. **Tales of Rebirth** (fan name: The Pilgrimage; Well of Tears) — standard royals (corrupted). Druids 3/5/7/9 join. A 25-card
    pilgrim deck (four each of 2–7 plus one Ace, no suits). Start of turn: top pilgrim to
    the mission zone. Playing a card banishes a pilgrim of the same value. Pilgrims in
