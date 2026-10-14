@@ -604,7 +604,12 @@ class GameScreen(Screen):
         self.enemy.game = g
         self.enemy.set_needs_display()
         played = [g.card(c) for p in g.plays for c in p.card_ids]
-        self.strip.set_cards(played, "Played against this enemy")
+        # the played cards go onto the discard pile in this order at clean-up, the last on
+        # top: say so where the top of the pile matters
+        title = "Played against this enemy"
+        if played and g.rules.discard_top_matters(g):
+            title += " · the last ends on top of the discard pile"
+        self.strip.set_cards(played, title)
         self.strip.set_needs_display()
         uses_zone = bool(g.mission_zone) or getattr(g.rules, "uses_mission_zone", False)
         if uses_zone != (not self.zone.hidden):
@@ -647,8 +652,9 @@ class GameScreen(Screen):
             return
         if kind is not None and kind not in HAND_DECISIONS:
             # A decision of the current player's own with a short list of options: the
-            # mage's secret look, the reaver's reveal, which zone card to rescue, the
-            # clean-up order, the card moved to the zone, the Scarlet Whistle's take. In
+            # mage's secret look, the reaver's reveal, which zone card to rescue, the order
+            # a mage's leftovers or a reaver's reveals go onto a pile, the card moved to the
+            # zone, the Scarlet Whistle's take. In
             # pass-and-play another player may hold the phone (a Kinfolk Flute, Scarlet
             # Whistle or Azure Emblem decision came first): hand it back first.
             seat = g.deciding
