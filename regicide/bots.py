@@ -232,7 +232,9 @@ def declare_class_choice(g: Game, acts: List[dict]) -> dict:
 
 
 def declare_value_choice(g: Game, acts: List[dict]) -> dict:
-    """A 2/5 played alone: 5, unless declaring 2 kills the enemy exactly."""
+    """2/5s whose strength is a free choice (alone, with a companion or a beast, two 2/5s
+    together; one value for all of them): 5, the stronger attack, unless declaring 2 kills
+    the enemy exactly (the enemy then goes to the reserve instead of the discard pile)."""
     by = dict((str(a.get("option")), a) for a in acts if a.get("option"))
     if "2" in by:
         sim = copy.deepcopy(g)

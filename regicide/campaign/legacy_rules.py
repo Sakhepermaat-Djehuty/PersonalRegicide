@@ -11,6 +11,7 @@ from ..rules import HAND_SIZE, JESTERS_IN_DECK
 
 
 MYLA_ID = "MYLA7"   # Myla (7, Elf Pilgrim): missions 5 and 6 start her outside the party
+TWOFIVE_VALUES = (2, 5)   # the strengths a 2/5 mercenary may take in play (rulebook p.25)
 
 
 class LegacyRules(BaseRules):
@@ -171,14 +172,61 @@ class LegacyRules(BaseRules):
     def _card_in_play(game, card_id: str) -> bool:
         return any(card_id in p.card_ids for p in game.plays)
 
-    def in_play_strength(self, game, card: Card) -> int:
-        """A card's strength while it is in play: a 2/5 played alone keeps the value its
-        player declared when it entered the playmat (rulebook p.25), otherwise ``strength``."""
+    def _declared_value(self, game, card: Card) -> Optional[int]:
+        """The strength a 2/5 in play was given when it entered the playmat (declared by
+        its player or forced by its kinfolk set), or None."""
         if card.has("twofive") and self._card_in_play(game, card.id):
             declared = (game.extra.get("declared_value") or {}).get(card.id)
             if declared is not None:
                 return int(declared)
-        return self.strength(card)
+        return None
+
+    def in_play_strength(self, game, card: Card) -> int:
+        """A card's strength while it is in play: a 2/5 keeps the value it was given when it
+        entered the playmat (rulebook p.25: declared by its player, or the only value its
+        kinfolk set allows), otherwise ``strength``."""
+        declared = self._declared_value(game, card)
+        return self.strength(card) if declared is None else declared
+
+    def set_strengths(self, game, card: Card) -> Tuple[int, ...]:
+        """A 2/5 may join a kinfolk set as a 2 or as a 5 (``Game.legal_plays``)."""
+        return TWOFIVE_VALUES if card.has("twofive") else (self.strength(card),)
+
+    def kinfolk_values(self, game, cards: Sequence[Card]) -> List[int]:
+        """The strengths a kinfolk set of ``cards`` may have (rulebook p.22 and p.25), lowest
+        first: the cards' common strength, every 2/5 without a value yet taking 2 or 5 as
+        needed, with the total within the kinfolk limit. 2/5 + 5 is a set of 5s, 2/5 + 2 a
+        set of 2s, two 2/5s either (4 or 10), three 2/5s only 2s (6, under a limit of 10).
+        Empty when no strength works. Aces, beasts and Jesters are the caller's business."""
+        fixed = set()
+        free = 0
+        for c in cards:
+            v = self._declared_value(game, c) if c.has("twofive") else self.strength(c)
+            if v is None:
+                free += 1
+            else:
+                fixed.add(v)
+        if len(fixed) > 1:
+            return []
+        candidates = sorted(fixed) if fixed else list(TWOFIVE_VALUES)
+        if free:
+            candidates = [v for v in candidates if v in TWOFIVE_VALUES]
+        limit = self.kinfolk_limit(game)
+        return [v for v in candidates if v * len(cards) <= limit]
+
+    @staticmethod
+    def _kinfolk_batch(cards: Sequence[Card]) -> bool:
+        """Do these cards, entering play together, form a kinfolk set (not a single card,
+        a companion or beast pair, or a Jester)?"""
+        return len(cards) >= 2 and not any(c.is_ace or c.is_jester or c.has("beast") for c in cards)
+
+    def _forced_value(self, game, cards: Sequence[Card]) -> Optional[int]:
+        """The value the 2/5s without one must take in the kinfolk set ``cards`` (the
+        attack's non-beast cards), or None: not a set, or a free choice still to declare."""
+        if not self._kinfolk_batch(cards) or not any(c.has("twofive") for c in cards):
+            return None
+        values = self.kinfolk_values(game, cards)
+        return values[0] if len(values) == 1 else None
 
     def card_suits(self, game, card: Card) -> Tuple[str, ...]:
         """A Wild Animal mercenary (flag ``choosable``, rulebook p.25) has the class its
@@ -202,8 +250,23 @@ class LegacyRules(BaseRules):
 
     def validate_combo(self, game, cards: Sequence[Card]) -> Tuple[str, Optional[str]]:
         # Kinfolk (rulebook p.22): any number of cards of equal STRENGTH totalling at most
-        # 10, so five 2s are legal and a 2/5 card pairs with a 2. No four-card cap.
-        kind, err = classify_combo(cards, strength=self.strength, max_cards=None,
+        # 10 (``kinfolk_limit``), so five 2s are legal. No four-card cap. A 2/5 takes
+        # whichever of 2 or 5 makes the set legal (p.25, ``kinfolk_values``): it pairs with
+        # a 2 or with a 5, but 2/5 + 2 + 5 has no common strength and 2/5 + 5 + 5 is 15.
+        as_value = None   # type: Optional[int]
+        if any(c.has("twofive") for c in cards):
+            values = self.kinfolk_values(game, cards)
+            plain = set(self.strength(c) for c in cards if not c.has("twofive"))
+            if values:
+                as_value = values[0]
+            elif len(plain) == 1 and plain <= set(TWOFIVE_VALUES):
+                as_value = plain.pop()   # a common strength, but over the limit: say so
+            # otherwise the 2/5 counts 2 and the set reports the mismatch
+
+        def strength(c: Card) -> int:
+            return as_value if as_value is not None and c.has("twofive") else self.strength(c)
+
+        kind, err = classify_combo(cards, strength=strength, max_cards=None,
                                    max_total=self.kinfolk_limit(game))
         if err:
             return kind, err
@@ -219,17 +282,21 @@ class LegacyRules(BaseRules):
         beast's strength equals that card's strength during this step" (so beast + 7 is a
         14, companion + beast a 2); a beast alone is 0. The card it copies is the one it
         was played with: the first non-beast card of the attack (cards a mage or a relic
-        add later come after it)."""
+        add later come after it). A 2/5 counts the value it was given when it entered play
+        (p.25); before that, in a kinfolk set that allows only one value (2/5 + 5, three
+        2/5s) it already counts that value, and otherwise 2 until its player declares."""
         others = [c for c in cards if not c.has("beast")]
         beasts = len(cards) - len(others)
-        # a 2/5 keeps its declared value only while it is the attack's single card; in a
-        # kinfolk set (or with a companion) it counts the set's strength, 2
-        if len(others) == 1:
-            total = self.in_play_strength(game, others[0])
-        else:
-            total = sum(self.strength(c) for c in others)
-        if beasts and others:
-            total += beasts * (self.in_play_strength(game, others[0]) if len(others) == 1 else self.strength(others[0]))
+        forced = self._forced_value(game, others)
+        values = []
+        for c in others:
+            v = self._declared_value(game, c) if c.has("twofive") else None
+            if v is None:
+                v = forced if forced is not None and c.has("twofive") else self.strength(c)
+            values.append(v)
+        total = sum(values)
+        if beasts and values:
+            total += beasts * values[0]
         return total
 
     def extra_plays(self, game, hand: Sequence[Card]) -> List[List[str]]:
@@ -341,15 +408,16 @@ class LegacyRules(BaseRules):
             c = game.cards[cid]
             if c.is_ace or c.is_jester or c.has("beast"):
                 return None
-            strengths.add(self.strength(c))
+            strengths.add(self.in_play_strength(game, c))   # a 2/5 counts its value in play
         if len(strengths) != 1:
             return None
         s = strengths.pop()
         return s if s > 0 else None
 
     def _flute_candidates(self, game, player: int, strength: int, total: int) -> List[Card]:
-        """Cards ``player`` could add: same strength, and at least one still fits under the
-        kinfolk limit (10, or 12 with an Evergreen boon)."""
+        """Cards ``player`` could add: same strength (a 2/5 joins 2s or 5s and takes the
+        set's strength), and at least one still fits under the kinfolk limit (10, or 12
+        with an Evergreen boon)."""
         if total + strength > self.kinfolk_limit(game):
             return []
         out = []
@@ -357,7 +425,7 @@ class LegacyRules(BaseRules):
             c = game.cards[cid]
             if c.is_ace or c.is_jester or c.has("beast"):
                 continue
-            if self.strength(c) == strength:
+            if strength in self.set_strengths(game, c):
                 out.append(c)
         return out
 
@@ -440,7 +508,8 @@ class LegacyRules(BaseRules):
                 return {"type": "chanter_discard", "player": int(d["player"]), "cards": lowest[:int(t["needs"])],
                         "forecast": True}
         if d and d.get("kind") == "declare_class":
-            # a forecast does not ask: a Wild Animal is assumed a warrior, a 2/5 a 5
+            # a forecast does not ask: a Wild Animal is assumed a warrior, 2/5s with a free
+            # choice 5s (a value their kinfolk set forces is set without a question)
             return {"type": "declare_class", "player": int(d["player"]), "option": "C", "forecast": True}
         if d and d.get("kind") == "declare_value":
             return {"type": "declare_value", "player": int(d["player"]), "option": "5", "forecast": True}
@@ -531,6 +600,10 @@ class LegacyRules(BaseRules):
         if action["type"] == "flute_add":
             ids = list(action["card_ids"])
             play = game.add_cards_to_play(play_index, player, ids)
+            # the whole attack stays one kinfolk set: an added 2/5 takes its strength
+            for entry in game.extra.get("declare_pending") or []:
+                if entry.get("what") == "value" and set(entry.get("cards") or ()) & set(ids):
+                    entry["group"] = list(play.card_ids)
             game._say("%s adds %s to the attack (Kinfolk Flute): strength %d." % (
                 name, " + ".join(game.cards[c].label() for c in ids), play.value))
             if self._interrupt(game, d, "flute"):
@@ -1229,13 +1302,21 @@ class LegacyRules(BaseRules):
     # ------------------------------------------------------------------ corruption
     def on_cards_played(self, game, cards: Sequence[Card], player: Optional[int] = None) -> None:
         owner = game.active if player is None else int(player)
+        twofives = [c.id for c in cards if c.has("twofive")]
         for c in cards:
             # Rulebook p.25: a Wild Animal declares a class, a 2/5 a value, when it enters a
-            # playmat; asked before the attack goes on (see ``_declare_next``).
+            # playmat; settled before the attack goes on (see ``_declare_next``). The 2/5s
+            # entering together share one value: one entry for them all; ``group`` is the
+            # kinfolk set whose strength they must match (none: a free choice).
             if c.has("choosable"):
                 game.extra.setdefault("declare_pending", []).append({"card": c.id, "what": "class", "player": owner})
-            elif c.has("twofive"):
-                game.extra.setdefault("declare_pending", []).append({"card": c.id, "what": "value", "player": owner})
+            elif c.has("twofive") and c.id == twofives[0]:
+                entry = {"card": c.id, "cards": list(twofives), "what": "value", "player": owner}
+                if self._kinfolk_batch(cards):
+                    entry["group"] = [x.id for x in cards]
+                for cid in twofives:     # a value from an earlier visit to the playmat is spent
+                    (game.extra.get("declared_value") or {}).pop(cid, None)
+                game.extra.setdefault("declare_pending", []).append(entry)
             if c.has("corrupted"):
                 self._corrupted_banish(game, c, owner)
             if c.has("restored") and game.banished:
@@ -1387,12 +1468,18 @@ class LegacyRules(BaseRules):
     # "2/5 mercenaries: declare 2 or 5 when the card enters your playmat and keep that value
     # while it is in play ... Wild Animal mercenaries show four class icons: declare one class
     # when the card enters your playmat; at other times you decide which class it is." The
-    # declaration is asked through the entry-effect queue, first, whenever such a card enters
-    # play (played, or added by a Kinfolk Flute, a Scarlet Whistle or a mage). A 2/5 is asked
-    # only when it is the attack's single card (a beast beside it copies the value): in a
-    # kinfolk set or with a companion it counts 2. The choices live in ``extra["declared"]``
-    # and ``extra["declared_value"]`` until the next enemy appears (``on_enemy_revealed``);
-    # ``card_suits`` and ``in_play_strength`` read them while the card is in play.
+    # declaration is settled through the entry-effect queue, first, whenever such a card
+    # enters play (played, or added by a Kinfolk Flute, a Scarlet Whistle or a mage). The
+    # 2/5s entering play together get one value and one question at most: in a kinfolk set
+    # they take the set's strength (2/5 + 5 counts 5, 2/5 + 2 counts 2, three 2/5s count 2
+    # under the limit of 10: recorded and logged, no question), two 2/5s on their own may
+    # be 2s or 5s (asked), and a 2/5 alone, with a companion or a beast, or added by a mage
+    # or a Scarlet Whistle is declared freely (asked; a beast copies the value). A Kinfolk
+    # Flute addition joins the attack's set and takes its strength. The values live in
+    # ``extra["declared"]`` and ``extra["declared_value"]`` until the next enemy appears
+    # (``on_enemy_revealed``); ``card_suits`` and ``in_play_strength`` read them while the
+    # card is in play (attack strength, a beast's copy, mission 7's pilgrim matches, the
+    # Evergreen attack checks, the multiplayer Kinfolk Flute).
     @staticmethod
     def _play_of(game, card_id: str):
         for play in game.plays:
@@ -1400,23 +1487,54 @@ class LegacyRules(BaseRules):
                 return play
         return None
 
+    def _value_options(self, game, entry: Dict[str, Any], ids: Sequence[str]) -> List[int]:
+        """The values the 2/5s ``ids`` (one pending entry) may take: those their kinfolk set
+        allows, or 2 and 5 when nothing constrains them."""
+        group = entry.get("group")
+        if group is None and "cards" not in entry:
+            # an entry saved before 2/5s shared one: the attack it joined was its batch
+            play = self._play_of(game, ids[0])
+            if play is not None and self._kinfolk_batch([game.cards[c] for c in play.card_ids]):
+                group = list(play.card_ids)
+        if group:
+            cards = [game.cards[str(c)] for c in group if self._play_of(game, str(c)) is not None]
+            values = self.kinfolk_values(game, cards)
+            if values:
+                return values
+        return list(TWOFIVE_VALUES)
+
+    @staticmethod
+    def _value_ids(d: Dict[str, Any]) -> List[str]:
+        """The 2/5s a pending entry or a ``declare_value`` decision is about."""
+        return [str(c) for c in (d.get("cards") or [d["card"]])]
+
+    def declare_value_question(self, game, d: Dict[str, Any]) -> str:
+        """What a ``declare_value`` decision asks, naming its cards (for UIs)."""
+        ids = [c for c in self._value_ids(d) if c in game.cards]
+        return "%s: strength 2 or 5?" % (" + ".join(game.cards[c].label() for c in ids) or "2/5")
+
     def _declare_next(self, game) -> Optional[Dict[str, Any]]:
         queue = game.extra.get("declare_pending") or []
         while queue:
             entry = queue.pop(0)
-            cid = str(entry["card"])
-            play = self._play_of(game, cid)
-            if play is None:
-                continue
             player = int(entry.get("player", game.active))
-            label = game.cards[cid].label()
             if entry.get("what") == "class":
-                game._say("%s enters play: %s declares its class." % (label, game.players[player].name))
+                cid = str(entry["card"])
+                if self._play_of(game, cid) is None:
+                    continue
+                game._say("%s enters play: %s declares its class." % (game.cards[cid].label(), game.players[player].name))
                 return {"kind": "declare_class", "player": player, "card": cid}
-            others = [c for c in play.card_ids if not game.cards[c].has("beast")]
-            if others == [cid]:
-                game._say("%s enters play alone: %s declares 2 or 5." % (label, game.players[player].name))
-                return {"kind": "declare_value", "player": player, "card": cid}
+            ids = [c for c in self._value_ids(entry) if self._play_of(game, c) is not None]
+            if not ids:
+                continue
+            options = self._value_options(game, entry, ids)
+            if len(options) == 1:
+                # the kinfolk set allows one value only: recorded without a question
+                self._set_values(game, None, ids, options[0], player, forced=True)
+                continue
+            d = {"kind": "declare_value", "player": player, "card": ids[0], "cards": ids}
+            game._say("%s %s declares." % (self.declare_value_question(game, d), game.players[player].name))
+            return d
         game.extra.pop("declare_pending", None)
         return None
 
@@ -1428,9 +1546,9 @@ class LegacyRules(BaseRules):
     def _actions_declare_value(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
         player = int(d["player"])
         return [{"type": "declare_value", "player": player, "option": str(v), "label": "Strength %d" % v}
-                for v in (2, 5)]
+                for v in TWOFIVE_VALUES]
 
-    def _refresh_declared_play(self, game, d: Dict[str, Any], cid: str) -> None:
+    def _refresh_declared_play(self, game, d: Optional[Dict[str, Any]], cid: str) -> None:
         """The attack holding a just-declared card gets its strength and classes again; a
         paused resolution's running damage follows the strength."""
         play = self._play_of(game, cid)
@@ -1440,9 +1558,29 @@ class LegacyRules(BaseRules):
         cards = [game.cards[c] for c in play.card_ids]
         play.value = self.play_value(game, cards)
         play.suits = game.play_suits(cards)
-        saved = d.get("resume_decision")
+        saved = d.get("resume_decision") if d else None
         if isinstance(saved, dict) and "damage" in saved:
             saved["damage"] = int(saved["damage"]) + play.value - before
+
+    def _set_values(self, game, d: Optional[Dict[str, Any]], ids: Sequence[str], value: int, player: int,
+                    forced: bool = False) -> None:
+        """The 2/5s ``ids`` (entering play together) count ``value`` while they are in play;
+        their attack is refreshed. ``forced``: their kinfolk set allowed nothing else."""
+        store = game.extra.setdefault("declared_value", {})
+        for cid in ids:
+            store[cid] = int(value)
+        self._refresh_declared_play(game, d, ids[0])
+        play = self._play_of(game, ids[0])
+        attack = play.value if play is not None else 0
+        for cid in ids:
+            game._event("declare", player=player, card=cid, value=int(value), forced=forced, attack=attack)
+        labels = " + ".join(game.cards[c].label() for c in ids)
+        if forced:
+            game._say("%s %s %d: the kinfolk set allows no other strength." % (
+                labels, "counts" if len(ids) == 1 else "each count", value))
+        else:
+            game._say("%s declares %s %s %d." % (game.players[player].name, labels,
+                                                 "a" if len(ids) == 1 else "each a", value))
 
     def _decide_declare_class(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
         suit = str(action.get("option"))
@@ -1458,14 +1596,14 @@ class LegacyRules(BaseRules):
 
     def _decide_declare_value(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
         value = int(action.get("option", 0))
-        if value not in (2, 5):
+        if value not in TWOFIVE_VALUES:
             from ..engine import IllegalAction
             raise IllegalAction("Declare 2 or 5.")
-        cid = str(d["card"])
-        game.extra.setdefault("declared_value", {})[cid] = value
-        self._refresh_declared_play(game, d, cid)
-        game._event("declare", player=int(d["player"]), card=cid, value=value)
-        game._say("%s declares %s a %d." % (game.players[int(d["player"])].name, game.cards[cid].label(), value))
+        # one declaration for every 2/5 of the question (a save from before the shared
+        # questions names a single ``card``)
+        ids = [c for c in self._value_ids(d) if self._play_of(game, c) is not None]
+        if ids:
+            self._set_values(game, d, ids, value, int(d["player"]))
         self._entry_done(game, d)
 
     def _interrupt(self, game, d: Dict[str, Any], step: str) -> bool:
@@ -1928,7 +2066,7 @@ class Mission7Rules(LegacyRules):
 
     def _strength_in_play(self, game, cid: str) -> int:
         """A card's strength as it entered play: a beast's equals its partner's (p.14), a
-        2/5 played alone has its declared value (p.25)."""
+        2/5 has the value it was given, declared or forced by its kinfolk set (p.25)."""
         card = game.cards[cid]
         if not card.has("beast"):
             return self.in_play_strength(game, card)

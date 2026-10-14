@@ -246,6 +246,11 @@ class BaseRules:
         """Additional legal plays beyond singles / companions / sets (Legacy: beasts...)."""
         return []
 
+    def set_strengths(self, game: "Game", card: Card) -> Tuple[int, ...]:
+        """The strengths a card may take in a set, for ``Game.legal_plays``: its value in
+        the base game; Legacy's 2/5 mercenary may count 2 or 5 there."""
+        return (self.play_value(game, [card]),)
+
     def validate_combo(self, game: "Game", cards: Sequence[Card]) -> Tuple[str, Optional[str]]:
         """Return (kind, error). Kinds: single, jester, companion, set."""
         return classify_combo(cards)
