@@ -28,6 +28,17 @@ def make_button(title: str, action: Callable, frame=(0, 0, 100, 44), primary: bo
     return b
 
 
+def fit_title(b: ui.Button, max_size: float = 0, min_size: float = 11) -> None:
+    """Shrink a button's title font until the title fits its width (UIButton would cut it
+    in the middle otherwise)."""
+    name, size = b.font if b.font else (T.FONT_BOLD, 16)
+    size = float(max_size or size)
+    room = b.width - 10
+    while size > min_size and text_size(b.title or "", 0, size, True)[0] > room:
+        size -= 1
+    b.font = (name, size)
+
+
 def set_enabled(b: ui.Button, on: bool, primary: bool = True) -> None:
     b.enabled = on
     b.background_color = (T.BTN if primary else T.PANEL_2) if on else T.BTN_DISABLED
@@ -43,6 +54,36 @@ def make_label(text: str, frame, size: int = 15, bold: bool = False, color: str 
     l.alignment = ui.ALIGN_LEFT if align is None else align
     l.number_of_lines = lines
     return l
+
+
+def text_size(text: str, max_width: float, size: float, bold: bool = False) -> tuple:
+    """(width, height) of ``text`` wrapped at ``max_width`` (0: one line) in the app font:
+    ``ui.measure_string`` where the ui module has it (Pythonista, the fake ui), else an
+    estimate of 0.55 x the font size per character and 1.25 x the size per line."""
+    measure = getattr(ui, "measure_string", None)
+    if measure is not None:
+        w, h = measure(text, max_width, (T.FONT_BOLD if bold else T.FONT, size))
+        return (float(w), float(h))
+    per_char = 0.55 * size
+    lines = 0
+    widest = 0.0
+    for para in str(text).split("\n"):
+        wide = len(para) * per_char
+        if max_width and wide > max_width:
+            lines += int(math.ceil(wide / float(max_width)))
+            widest = max(widest, float(max_width))
+        else:
+            lines += 1
+            widest = max(widest, wide)
+    return (widest, lines * size * 1.25)
+
+
+def fit_label(text: str, width: float, size: int = 13, bold: bool = False, color: str = T.TEXT,
+              align=None, min_height: float = 0) -> ui.Label:
+    """A label as tall as its text wrapped at ``width`` (overlay instructions): nothing is
+    cut off whatever the text's length."""
+    _, h = text_size(text, width, size, bold)
+    return make_label(text, (0, 0, width, max(min_height, math.ceil(h) + 4)), size, bold, color, align, 0)
 
 
 def card_color(card: Card) -> str:
@@ -169,19 +210,33 @@ class EnemyPanel(ui.View):
                 detail += " − %d shield" % sh
             atk_text += "  (%s)" % detail
         ui.draw_string(atk_text, (tx, 60, tw, 20), (T.FONT_BOLD, 15), T.TEXT)
+        imm, icol = self.immunity_text(g)
+        # The immunity line wraps onto a second line in a smaller font when it is long (a
+        # mission zone can make an enemy immune to five classes); the castle count follows.
+        size = 13
+        _, ih = text_size(imm, tw, size)
+        if ih > 20:
+            size = 11
+            _, ih = text_size(imm, tw, size)
+        ih = min(max(ih, 16.0), 30.0)
+        iy = 80 if ih <= 20 else 79
+        ui.draw_string(imm, (tx, iy, tw, ih), (T.FONT, size), icol)
+        castle = "%d more in the castle" % len(g.castle)
+        if getattr(g.rules, "mission", 0) == 10 and g.castle:
+            # mission 10's enemy deck is face up, 2 on top down to 9: the next one is known
+            castle += " · next: %s" % g.card(g.castle[0]).label()
+        ui.draw_string(castle, (tx, iy + ih + 1, tw, 16), (T.FONT, 11 if size == 11 else 12), T.MUTED)
+
+    @staticmethod
+    def immunity_text(g: Game) -> tuple:
+        """(text, colour) of the immunity line."""
         if g.immunity_cancelled:
-            imm = "Immunity cancelled by the Jester"
-            icol = T.OK
-        elif g.rules.immune_suits(g):
+            return "Immunity cancelled by the Jester", T.OK
+        if g.rules.immune_suits(g):
             legacy = bool(getattr(g.rules, "legacy", False))
             names = [(CLASS_NAME.get(s, s) + "s") if legacy else SUIT_NAME.get(s, s) for s in g.rules.immune_suits(g)]
-            imm = "Immune to %s" % " / ".join(names)
-            icol = T.MUTED
-        else:
-            imm = "No immunity"
-            icol = T.MUTED
-        ui.draw_string(imm, (tx, 82, tw, 20), (T.FONT, 13), icol)
-        ui.draw_string("%d more in the castle" % len(g.castle), (tx, 102, tw, 18), (T.FONT, 12), T.MUTED)
+            return "Immune to %s" % " / ".join(names), T.MUTED
+        return "No immunity", T.MUTED
 
 
 class HandGrid(ui.View):
@@ -269,7 +324,11 @@ class HandGrid(ui.View):
 
 
 class CardStrip(ui.View):
-    """Small face-up cards in a row (cards played against the enemy, etc.)."""
+    """Small face-up cards in a row (cards played against the enemy, etc.). The title takes
+    one line, or two when it is long (a mission zone's effects); the cards shrink to fit."""
+
+    TITLE_FONT = 11
+    LINE = 14
 
     def __init__(self, **kw) -> None:
         super().__init__(**kw)
@@ -277,6 +336,13 @@ class CardStrip(ui.View):
         self.background_color = None
         self.title = ""
         self.dimmed: List[str] = []   # ids drawn greyed out (e.g. revealed cards that may not be picked)
+
+    def title_height(self) -> float:
+        """The room the title takes: one line (14pt) or two (28pt)."""
+        if not self.title:
+            return 0.0
+        _, h = text_size(self.title, max(1.0, self.width - 8), self.TITLE_FONT)
+        return float(self.LINE if h <= self.LINE * 1.4 else 2 * self.LINE)
 
     def set_cards(self, cards: Sequence[Card], title: str = "", dimmed: Sequence[str] = ()) -> None:
         for v in list(self.subviews):
@@ -294,7 +360,8 @@ class CardStrip(ui.View):
         n = len(self.cards)
         if not n:
             return
-        ch = self.height - 18
+        top = self.title_height() + 2 if self.title else 16
+        ch = max(20.0, self.height - top - 2)
         cw = ch / 1.42
         gap = 6.0
         max_w = self.width - 8
@@ -306,11 +373,12 @@ class CardStrip(ui.View):
             v.small = True
             v.dimmed = c.id in self.dimmed
             v.touch_enabled = False
-            v.frame = (4 + i * step, 16, cw, ch)
+            v.frame = (4 + i * step, top, cw, ch)
             self.add_subview(v)
 
     def draw(self) -> None:
+        th = self.title_height()
         if self.title:
-            ui.draw_string(self.title, (4, 0, self.width - 8, 14), (T.FONT, 11), T.MUTED)
+            ui.draw_string(self.title, (4, 0, self.width - 8, th), (T.FONT, self.TITLE_FONT), T.MUTED)
         if not self.cards:
-            ui.draw_string("nothing played yet", (4, 20, self.width - 8, 20), (T.FONT, 12), T.MUTED)
+            ui.draw_string("nothing played yet", (4, max(20.0, th + 4), self.width - 8, 20), (T.FONT, 12), T.MUTED)

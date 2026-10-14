@@ -69,7 +69,8 @@ class EvergreenRules(LegacyRules):
             n = min(30, len(game.tavern))
             moved = game.tavern[:n]
             del game.tavern[:n]
-            game.discard = list(reversed(moved)) + game.discard   # the deck's top ends on top of the pile
+            # the pile's top is index 0: the reserve's former top card ends on top of the pile
+            game.discard = moved + game.discard
             game._say("Mental Health Day: %d cards from the top of the reserve deck start in the discard pile." % n)
 
     # ------------------------------------------------------------------ queries
@@ -81,7 +82,16 @@ class EvergreenRules(LegacyRules):
         # boon 28, Best Friend: "when you play the puppy it has all four base classes"
         if card.has("evergreen_puppy"):
             return tuple(BASIC_SUITS)
-        return tuple(card.suits)
+        return super().card_suits(game, card)    # a Wild Animal's declared class
+
+    def discard_top_feeds_enemy(self, game) -> bool:
+        # bane 10 moves the top discard into the zone, 17 adds its strength, 19 its classes
+        return any(self.has_bane(game, n) for n in (10, 17, 19))
+
+    def banished_top_matters(self, game) -> bool:
+        # the Forest and the Hills move the top banished card into the zone; bane 18 adds
+        # its strength, bane 20 its classes
+        return self.location(game) in ("C", "D") or self.has_bane(game, 18) or self.has_bane(game, 20)
 
     def attack_bonus(self, game) -> int:
         bonus = 0
@@ -324,7 +334,7 @@ class EvergreenRules(LegacyRules):
         return super()._relic_after_attack(game, play)
 
     def _attack_strengths(self, game, play) -> List[int]:
-        return [self.strength(game.cards[c]) for c in play.card_ids if not game.cards[c].has("beast")]
+        return [self.in_play_strength(game, game.cards[c]) for c in play.card_ids if not game.cards[c].has("beast")]
 
     def _attack_next(self, game, play) -> Optional[Dict[str, Any]]:
         queue = game.extra.get("attack_queue") or {}
@@ -634,7 +644,7 @@ class EvergreenRules(LegacyRules):
         if game.discard:
             top = game.discard[0]
             acts.append({"type": "precision_strike", "player": player, "card": top, "pile": "discard",
-                         "label": "Take %s, the top of the discard pile" % game.cards[top].label()})
+                         "label": "Take top of discard (%s)" % game.cards[top].label()})
         return acts
 
     def _decide_precision_strike(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:

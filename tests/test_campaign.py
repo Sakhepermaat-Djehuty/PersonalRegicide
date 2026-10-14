@@ -2267,7 +2267,10 @@ def test_mission5_defeat_shuffles_enemy_and_zone_into_the_banished_pile_and_exac
     g.banished.remove("MYLA7")
     assert g.enemy_attack == 17
     g.play(["AC", "5D"])                              # 6 doubled: 12, exact
-    assert g.enemies_defeated == 1 and g.decision is None
+    # solo with the Scarlet Whistle: the player chooses which played card ends on top (p.19)
+    assert g.decision["kind"] == "cleanup_top" and g.decision["options"] == ["AC", "5D"]
+    g.decide({"type": "cleanup_top", "card": "5D"})
+    assert g.enemies_defeated == 1 and g.decision is None and g.discard[0] == "5D"
     assert set(g.banished) == {"MYLA7", "2C", "3C", "GRJH"} and len(g.banished) == 4   # shuffled in, without looking
     assert g.mission_zone == [] and set(g.discard[:2]) == {"AC", "5D"}
     assert any(ev["t"] == "zone_cleared" and ev["to"] == "banish_shuffle" for ev in g.last_events)
@@ -2292,6 +2295,8 @@ def test_mission5_defeat_shuffles_enemy_and_zone_into_the_banished_pile_and_exac
     set_hand(g, ["10C", "2D"])
     g.enemy.hp = 20
     g.play(["10C"])                                   # 20: exact
+    assert g.decision["kind"] == "cleanup_top" and greedy_policy(g)["card"] == "10C"   # the Whistle wants the strongest
+    g.decide(greedy_policy(g))
     assert g.enemies_defeated == 1
     assert [ev["amount"] for ev in g.last_events if ev["t"] == "carry_damage"] == [8]
     # a chain: the carry-over kills the next enemy exactly, whose own strength carries on
@@ -2390,7 +2395,12 @@ def test_mission6_not_exact_no_rescue_zone_grows_mage_rest_is_banished_and_the_b
     set_tavern_top(g, ["4C", "2D", "3D", "2S", "3S"])
     g.play(["5M"])
     g.decide({"type": "mage_pick", "card": "4C"})                     # 9, doubled: 18, not exact
+    # solo with the Scarlet Whistle: the unchosen cards go to the discard pile in the order
+    # the player chooses (p.16 "in any order"), the chosen one on top
+    assert g.decision["kind"] == "discard_top" and g.decision["options"] == ["2D", "3D", "2S", "3S"]
+    g.decide({"type": "discard_top", "card": "3S"})
     assert g.decision["kind"] == "zone_move" and g.decision["options"] == ["5M", "4C"] and g.decision["exact"] is False
+    assert g.discard[:4] == ["3S", "2S", "3D", "2D"]
     g.decide({"type": "zone_move", "card": "5M"})
     # no rescue; team damage is 7 + 5 = 12 and the bot covers it with the least waste
     assert g.decision["kind"] == "team_discard" and g.decision["damage"] == 12 and g.mission_zone == ["MYLA7", "5M"]
@@ -2810,16 +2820,21 @@ def test_evergreen_mother_solo_banishes_from_the_discard_pile_or_the_reserve_by_
     g.play(["7D"])
     g.decide({"type": "mother_choice", "option": "reserve"})
     assert g.banished[-1] == top and g.discard == ["4C", "2C"]
-    # an empty reserve with a discard pile: the discard option only (and the bot takes it)
+    # an empty reserve with a discard pile: the relic's "may" keeps both options; the
+    # reserve banishes nothing then (as without the relic), which the bot prefers
     _fresh_enemy(g, "J", "H")
     set_hand(g, ["7D", "9S", "8S"])
     g.discard.extend(g.tavern)
     g.tavern = []
     g.play(["7D"])
-    assert [a["option"] for a in g.legal_actions()] == ["discard"]
-    assert greedy_policy(g)["option"] == "discard"
+    acts = g.legal_actions()
+    assert [a["option"] for a in acts] == ["discard", "reserve"]
+    assert acts[1]["label"] == "Banish nothing (the reserve deck is empty)"
+    assert greedy_policy(g)["option"] == "reserve"
+    pile, banished = list(g.discard), list(g.banished)
     g.decide(greedy_policy(g))
-    assert g.decision is None
+    assert g.decision is None and g.discard == pile and g.banished == banished
+    assert any(ev["t"] == "corrupt_banish_none" for ev in g.last_events)
     _ids_everywhere(g)
 
 

@@ -811,6 +811,14 @@ class Game:
         self.phase = PHASE_PLAY
         self._start_turn()
 
+    def abandon(self) -> None:
+        """The players give up: the game is lost (a Legacy attempt then counts as a loss)."""
+        self.last_events = []
+        if self.is_over:
+            raise IllegalAction("The game is over.")
+        self.decision = None
+        self._lose("The attempt was abandoned.")
+
     def special(self, action: dict) -> None:
         """Relic / mission action provided by the rules (see rules.special_actions)."""
         self.last_events = []
@@ -935,13 +943,14 @@ class Game:
         # and everything it added) is banished at clean-up, other attacks against the
         # same enemy are not.
         mage_ids = [c for p in self.plays if p.mage for c in p.card_ids]
+        spent: List[Card] = []
         if self.n_players == 1 and self.rules.solo_jester_mode(self) == "attack":
             # Official solo rule (Legacy p.26): the Jester is never cleaned up to any pile;
             # it goes back to the side, face down, unusable for the rest of this attempt.
             # With two or more players the Jester is a reserve card cleaned up like the rest.
+            # (Set aside below, once no clean-up question pauses the defeat any more.)
             spent = [c for c in played if c.is_jester]
             played = [c for c in played if not c.is_jester]
-            self.set_aside.extend(c.id for c in spent)
         # Evergreen bane 14: the attack that dealt the final damage goes into the mission
         # zone (after the location's enemy-defeated rules) instead of the discard pile.
         last_ids: List[str] = []
@@ -958,6 +967,7 @@ class Game:
         if decision is not None:
             self._pause_defeat(decision, exact)
             return
+        self.set_aside.extend(c.id for c in spent)
         self._event("defeat", enemy=enemy.card_id, exact=exact, plan=plan, mage_banished=mage_ids)
         self._say("%s is defeated%s" % (enemy.name, (" with exact damage!" + (
             " It joins the tavern deck." if plan.get("enemy_to") == "tavern_top" else "")) if exact else "."))

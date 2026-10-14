@@ -100,6 +100,9 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
         sugg = min_waste_discard(game)
         print("Suffer %d damage. Suggested: %s" % (
             game.pending_damage, " ".join(game.card(c).label() for c in sugg) or "-"))
+        if game.rules.sequential_discard(game):
+            print("Discard one at a time, in the order typed: the last card ends on top of the discard pile, "
+                  "and no card may follow once the damage is covered.")
         opts = "numbers=discard, a=accept suggestion"
         if game.can_use_solo_jester():
             opts += ", j=Jester power"
@@ -251,8 +254,8 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
     if game.phase == PHASE_DECIDE and (game.decision or {}).get("kind") != "flute_add":
         # A choice offered as a short list: which mission zone card to rescue, the Azure
         # Emblem's keep (solo) or place (another player's card goes on the reserve), the
-        # Scarlet Whistle's take, the Reaver's count and pick, the clean-up order, the
-        # card moved to the mission zone, Myla's team damage.
+        # Scarlet Whistle's take, the Reaver's count and pick, which card ends on top of a
+        # pile, a declaration, the card moved to the mission zone, Myla's team damage.
         d = game.decision or {}
         if d.get("kind") == "emblem_keep":
             print("Azure Emblem: %s may put one of the other revealed cards back on top of the reserve deck." % (
@@ -287,6 +290,16 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
             print("A %s beast was revealed: %s must %s a card from hand." % (
                 "cleric" if d.get("kind") == "beast_discard" else "bard", game.players[game.deciding].name,
                 "discard" if d.get("kind") == "beast_discard" else "banish"))
+        elif d.get("kind") == "cleanup_top":
+            print("Enemy defeated: which played card ends on top of the discard pile?")
+        elif d.get("kind") == "discard_top":
+            print("Mage: the cards not chosen go to the discard pile. Which ends on top?")
+        elif d.get("kind") == "banish_top":
+            print("Which card ends on top of the banished pile?")
+        elif d.get("kind") == "declare_class":
+            print("%s enters play: declare its class." % game.card(str(d.get("card"))).label())
+        elif d.get("kind") == "declare_value":
+            print("%s enters play alone: declare its strength, 2 or 5." % game.card(str(d.get("card"))).label())
         elif d.get("kind") in ("precision_strike", "restored_arrows", "close_call", "zone_discard", "zone_sibling",
                                "zone_match", "attack_discard", "poison"):
             print("%s: %s" % (d.get("kind").replace("_", " ").capitalize(), game.log[-1] if game.log else ""))

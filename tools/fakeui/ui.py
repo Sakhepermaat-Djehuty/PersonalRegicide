@@ -97,6 +97,8 @@ def _pil_font(font: Any):
 
 def measure_string(text: str, max_width: float = 0, font: Any = None, alignment: int = ALIGN_LEFT,
                    line_break_mode: int = LB_WORD_WRAP) -> Tuple[float, float]:
+    """Pythonista's ``ui.measure_string``: the size of ``text`` wrapped at ``max_width``
+    (0: no wrapping), measured with PIL's metrics of the stand-in font."""
     f = _pil_font(font)
     lines = _wrap(text, f, max_width * SCALE if max_width else 0, line_break_mode)
     w = 0.0
@@ -572,10 +574,10 @@ def _render_view(v: View, ox: float, oy: float) -> None:
     _ctx_stack.append(_Ctx(c.img, c.draw, x0, y0, (x0, y0, v.width, v.height)))
     try:
         if isinstance(v, Label):
-            tw, th = measure_string(v.text, v.width if v.number_of_lines != 1 else 0, v.font)
+            shown = "\n".join(label_lines(v))
+            tw, th = measure_string(shown, 0, v.font)
             ty = max(0.0, (v.height - th) / 2.0)
-            draw_string(v.text, (0, ty, v.width, v.height), v.font, v.text_color, v.alignment,
-                        LB_WORD_WRAP if v.number_of_lines != 1 else LB_TRUNCATE_TAIL)
+            draw_string(shown, (0, ty, v.width, v.height), v.font, v.text_color, v.alignment, LB_CLIP)
         elif isinstance(v, Button):
             tw, th = measure_string(v.title, 0, v.font)
             col = v.tint_color if v.enabled else "#9a9a9a"
@@ -613,6 +615,33 @@ def _render_view(v: View, ox: float, oy: float) -> None:
             _render_view(s, sub_ox, sub_oy)
     finally:
         _ctx_stack.pop()
+
+
+def label_lines(label: "Label") -> List[str]:
+    """The lines a UILabel would show: wrapped at its width, at most ``number_of_lines``
+    lines (0: as many as fit in its height), the last one truncated with an ellipsis when
+    text is left over (UILabel's default tail truncation)."""
+    f = _pil_font(label.font)
+    if label.number_of_lines == 1:
+        return _wrap(label.text, f, label.width * SCALE, LB_TRUNCATE_TAIL)
+    lines = _wrap(label.text, f, label.width * SCALE, LB_WORD_WRAP)
+    room = int(label.height * SCALE // max(1.0, _line_height(f)))
+    limit = label.number_of_lines if label.number_of_lines > 0 else max(1, room)
+    limit = min(limit, max(1, room))
+    if len(lines) <= limit:
+        return lines
+    kept = lines[:limit]
+    last = kept[-1]
+    while last and f.getbbox(last + "…")[2] > label.width * SCALE:
+        last = last[:-1]
+    kept[-1] = last + "…"
+    return kept
+
+
+def label_truncated(label: "Label") -> bool:
+    """Would the label cut its text short (tests: nothing the player must read is lost)?"""
+    shown = label_lines(label)
+    return bool(shown) and shown[-1].endswith("…") and not str(label.text).endswith("…")
 
 
 # ----------------------------------------------------------------------------- touches

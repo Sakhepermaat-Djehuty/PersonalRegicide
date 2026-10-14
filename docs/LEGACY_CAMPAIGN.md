@@ -279,15 +279,40 @@ unspent coins on success, which the sticker does not say (unverified).
 * Interactive mid-resolution decisions: mage peek, pick and chain; druid deal and
   allocate per player; chanter declared number; reaver count and choice. These need a
   serialisable "decision pending" phase in the engine. **Done** for the mage and the
-  reaver (count, then pick; the revealed cards are banished with the chosen one last;
+  reaver (count, then pick; the revealed cards are banished with the chosen one last,
+  or in the player's order where the top of the banished pile matters, see below;
   immunity blocks the whole ability; an empty reserve only doubles; the p.22 example
   deals 68) and for the Guardian (a turn flag: no enemy damage, no mission damage, and
   no team damage in step 4b).
-* Suffering damage one card at a time with no over-discarding; clean-up order chosen by
-  the player (**done** where it matters: mission 4 asks which played card ends on top;
-  Legacy games move the enemy first and the played cards on top of it, p.19).
-* 2/5 and Wild Animal declarations on entering play (a 2/5 counts 2 as a bonus to the
-  enemy, 5 when discarded or added by a reaver; the declaration itself is not asked).
+* **Done:** suffering damage one card at a time with no over-discarding (p.18): in
+  Legacy games the cards are discarded in the order given, the total before the last one
+  must be below the damage (9 then 10 for 10 damage is legal, 10 then an ace is not) and
+  the last one ends on top of the discard pile; the app's Discard button follows the tap
+  order and its suggestion lists the largest card last; the bots pay the same way. Team
+  damage was already paid one card at a time; feign death is unchanged. The base game
+  keeps accepting surplus (the strict variant stays optional).
+* **Done:** order choices wherever the top card of a pile matters. "In any order" (p.19
+  clean-up, p.16 a mage's unchosen cards, p.17 a reaver's revealed cards, mission 5's
+  mage attack banish) becomes a question "which card ends on top?" only when two or more
+  cards go together and the top of that pile counts: the discard pile in missions 4, 10
+  and 11, with Evergreen banes 10, 17 or 19, and in any solo game holding the Scarlet
+  Whistle (`cleanup_top`, `discard_top`); the banished pile in missions 5, 11 and 12 and
+  in Evergreen setups with the Forest, the Hills or banes 18 or 20 (`banish_top`; a
+  restored card that the mission 12 relic sends under the reserve is left out of it).
+  Elsewhere the cards go in play order, the last on top. Legacy games move the enemy
+  first and the played cards on top of it (p.19). The bots put the card that weakens the
+  enemy most on top (a Jester, a classless or the weakest card), and the strongest where
+  only the solo Whistle reads the pile.
+* **Done:** 2/5 and Wild Animal declarations (p.25). A Wild Animal entering play (played,
+  or added by a Kinfolk Flute, a Scarlet Whistle or a mage) declares a basic class
+  (`declare_class`), asked first among the effects of cards entering play; it has that
+  class while it is in play (an enemy immune to it blocks it) and none anywhere else. A
+  2/5 declares 2 or 5 (`declare_value`) when it is the attack's single card (a beast
+  beside it copies the value); in a kinfolk set or with a companion it counts 2, as a
+  bonus to an enemy 2, when discarded or added by a reaver 5. The declarations end when
+  the next enemy appears. Forecasts assume a warrior and a 5; the bots pick a class the
+  enemy is not immune to (a warrior when doubling could kill, else a bard when the hand
+  is short, else a cleric, else a paladin) and 5 unless 2 kills exactly.
 * Relics with separate solo and multiplayer sides. **Done:** Kinfolk Flute, Scarlet
   Whistle (solo: take the top discard into a solitary companion or beast attack; 2+
   players: one other player, asked clockwise, adds any card but a Jester) and Azure
@@ -310,7 +335,8 @@ unspent coins on success, which the sticker does not say (unverified).
   Scarlet Whistle sees the discard pile after the banish) and inside the Flute, Whistle
   and Mage flows when their additions are corrupted; the engine restores the interrupted
   decision afterwards. Solo: discard top or reserve top (reserve only when the pile is
-  empty, no choice; discard only when the reserve is empty). 2+ players: the first other
+  empty, no choice; with an empty reserve the "reserve" option stays offered and banishes
+  nothing, the relic's "may"). 2+ players: the first other
   player clockwise from the corrupted card's owner with a card banishes one from hand,
   no pass; empty hands banish nothing.
 * **Done:** an end-of-turn decision (`on_turn_end` may return one; mission 9) and a
@@ -512,7 +538,9 @@ shuffle or a banish from the pile changes it) and frozen once damage is being su
 a Jester on top counts 0, a 2/5 counts 2, a defeated experiment its printed strength. On
 a kill the experiment goes to the discard pile first (on top of the reserve on exact
 damage), then the player chooses which played card ends on top of the pile (the rest go
-under it; a mage attack is banished instead), as rulebook p.19 orders the steps. The
+under it; a mage attack is banished instead), as rulebook p.19 orders the steps; a
+mage's unchosen cards likewise go to the pile in the order the player chooses (the
+top card is asked). The
 twelve experiments carry the corrupted flag, so one drawn from the reserve plays as a
 corrupted card (banishes the top reserve card, its own class ignores immunity). The
 rewards add Gøran, the four beasts (one may be chosen on the campaign screen for each
@@ -575,8 +603,9 @@ damage the next enemy, once revealed, takes damage equal to the fallen enemy's s
 as the tracker showed it (printed, plus the zone, less paladin reductions, never below
 0), and if that brings it to 0 or less it falls too (exactly only at 0) and the chain
 continues; the same player then takes the next turn. The Reaver ability is implemented
-(see above); a mage attack's cards are banished in play order rather than asking for an
-order.
+(see above). Since the top banished card feeds the zone, the player chooses which card
+ends on top whenever several are banished together: a reaver's revealed cards, and a
+mage attack's cards at clean-up ("Rules continued").
 
 ## Mission 6, Shards of Memory (second edition; confirmed, transcribed from the owner's photos)
 
@@ -638,7 +667,10 @@ never the set-aside Jester) to the zone, on exact damage may then move one zone 
 except Myla to the discard pile, and Myla deals team damage equal to the zone's combined
 strength (her 7 included): any player discards one card at a time (its value when
 discarded: a companion 1, a Jester 0, a 2/5 5) until the total is at least the damage,
-in any order; the app offers a seat picker in pass-and-play. If every hand together
+in any order; the app offers a seat picker in pass-and-play (names and card counts only;
+the phone is passed before a hand is shown). When nothing in play can move (a solo
+Jester alone made the kill) the exact-kill rescue and the team damage happen all the
+same. If every hand together
 cannot pay, the mission is lost at once. A Guardian in the killing attack prevents the
 team damage (the clean-up still happens). A mage moved to the zone leaves the rest of
 its attack to be banished as usual. Feign death is not offered against team damage (the
@@ -1000,7 +1032,10 @@ classes of the top discard and the top banished card and gains their strengths (
 a beast or a classless card grants its strength, 0 for the first two, and no immunity; a
 corrupted card's own class still ignores the immunity). Enemy defeated: banished (it then
 grants its strength from the top of the pile); on exact damage no beast is revealed at
-the start of the next turn (`extra["skip_beast"]`, cleared after skipping).
+the start of the next turn (`extra["skip_beast"]`, cleared after skipping). Since both
+pile tops count, the player chooses which played card ends on top of the discard pile at
+clean-up and which card ends on top of the banished pile when several are banished
+together (a reaver's reveal, a mage attack).
 
 ## Mission 12, Decay to Growth (confirmed, transcribed from the owner's photos)
 
@@ -1055,7 +1090,9 @@ its classes. Enemy defeated: the zone is banished in the order the player choose
 (`banish_order`, a template the player fills with the permutation; the last card ends on
 top and feeds the zone next turn; the bots put the weakest or a classless card last),
 then the enemy, then the whole discard pile in its order (its top ends on top), and only
-then the played cards go on the new discard pile. The restored relic is implemented once
+then the played cards go on the new discard pile. A reaver's revealed cards and a mage
+attack's cards are banished in the order the player chooses as well (the top card is
+asked). The restored relic is implemented once
 in the engine: every banish goes through `Game.banish_cards`, and `banish_redirect`
 sends a restored card under the reserve deck instead (clean-up of a mage attack, the
 zone, the discard pile, a corrupted card's effect, a reaver's reveal, a druid's slot, the
@@ -1428,11 +1465,12 @@ empties), bane 14 keeps the killing attack (its last play, a mage attack include
 the zone after the location's steps, and bane 13's team damage comes once the piles are
 final. Bane 21 and boon 30 judge the attack as formed in step 1, before the relics let
 others add to it; a beast counts as its partner. Bane 2 moves the 30 cards before the
-hands are drawn. Boon 31 applies to a player's own damage, not to team damage. Boons
-32 and 35 are mandatory when they have an option (their cards say "put"); boons 30, 31
-and 33 may be declined. Boon 28's puppy has no classes anywhere but in an attack. The
-corrupted-card rule of mission 12 is not applied in Evergreen mode (it is a mission 12
-card), so a discarded experiment or Arcana may be healed into the reserve and drawn.
+hands are drawn, the reserve's top card ending on top of the discard pile. Boon 31
+applies to a player's own damage, not to team damage. Boons 32 and 35 are mandatory when
+they have an option (their cards say "put"); boons 30, 31 and 33 may be declined. Boon
+28's puppy has no classes anywhere but in an attack. The corrupted-card rule of mission
+12 is not applied in Evergreen mode (it is a mission 12 card), so a discarded experiment
+or Arcana may be healed into the reserve and drawn.
 
 ## Verification checklist for the owner (gate G2 in PLAN.md)
 

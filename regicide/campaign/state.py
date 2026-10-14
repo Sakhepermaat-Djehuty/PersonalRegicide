@@ -147,7 +147,7 @@ class CampaignState:
         return [P.to_card(c) for c in self.party]
 
     # ------------------------------------------------------------------ attempts
-    def start_attempt(self, seed: Optional[int] = None) -> Game:
+    def start_attempt(self, seed: Optional[int] = None, open_hands: bool = False) -> Game:
         if self.pending:
             raise RuntimeError("resolve the pending reward choices first")
         if self.finished:
@@ -162,7 +162,7 @@ class CampaignState:
                 self.log.append(M.apply_step(self, step, rng))
         extra = M.build_setup(self, number, rng)
         cfg = GameConfig(players=self.players, names=tuple(self.names), rules_id=M.mission(number)["rules_id"],
-                         extra=extra)
+                         extra=extra, open_hands=bool(open_hands) and self.players > 1)
         self.attempts[str(number)] = self.attempts_on(number) + 1
         self.swaps_allowed = False
         self.touch()
@@ -278,7 +278,7 @@ class CampaignState:
         options[str(key)] = bool(value)
         self.evergreen["options"] = options
 
-    def start_evergreen_attempt(self, seed: Optional[int] = None) -> Game:
+    def start_evergreen_attempt(self, seed: Optional[int] = None, open_hands: bool = False) -> Game:
         if not self.finished:
             raise RuntimeError("Evergreen mode opens when the campaign is complete")
         ids = self.evergreen.get("setup")
@@ -287,7 +287,8 @@ class CampaignState:
         rng = self._rng()
         extra = E.build_setup(self, ids, rng, list(self.evergreen.get("mercenaries") or []))
         hand = HAND_SIZE[self.players] + int(extra.pop("hand_bonus", 0) or 0)
-        cfg = GameConfig(players=self.players, names=tuple(self.names), rules_id="evergreen", hand_size=hand, extra=extra)
+        cfg = GameConfig(players=self.players, names=tuple(self.names), rules_id="evergreen", hand_size=hand, extra=extra,
+                         open_hands=bool(open_hands) and self.players > 1)
         self.evergreen["attempts"] = int(self.evergreen.get("attempts", 0)) + 1
         self.touch()
         self.reveal_lore("campaign_end")

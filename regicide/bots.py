@@ -17,10 +17,13 @@ from .engine import (PHASE_CHOOSE_NEXT, PHASE_DECIDE, PHASE_LOST, PHASE_PLAY, PH
 
 # --------------------------------------------------------------------------- helpers
 def min_waste_discard(game: Game, player: Optional[int] = None) -> List[str]:
-    """Smallest-total set of hand cards covering the pending damage.
+    """Smallest-total set of hand cards covering the pending damage, in a legal order.
 
     Ties: fewer cards first, then keep high-value cards in hand. Returns the whole hand
-    if nothing covers the damage (the caller will lose anyway).
+    if nothing covers the damage (the caller will lose anyway). The cards are listed in
+    the order they are discarded, smallest first and the largest last: Legacy pays damage
+    one card at a time and never past the damage (rulebook p.18), which this order always
+    respects since no card of the set can be left out.
     """
     need = game.pending_damage
     hand = game.payable_hand(player)
@@ -46,17 +49,36 @@ def min_waste_discard(game: Game, player: Optional[int] = None) -> List[str]:
             if best is None or key < best:
                 best = key
                 best_ids = [hand[i].id for i in range(n) if mask & (1 << i)]
-    else:  # large Legacy hands: greedy by value descending
-        total = 0
-        for c in sorted(hand, key=lambda c: -c.defence_value):
-            if total >= need:
-                break
-            best_ids.append(c.id)
-            total += c.defence_value
-        if total < need:
-            best_ids = [c.id for c in hand]
-        return best_ids
-    return best_ids if best is not None else [c.id for c in hand]
+        if best is None:
+            return [c.id for c in hand]
+    else:
+        # Large Legacy hands: the largest cards until the smallest single card covers what
+        # is left. No card of the result can be dropped (the last one was the smallest to
+        # cover the rest, and every earlier one is at least as large as it).
+        pool = sorted(hand, key=lambda c: -c.defence_value)
+        if sum(c.defence_value for c in pool) < need:
+            return [c.id for c in hand]
+        left = need
+        while left > 0:
+            covering = [c for c in pool if c.defence_value >= left]
+            pick = min(covering, key=lambda c: (c.defence_value, c.value)) if covering else pool[0]
+            pool.remove(pick)
+            best_ids.append(pick.id)
+            left -= pick.defence_value
+    return payment_order(game, best_ids)
+
+
+def payment_order(game: Game, ids: Sequence[str]) -> List[str]:
+    """The cards of a damage payment in discard order: smallest first, the largest last."""
+    return sorted(ids, key=lambda c: (game.cards[c].defence_value, game.cards[c].value))
+
+
+def sequential_payment_ok(game: Game, ids: Sequence[str]) -> bool:
+    """Could these cards, discarded one at a time in this order, pay the pending damage
+    without discarding past it (rulebook p.18)?"""
+    need = game.pending_damage
+    vals = [game.cards[c].defence_value for c in ids]
+    return bool(vals) and sum(vals) >= need and sum(vals[:-1]) < need
 
 
 # --------------------------------------------------------------------------- policies
@@ -127,13 +149,16 @@ def simple_decision(g: Game) -> Optional[dict]:
     """A cheap, lookahead-free choice for the pending decision (used inside simulations
     and as the fallback of ``decision_policy``): decline when a "do nothing" option exists
     (Kinfolk Flute, Scarlet Whistle, Azure Emblem); a mage's mandatory pick and a reaver's
-    pick take the strongest card; a reaver reveals one card; the clean-up top (mission 4)
-    and the card moved to the zone (mission 6) are the weakest, the rescued zone card the
-    strongest; Myla's team damage is paid with the cheapest cover over every hand. The
-    Druid keeps the strongest dealt cards (hand, top, bottom) and banishes the weakest or
-    a Jester / corrupted / locked card; the Chanter fills the attacker's hand and discards
-    the lowest cards; the Evergreen Mother takes the discard pile (solo) or the lowest card
-    (another hand); mission 7 banishes matching pilgrims and the strongest zone card on an
+    pick take the strongest card; a reaver reveals one card; the card that ends on top of a
+    pile is the one that weakens the enemy most where the top feeds it, the strongest where
+    only the solo Scarlet Whistle reads it (``top_card_choice``); the card moved to the zone
+    (mission 6) is the weakest, the rescued zone card the strongest; a Wild Animal and a 2/5
+    declare as ``declare_class_choice`` / ``declare_value_choice`` say; Myla's team damage
+    is paid with the cheapest cover over every hand. The Druid keeps the strongest dealt
+    cards (hand, top, bottom) and banishes the weakest or a Jester / corrupted / locked
+    card; the Chanter fills the attacker's hand and discards the lowest cards; the
+    Evergreen Mother takes the discard pile (solo, unless the empty reserve banishes
+    nothing) or the lowest card (another hand); mission 7 banishes matching pilgrims and the strongest zone card on an
     exact kill; mission 8 builds the zone (pilgrims first), banishes Jesters, pilgrims and
     the lowest discards up to five and puts the strongest discard back on the reserve;
     mission 9 rescues when a cheap hand card buys a clearly better one, else rotates."""
@@ -152,13 +177,73 @@ def simple_decision(g: Game) -> Optional[dict]:
         return max(acts, key=value)
     if kind == "reaver_count":
         return min(acts, key=lambda a: int(a.get("count", 1)))
-    if kind in ("cleanup_top", "zone_move"):
+    if kind in ("cleanup_top", "banish_top", "discard_top"):
+        return top_card_choice(g, acts)
+    if kind == "zone_move":
         return min(acts, key=value)
     if kind == "zone_rescue":
         return max(acts, key=value)
     if kind == "team_discard":
         return team_discard_choice(g, acts)
     return acts[0]
+
+
+def top_card_choice(g: Game, acts: List[dict]) -> dict:
+    """Which card ends on top of a pile (clean-up, a mage's unchosen cards, a reaver's or a
+    mage attack's banish): where the top card feeds the enemy (missions 4, 5, 10 to 12,
+    Evergreen banes and locations) the one that weakens it most, a Jester, a classless or
+    the weakest card; where only the solo Scarlet Whistle reads it, the strongest."""
+    rules = g.rules
+    kind = (g.decision or {}).get("kind")
+    cards = [a for a in acts if a.get("card")]
+    if not cards:
+        return acts[0]
+    strength = getattr(rules, "strength", lambda c: c.value)
+    feeds = (kind == "banish_top"
+             or bool(getattr(rules, "discard_top_feeds_enemy", lambda game: False)(g)))
+    if feeds:
+        return min(cards, key=lambda a: (strength(g.cards[a["card"]]), 1 if g.cards[a["card"]].suits else 0))
+    return max(cards, key=lambda a: (strength(g.cards[a["card"]]), g.cards[a["card"]].value))
+
+
+def declare_class_choice(g: Game, acts: List[dict]) -> dict:
+    """A Wild Animal's class: one the enemy is not immune to, a warrior when doubling the
+    attack could kill, else a bard when the hand is short of the limit, else a cleric,
+    else a paladin."""
+    d = g.decision or {}
+    by = dict((str(a.get("option")), a) for a in acts if a.get("option"))
+    play = None
+    for p in g.plays:
+        if str(d.get("card")) in p.card_ids:
+            play = p
+    cards = [g.cards[c] for c in play.card_ids] if play is not None else []
+    allowed = [s for s in ("C", "D", "H", "S") if s in by and not g.immune(s, cards)]
+    enemy = g.enemy
+    value = play.value if play is not None else 1
+    if "C" in allowed and enemy is not None and value * 2 >= enemy.hp:
+        return by["C"]
+    player = int(d.get("player", g.active))
+    if "D" in allowed and len(g.players[player].hand) < g.config.max_hand and g.tavern:
+        return by["D"]
+    for s in ("H", "S", "C", "D"):
+        if s in allowed:
+            return by[s]
+    return by.get("C", acts[0])
+
+
+def declare_value_choice(g: Game, acts: List[dict]) -> dict:
+    """A 2/5 played alone: 5, unless declaring 2 kills the enemy exactly."""
+    by = dict((str(a.get("option")), a) for a in acts if a.get("option"))
+    if "2" in by:
+        sim = copy.deepcopy(g)
+        apply_action(sim, by["2"])
+        _settle_decisions(sim)
+        if any(ev["t"] == "defeat" and ev.get("exact") for ev in sim.last_events):
+            return by["2"]
+        if sim.phase == PHASE_DECIDE and (sim.decision or {}).get("exact") and \
+                (sim.decision or {}).get("resume") in ("defeat", "defeat_tail"):
+            return by["2"]
+    return by.get("5", acts[0])
 
 
 NEW_KINDS = ("druid_assign", "chanter_declare", "chanter_discard", "mother_choice", "mother_banish",
@@ -168,7 +253,9 @@ NEW_KINDS = ("druid_assign", "chanter_declare", "chanter_discard", "mother_choic
              "zone_feed", "beast_discard", "beast_banish", "banish_order",
              # Evergreen locations, banes and boons
              "zone_order", "zone_discard", "attack_discard", "zone_sibling", "zone_match", "close_call",
-             "precision_strike", "restored_arrows", "poison")
+             "precision_strike", "restored_arrows", "poison",
+             # declarations (rulebook p.25)
+             "declare_class", "declare_value")
 
 
 def _keep_key(g: Game, cid: str) -> tuple:
@@ -209,9 +296,15 @@ def _mission_decision(g: Game, kind: Optional[str], acts: List[dict]) -> Optiona
         t = acts[0]
         lowest = sorted(t["pick_from"], key=lambda c: (g.cards[c].defence_value, g.cards[c].value))
         return {"type": "chanter_discard", "player": t["player"], "cards": lowest[:int(t["needs"])]}
+    if kind == "declare_class":
+        return declare_class_choice(g, acts)
+    if kind == "declare_value":
+        return declare_value_choice(g, acts)
     if kind == "mother_choice":
+        # an empty reserve banishes nothing: better than losing the top discard
+        want = "reserve" if not g.tavern else "discard"
         for a in acts:
-            if a.get("option") == "discard":
+            if a.get("option") == want:
                 return a
         return acts[0]
     if kind == "mother_banish":
@@ -453,7 +546,8 @@ def decision_policy(game: Game) -> dict:
         return max(picks, key=lambda a: _mage_pick_key(game, a))
     if kind == "emblem_keep":
         return max(acts, key=lambda a: (evaluate(_simulate_turn(game, a)), 1 if a.get("skip") else 0))
-    if kind in ("reaver_count", "reaver_pick", "cleanup_top", "zone_move", "zone_rescue", "team_discard") or kind in NEW_KINDS:
+    if kind in ("reaver_count", "reaver_pick", "cleanup_top", "banish_top", "discard_top", "zone_move", "zone_rescue",
+                "team_discard") or kind in NEW_KINDS:
         act = simple_decision(game)
         if act is not None:
             return act
