@@ -1259,7 +1259,9 @@ class ChoiceScreen(Screen):
         w, h = self.width, self.height
         m = T.MARGIN
         hint = {"choice_corrupt": "Tap the character who takes the corruption. Corrupted cards banish the top "
-                                  "card of the reserve when played and their own class ignores immunity."}.get(step["kind"], "")
+                                  "card of the reserve when played and their own class ignores immunity.",
+                "choice_suit": "Tap the character who gets the %s sticker. The card keeps its own class and "
+                               "gains this one too." % CLASS_NAME.get(str(step.get("suit", "")), "class")}.get(step["kind"], "")
         if hint:
             self.add_subview(make_label(hint, (m, y, w - 2 * m, 56), 12, False, T.MUTED, lines=3))
             y += 60

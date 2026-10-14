@@ -465,6 +465,58 @@ veils, the Crimson Grove in danger); texts in the private lore overlay only.
 with the clean-up order chosen by the player, corrupted experiments playable from hand,
 beasts, the Scarlet Whistle) are being added.
 
+## Mission 5, High and Mighty (confirmed, transcribed from the owner's photos)
+
+**Location card:** Crimson Grove (a valley of giant mushrooms, QR code; map piece on the
+back with the grove marked by a cross).
+
+**Setup cards.** Story: the Reavers, custodians of the veil, ask for help; "Add the four
+Reavers to your party": Oaken (3, Halfling Reaver), Harore (5, Avion Reaver), a 7 (Elf
+Reaver) and a 9 (Drakonid Reaver), all of the Reaver class (mushroom icon). Mission
+rules *Setup:* put Myla (7) in a standard sleeve then place her in the banished pile.
+Myla: strength 7, "Elf Pilgrim", no class icon.
+
+**Enemy stats card:** Sporelings 10 / 40 (four, one per class) and Gloomspores 15 / 60
+(four, one per class). The example enemy is Embercap, "Sporeling", warrior, 10 / 40.
+
+**Mission rules card (front).** *End of turn:* put the top card of the banished pile
+face up into the mission zone. Each enemy has additional strength equal to the combined
+strength of cards in the mission zone. *Enemy defeated:* take the enemy and all cards in
+the mission zone and shuffle them into the banished pile (without looking). If the enemy
+was dealt exact damage, deal damage to the next enemy equal to the strength of the enemy
+you just defeated.
+
+**Rules continued.** *Remember:* during the Enemy Defeated step, for an attack
+containing a mage, the current player can choose the order in which the cards are moved
+to the banished pile. *Example:* Embercap (10) with Theodoric (3, halfling warrior) and
+Kōwhai (5, avion bard) in the mission zone has a total strength of 18.
+
+**Rules summary card:** Cards in the mission zone add their strength to the enemy's
+strength. End of turn: put top card of the banished pile into the mission zone. Enemy
+defeated: shuffle enemy and mission zone into banished pile; remember to skip end of turn
+effects; exact kill: deal damage to next enemy equal to the defeated enemy's strength.
+
+**Story cards:** intro (the Crimson Grove, Gøran leaning on Esme, the Reavers, a girl in
+a sinking pit, mushrooms erupting) and outcome (Myla, the emerald ring, the Garden of
+Remembrance); texts in the private lore overlay only.
+
+**Reward cards, in order:**
+1. "Add a Warrior sticker to Gøran." (Gøran becomes an 8 of warriors.)
+2. "Add Myla to your party. Harore (5 Reaver) remains in your party. Remove the other
+   three Reavers from your party and return them to mission box 5."
+3. "Open pack C and corrupt another character in your party." Player's choice.
+4. "Choose either James (6 cleric), Jakhim (6 bard) or Lee (6 paladin), then put a Reaver
+   sticker on them." Player's choice; the chosen 6 gains the Reaver class.
+
+**Open question:** "deal damage to the next enemy equal to the strength of the enemy you
+just defeated". The app reads this as the enemy's strength at the moment it fell, as the
+strength tracker shows it (printed strength plus the mission zone bonus, less any paladin
+reductions). If the table plays it as the printed strength only, say so.
+
+**Engine status:** data, setup steps and rewards are in; the mission rules (banished
+pile feeding the zone, zone strength bonus, shuffle into the banished pile, carry-over
+damage, the Reaver ability) are being added together with the Mage ability.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
@@ -561,12 +613,15 @@ Numbers are attack / health.
    Experiments drawn into a hand play as corrupted cards. Rewards: Gøran (8, no class)
    joins; Gøran's four beasts, one per attempt in the reserve; corrupt another character
    (player's choice); Scarlet Whistle.
-5. **High and Mighty** (fan name: The Siege) — 4 enemies 10/40 and 4 enemies 15/60 (one per suit per tier). Reavers
-   3/5/7/9 (the contents guide says 3/5/7/10; VERIFY) and Myla join for the mission. End of turn: top banished card to the mission
-   zone; enemy attack + total mission zone value. Kill: enemy and mission zone shuffled
-   into the banished pile; perfect kill carries the enemy's base attack as damage onto
-   the next enemy. Reward: Myla and Reaver 5 stay; choose a 6 (♥♦♠) to get the Reaver
-   suit; Goran gains ♣; corrupt a card.
+5. **High and Mighty** (Crimson Grove; fan name: The Siege) — **confirmed:** four Reavers
+   (3, 5, 7, 9) join for the mission; Myla (7, no class) starts in the banished pile. 4
+   Sporelings 10/40 and 4 Gloomspores 15/60, one per class. End of turn: top banished
+   card face up into the mission zone; the zone's combined strength is added to the
+   enemy's. Enemy defeated: enemy and zone shuffled into the banished pile; exact kill:
+   the next enemy takes damage equal to the defeated enemy's strength. Rewards: Gøran
+   gains Warrior; Myla joins; Harore (5 Reaver) stays, the other Reavers leave; corrupt
+   another character (player's choice); James, Jakhim or Lee (the 6s) gains Reaver
+   (player's choice).
 6. **Shards of Memory** (fan name: The Evergreen Siege; Garden of Remembrance; rules changed in the 2nd printing) — 4 Guardians 15/30 and 4 Evergreens 20/40. Myla starts in
    the mission zone; Guardians 3/5/7/9 join. On each kill: banish the enemy, move one
    played card into the mission zone, then suffer damage equal to the mission zone total

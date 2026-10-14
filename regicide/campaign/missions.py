@@ -58,6 +58,18 @@ def _lab_castle(rng: random.Random) -> List[dict]:
     return tiers[0] + tiers[1] + tiers[2]
 
 
+def _grove_castle(rng: random.Random) -> List[dict]:
+    """Mission 5's enemy stat card: four Sporelings 10/40 and four Gloomspores 15/60, one
+    of each class per tier."""
+    tiers = []
+    for rank, name, atk, hp in (("J", "Sporeling", 10, 40), ("Q", "Gloomspore", 15, 60)):
+        tier = [{"id": "GR%s%s" % (rank, s), "rank": rank, "suits": [s], "value": RANK_VALUE[rank],
+                 "name": name, "attack": atk, "health": hp, "flags": []} for s in BASIC_SUITS]
+        rng.shuffle(tier)
+        tiers.append(tier)
+    return tiers[0] + tiers[1]
+
+
 def _hydra_castle(rng: random.Random) -> List[dict]:
     hydras = []
     for i, (a, b) in enumerate(itertools.combinations(BASIC_SUITS, 2)):
@@ -105,10 +117,17 @@ MISSIONS: List[Dict[str, Any]] = [
      "rewards_text": "Gøran (8, no class) joins. Gøran's four beasts wait beside the party: each attempt you may "
                      "include one in the reserve. Open pack C and corrupt another character. Acquire the "
                      "Scarlet Whistle."},
-    {"number": 5, "title": "High and Mighty", "fan_title": "The Siege", "location": "unknown",
-     "rules_id": "legacy_m5", "playable": False, "verified": False,
-     "summary": "Eight enemies (10/40 and 15/60). The banished pile feeds the mission zone, which adds to "
-                "enemy strength. Reavers and Myla help for this mission.", "rewards_text": "Myla and a Reaver stay."},
+    {"number": 5, "title": "High and Mighty", "fan_title": "The Siege", "location": "Crimson Grove",
+     "rules_id": "legacy_m5", "playable": False, "verified": True,
+     "summary": "Four Reavers join the party for this mission and Myla (7) starts in the banished pile. Four "
+                "Sporelings (10/40) and four Gloomspores (15/60), one of each class. End of turn: the top "
+                "card of the banished pile goes face up into the mission zone, and each enemy has additional "
+                "strength equal to the combined strength of the zone. Enemy defeated: the enemy and the zone "
+                "are shuffled into the banished pile; on exact damage the next enemy takes damage equal to "
+                "the defeated enemy's strength.",
+     "rewards_text": "Gøran gains the Warrior class. Myla joins the party; Harore (5, Reaver) stays and the "
+                     "other three Reavers leave. Open pack C and corrupt another character. Choose James (6 "
+                     "Cleric), Jakhim (6 Bard) or Lee (6 Paladin) to gain the Reaver class."},
     {"number": 6, "title": "Shards of Memory", "fan_title": "The Evergreen Siege", "location": "Garden of Remembrance",
      "rules_id": "legacy_m6", "playable": False, "verified": False,
      "summary": "Guardians (15/30) and Evergreens (20/40). Every kill feeds the mission zone, which then "
@@ -155,8 +174,15 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
         castle = _academy_castle(rng)
     elif number == 4:
         castle = _lab_castle(rng)
+    elif number == 5:
+        castle = _grove_castle(rng)
     else:
         raise NotImplementedError("Mission %d is not implemented yet (see PLAN.md stage ladder)." % number)
+    banished_start: List[dict] = []
+    if number == 5:
+        # Setup card (confirmed): "Put Myla (7) in a standard sleeve then place her in the
+        # banished pile." She is not in the party yet; she joins after the mission.
+        banished_start.append(dict(MYLA))
     # Gøran's beast chosen for this attempt (reward of mission 4)
     if camp.beast and camp.flags.get("beasts"):
         beast = beast_by_id(camp.beast)
@@ -176,7 +202,7 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
     return {
         "party": party, "castle": castle, "relics": list(camp.relics),
         "extra_jesters": extra_jesters, "discard_low_to_high": bool(camp.flags.get("discard_low_to_high")),
-        "mission": number,
+        "mission": number, "banished_start": banished_start,
     }
 
 
@@ -188,7 +214,23 @@ def start_steps(camp, number: int) -> List[Step]:
         # Card (confirmed): "Remove the High Arcana from your party. Store the card in mission box 3."
         steps.append({"kind": "remove_card", "card_id": HIGH_ARCANA["id"],
                       "label": "The High Arcana is nowhere to be seen: he leaves the party"})
+    if number == 5 and any(P.find(camp.party, str(r["id"])) is None for r in REAVERS):
+        # Card (confirmed): "Add the four Reavers to your party."
+        steps.append({"kind": "add_cards", "cards": REAVERS, "label": "The four Reavers charge into battle"})
     return steps
+
+
+# Mission 5's Reavers: Oaken (3, halfling), Harore (5, avion), an elf (7) and a drakonid
+# (9). Only Harore stays after the mission.
+REAVERS: List[Dict[str, Any]] = [
+    {"id": "3R", "rank": "3", "suits": ["R"], "value": 3, "name": "Oaken", "subtitle": "Halfling Reaver", "flags": []},
+    {"id": "5R", "rank": "5", "suits": ["R"], "value": 5, "name": "Harore", "subtitle": "Avion Reaver", "flags": []},
+    {"id": "7R", "rank": "7", "suits": ["R"], "value": 7, "name": "Elf Reaver", "subtitle": "Elf Reaver", "flags": []},
+    {"id": "9R", "rank": "9", "suits": ["R"], "value": 9, "name": "Drakonid Reaver", "subtitle": "Drakonid Reaver", "flags": []},
+]
+
+MYLA: Dict[str, Any] = {"id": "MYLA7", "rank": "7", "suits": [], "value": 7, "name": "Myla",
+                        "subtitle": "Elf Pilgrim", "flags": []}
 
 
 # --------------------------------------------------------------------------- rewards
@@ -225,6 +267,20 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
                       "label": "Gøran's four beasts wait beside the party: one may join each attempt"})
         steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
         steps.append({"kind": "relic", "relic": "whistle", "label": "Relic: Scarlet Whistle"})
+    elif number == 5:
+        # Reward cards (confirmed, in order): "Add a Warrior sticker to Gøran"; "Add Myla to
+        # your party. Harore (5 Reaver) remains in your party. Remove the other three Reavers
+        # from your party and return them to mission box 5"; "Open pack C and corrupt another
+        # character in your party"; "Choose either James (6 Cleric), Jakhim (6 Bard) or Lee
+        # (6 Paladin), then put a Reaver sticker on them."
+        steps.append({"kind": "add_suit", "card_id": GORAN["id"], "suit": "C", "label": "Gøran gains the Warrior class"})
+        steps.append({"kind": "add_card", "card": MYLA, "label": "Myla (7, Elf Pilgrim) joins the party"})
+        for r in REAVERS:
+            if r["id"] != "5R":
+                steps.append({"kind": "remove_card", "card_id": r["id"], "label": "%s stays to defend the veil" % r["name"]})
+        steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
+        steps.append({"kind": "choice_suit", "suit": "R", "options": [c for c in ("6H", "6D", "6S") if P.find(camp.party, c)],
+                      "label": "Harore teaches a 6: James (Cleric), Jakhim (Bard) or Lee (Paladin) gains the Reaver class"})
     return steps
 
 
@@ -315,6 +371,22 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
     if kind == "remove_card":
         c = P.remove_card(camp.party, step["card_id"])
         return "%s leaves the party." % ((c or {}).get("name") or step["card_id"])
+    if kind == "add_suit":
+        card = P.find(camp.party, str(step["card_id"]))
+        if card is None:
+            return "%s is not in the party; no sticker added." % step["card_id"]
+        P.add_suit(camp.party, str(step["card_id"]), str(step["suit"]))
+        return str(step.get("label", "%s gains %s" % (P.to_card(card).label(), CLASS_NAME[str(step["suit"])])))
+    if kind == "choice_suit":
+        options = [str(x) for x in step.get("options", [])]
+        if not options:
+            return "No character qualifies for the sticker."
+        if option is None:
+            raise ValueError("choose a character for the sticker")
+        if option not in options:
+            raise ValueError("%s is not one of the choices" % option)
+        P.add_suit(camp.party, str(option), str(step["suit"]))
+        return "%s gains the %s class." % (P.to_card(P.find(camp.party, str(option))).label(), CLASS_NAME[str(step["suit"])])
     if kind == "set_flag":
         camp.flags[str(step["flag"])] = step.get("value", True)
         return str(step.get("label", "Flag %s set." % step["flag"]))

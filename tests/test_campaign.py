@@ -904,3 +904,41 @@ def test_mission3_bots_play_it_out():
         play_out(g, policy, rng=random.Random(seed))
         assert g.is_over
         assert len(g.all_card_ids()) == len(set(g.all_card_ids())) == len(g.cards)
+
+
+# ---------------------------------------------------------------- Mission 5 data (rules pending)
+def test_mission5_setup_and_rewards_follow_the_cards():
+    c = CampaignState.new(1, ["Solo"], seed=70)
+    c.mission = 5
+    c.completed = [1, 2, 3, 4]
+    P.add_card(c.party, dict(M.GORAN))
+    extra = M.build_setup(c, 5, random.Random(1))
+    assert [d["id"] for d in extra["banished_start"]] == ["MYLA7"]
+    enemies = extra["castle"]
+    assert [e["name"] for e in enemies] == ["Sporeling"] * 4 + ["Gloomspore"] * 4
+    assert [(e["attack"], e["health"]) for e in enemies][:1] == [(10, 40)] and (enemies[-1]["attack"], enemies[-1]["health"]) == (15, 60)
+    # start steps: the four Reavers join once
+    rng = random.Random(2)
+    for step in M.start_steps(c, 5):
+        M.apply_step(c, step, rng)
+    assert [P.find(c.party, x)["name"] for x in ("3R", "5R", "7R", "9R")] == ["Oaken", "Harore", "Elf Reaver", "Drakonid Reaver"]
+    assert M.start_steps(c, 5) == []
+    # rewards
+    steps = M.reward_steps(c, 5, rng)
+    kinds = [s["kind"] for s in steps]
+    assert kinds == ["add_suit", "add_card", "remove_card", "remove_card", "remove_card", "choice_corrupt", "choice_suit"]
+    for s in steps:
+        if s["kind"].startswith("choice"):
+            c.pending.append(s)
+        else:
+            M.apply_step(c, s, rng)
+    assert P.find(c.party, "GOR8")["suits"] == ["C"]
+    assert P.find(c.party, "MYLA7")["name"] == "Myla" and P.find(c.party, "MYLA7")["suits"] == []
+    assert P.find(c.party, "5R") is not None and all(P.find(c.party, x) is None for x in ("3R", "7R", "9R"))
+    c.resolve_choice(c.pending_choice()["options"][0])
+    step = c.pending_choice()
+    assert step["kind"] == "choice_suit" and step["options"] == ["6H", "6D", "6S"]
+    with pytest.raises(ValueError):
+        c.resolve_choice("6C")  # Esme is not offered
+    c.resolve_choice("6D")
+    assert P.find(c.party, "6D")["suits"] == ["D", "R"] and not c.pending
