@@ -469,6 +469,11 @@ def test_mission2_class_sticker_assignment_screen(app):
     reward = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Reward:"))]
     assert reward and "stickers" in reward[0].title
     ui.tap(app, *ui.root_point(app, reward[0]))
+    # a card explains the reward first (what is revealed, how stickers work)
+    from app.screens import CardPopup
+    popup = ui.find(app, lambda v: isinstance(v, CardPopup))
+    assert popup and any("Give each one class sticker" in v.text for v in ui.find(popup[0], lambda v: isinstance(v, ui.Label)))
+    _tap_button(app, "Choose")
     step = app.campaign.pending_choice()
     assert step["kind"] == "choice_classes"
     assert not ui.button(app, "Confirm").enabled
@@ -736,6 +741,7 @@ def test_mission_setup_choices_are_offered_before_the_first_attempt(app, monkeyp
     setup = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Mission setup:"))]
     assert setup and "sticker" in setup[0].title
     ui.tap(app, *ui.root_point(app, setup[0]))
+    _tap_button(app, "Choose")
     texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
     assert any(t == "Mission setup" for t in texts)
     from app.widgets import CardView

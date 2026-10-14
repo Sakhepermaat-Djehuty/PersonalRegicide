@@ -184,3 +184,26 @@ def test_deck_list_beasts_follow_the_setup_rules(app):
     camp.mission = 11                                                  # all four form the beast deck
     app.show(PartyScreen(app))
     assert not any(t.startswith("Gøran's beast") for t in _texts(app))
+
+
+def test_the_game_menu_names_a_reward_briefly_and_a_card_explains_it(app):
+    from app.screens import CampaignScreen, CardPopup, ChoiceScreen
+    _tap(app, "New game")
+    _tap(app, "Start")
+    camp = app.campaign
+    camp.pending = [{"kind": "choice_suit", "suit": "R", "options": ["6H", "6D", "6S"],
+                     "label": "The 5 Reaver teaches a 6: the Cleric, Bard or Paladin 6 gains the Reaver class"}]
+    app.save_campaign()
+    app.show(CampaignScreen(app))
+    b = ui.button(app, "Reward: a Reaver sticker")                 # short, fits the button
+    b.action(b)
+    popup = ui.find(app, lambda v: isinstance(v, CardPopup))[0]
+    text = " ".join(_texts(popup))
+    assert "The 5 Reaver teaches a 6" in text and "Choose one of 6♥, 6♦, 6♠" in text
+    assert ui.render(app).size[0] > 0
+    _tap(app, "Later")
+    assert not ui.find(app, lambda v: isinstance(v, CardPopup))
+    b = ui.button(app, "Reward: a Reaver sticker")
+    b.action(b)
+    _tap(app, "Choose")
+    assert isinstance(app.current, ChoiceScreen)

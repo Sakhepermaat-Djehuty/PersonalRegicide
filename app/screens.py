@@ -2056,6 +2056,100 @@ class RulesOverlay(Overlay):
         self.screen.refresh(after_action=False)
 
 
+def choice_title(step: dict) -> str:
+    """A few words naming a pending reward or setup choice (the game menu's button)."""
+    kind = step.get("kind")
+    if kind == "choice_classes":
+        return "class stickers"
+    if kind == "choice_suit":
+        return "a %s sticker" % CLASS_NAME.get(str(step.get("suit", "")), "class")
+    if kind == "choice_mage_student":
+        return "a new mage"
+    if kind == "choice_corrupt":
+        return "corruption"
+    if kind == "choice_rip":
+        return "the Eternal Vine"
+    return "choose"
+
+
+def choice_text(camp, step: dict) -> str:
+    """The reward card's text: the reward as the mission card states it, then what the
+    choice does and what is on offer."""
+    def labels(ids):
+        out = []
+        for cid in ids:
+            c = P.find(camp.party, str(cid)) if camp is not None else None
+            out.append(P.to_card(c).label() if c else str(cid))
+        return ", ".join(out)
+
+    kind = step.get("kind")
+    parts = [str(step.get("label", ""))]
+    if kind == "choice_classes":
+        parts.append("Revealed from the shuffled party: %s. Give each one class sticker: each class is used "
+                     "once and no card gets a class it already has. The stickers stay for the rest of the "
+                     "campaign." % labels(step.get("cards", [])))
+    elif kind == "choice_suit":
+        parts.append("Choose one of %s. It keeps its own class and gains the %s class for the rest of the "
+                     "campaign." % (labels(step.get("options", [])), CLASS_NAME.get(str(step.get("suit", "")), "new")))
+    elif kind == "choice_mage_student":
+        parts.append("Choose the 4s or the 8s. The party is shuffled and the first card of that strength with "
+                     "no sticker (never Gøran or a mage) gains the Mage class.")
+    elif kind == "choice_corrupt":
+        parts.append("Choose the character who takes the corruption. Corrupted cards banish the top card of "
+                     "the reserve when played, and their own class ignores immunity.")
+    elif kind == "choice_rip":
+        parts.append("Choose the corrupted character who wears a cloak of the Eternal Vine. The card is torn "
+                     "up and leaves the campaign for good.")
+    return "\n\n".join(x for x in parts if x)
+
+
+class CardPopup(ui.View):
+    """A card-like pop-up over a menu screen: a title, text (scrolling when long) and a
+    row of buttons stacked below."""
+
+    def __init__(self, title: str, text: str, buttons, **kw) -> None:
+        super().__init__(**kw)
+        self.title_text = title
+        self.body = text
+        self.buttons = list(buttons)
+        self.background_color = (0, 0, 0, 0.72)
+        self.panel = ui.View()
+        self.panel.background_color = T.PANEL
+        self.panel.corner_radius = 16
+        self.add_subview(self.panel)
+
+    def layout(self) -> None:
+        if not hasattr(self, "panel"):
+            return
+        for v in list(self.panel.subviews):
+            self.panel.remove_subview(v)
+        pw = min(340, self.width - 2 * T.MARGIN)
+        tw = pw - 40
+        title = fit_label(self.title_text, tw, 18, True, T.ACCENT, ui.ALIGN_CENTER)
+        title.frame = (20, 18, tw, title.height)
+        self.panel.add_subview(title)
+        y = 18 + title.height + 10
+        _, th = text_size(self.body, tw - 4, 14)
+        room = max(120.0, self.height - T.TOP_INSET - T.BOTTOM_INSET - 60 - y - 58 * len(self.buttons))
+        sh = min(th + 12, room)
+        sv = ui.ScrollView(frame=(20, y, tw, sh))
+        sv.add_subview(make_label(self.body, (0, 0, tw, th + 8), 14, False, T.TEXT, ui.ALIGN_LEFT, 0))
+        sv.content_size = (tw, th + 12)
+        self.panel.add_subview(sv)
+        y += sh + 14
+        for title_, action, primary in self.buttons:
+            b = make_button(title_, action, (20, y, tw, 46), primary)
+            fit_title(b)
+            self.panel.add_subview(b)
+            y += 58
+        ph = y + 6
+        self.panel.frame = ((self.width - pw) / 2, max(T.TOP_INSET, (self.height - ph) / 2), pw, ph)
+
+    def close(self) -> None:
+        if self.superview is not None:
+            self.superview.remove_subview(self)
+
+
 class MissionRulesScreen(Screen):
     """The rules card from the game menu (no attempt running)."""
 
@@ -2237,9 +2331,12 @@ class CampaignScreen(Screen):
                 self.add_subview(make_button("Continue attempt", lambda s: app.resume_attempt(), (x, y, bw, 46)))
                 y += 54
             elif choice is not None:
+                # a short title here; the pop-up card explains the reward before choosing
                 prefix = "Mission setup" if choice.get("phase") == "setup" else "Reward"
-                self.add_subview(make_button("%s: %s" % (prefix, choice.get("label", "choose")),
-                                             lambda s: app.show(ChoiceScreen(app)), (x, y, bw, 46)))
+                rb = make_button("%s: %s" % (prefix, choice_title(choice)), lambda s: self._show_choice_card(),
+                                 (x, y, bw, 46))
+                fit_title(rb)
+                self.add_subview(rb)
                 y += 54
             elif info.get("playable"):
                 attempt = camp.attempts_on(camp.mission) + 1
@@ -2268,6 +2365,21 @@ class CampaignScreen(Screen):
             self.add_subview(make_button(title, action, (x, y, bw, row_h), False))
             y += row_h + gap
 
+
+    def _show_choice_card(self) -> None:
+        """The pending reward (or setup) choice as a card: what it is and what it does, then
+        Choose (the choice screen) or Later."""
+        app = self.app
+        choice = app.campaign.pending_choice() if app.campaign else None
+        if choice is None:
+            return
+        heading = "Mission setup" if choice.get("phase") == "setup" else "Reward"
+        popup = CardPopup("%s: %s" % (heading, choice_title(choice)), choice_text(app.campaign, choice),
+                          [("Choose", lambda s: app.show(ChoiceScreen(app)), True),
+                           ("Later", lambda s: popup.close(), False)])
+        popup.frame = (0, 0, self.width, self.height)
+        self.add_subview(popup)
+        popup.layout()
 
     def _set_beast(self, beast_id: Optional[str]) -> None:
         camp = self.app.campaign
