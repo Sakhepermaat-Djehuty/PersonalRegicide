@@ -29,7 +29,9 @@ with the party, mercenary camp, relics and a mission list that reveals missions 
 reach them, then Evergreen missions from the game menu once the campaign is won.
 
 Story text: the app ships without the cards' story text. To read it in the Lore screens,
-put your private `lore_private.json` in `~/Documents/PersonalRegicide-saves/`.
+import your private `lore_private.json` into Pythonista (it lands in Pythonista's
+Documents folder or its Inbox); the app finds it there and copies it into
+`~/Documents/PersonalRegicide-saves/`, which updates never touch.
 
 ## Desktop preview
 

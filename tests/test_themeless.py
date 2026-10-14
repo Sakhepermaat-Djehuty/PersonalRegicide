@@ -248,3 +248,18 @@ def test_small_faces_show_their_tag():
     finally:
         ui.draw_string = real
     assert drawn == ["7", "♠", "2"]
+
+
+def test_an_imported_lore_file_is_found_and_kept_in_the_saves_folder(tmp_path, monkeypatch):
+    """The phone won't let the owner put files in Pythonista's folders by hand; a file
+    imported into Pythonista lands in its Documents root (or Inbox). The app finds it there
+    and copies it into the saves folder, which updates never touch."""
+    saves = tmp_path / "PersonalRegicide-saves"
+    monkeypatch.setenv("REGICIDE_SAVE_DIR", str(saves))
+    assert store.lore_overlay_path() == str(saves / "lore_private.json")     # nothing anywhere yet
+    (tmp_path / "Inbox").mkdir()
+    (tmp_path / "Inbox" / "lore_private.json").write_text("not json")      # an unreadable file is ignored
+    assert not (saves / "lore_private.json").exists() and store.lore_overlay_path() == str(saves / "lore_private.json")
+    (tmp_path / "lore_private.json").write_text(json.dumps({"m1_intro": {"title": "T", "text": "Private."}}))
+    path = store.lore_overlay_path()
+    assert path == str(saves / "lore_private.json") and json.loads((saves / "lore_private.json").read_text())["m1_intro"]["text"] == "Private."

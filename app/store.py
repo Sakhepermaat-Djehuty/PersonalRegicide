@@ -125,6 +125,7 @@ def _atomic_write(path: str, text: str) -> None:
 # lore_seen.json at the save root so it survives deleting a game.
 import re
 import glob
+import shutil
 
 LEGACY_CAMPAIGN = "campaign.json"
 LEGACY_CAMPAIGN_GAME = "campaign_attempt.json"
@@ -283,5 +284,33 @@ def add_global_lore(ids) -> None:
         _atomic_write(_path(GLOBAL_LORE), json.dumps(seen))
 
 
+def _lore_candidates() -> List[str]:
+    """Folders where a ``lore_private.json`` may have been put by hand: Pythonista's
+    Documents root (where an imported file lands, the saves folder's parent), its Inbox
+    (files opened "in Pythonista" from another app) and the game folder itself."""
+    docs = os.path.dirname(save_dir())
+    game = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    out = []
+    for d in (docs, os.path.join(docs, "Inbox"), game):
+        if d not in out:
+            out.append(d)
+    return out
+
+
 def lore_overlay_path() -> str:
-    return _path(LORE_OVERLAY)
+    """The private story text. It lives in the saves folder; a copy found in one of the
+    places above is copied there first (so updating the game never loses it)."""
+    home = _path(LORE_OVERLAY)
+    if os.path.isfile(home):
+        return home
+    for d in _lore_candidates():
+        found = os.path.join(d, LORE_OVERLAY)
+        if os.path.isfile(found):
+            try:
+                with open(found) as f:
+                    json.load(f)           # only a readable JSON file is taken
+                shutil.copyfile(found, home)
+                return home
+            except (OSError, ValueError):
+                continue
+    return home
