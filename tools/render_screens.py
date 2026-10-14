@@ -114,6 +114,7 @@ def main(argv):
     app.show(MenuScreen(app))
     shot(app, "40_menu_no_games")
     app.new_campaign(1, ["Solo"], "First run")
+    slot = app.campaign.slot
     shot(app, "41_campaign_mission1")
     app.start_attempt()
     gs = app.current
@@ -178,6 +179,25 @@ def main(argv):
     g._lose("The hydra was too much.")
     gs.refresh(after_action=False)
     shot(app, "48_mission_lost")
+    # Kinfolk Flute, two players: the decision overlay and the deciding player's hand
+    app.new_campaign(2, ["Ana", "Ben"], "Flute demo")
+    app.campaign.relics.append("flute")
+    app.start_attempt()
+    gs = app.current
+    g = app.game
+    from tests.helpers import set_enemy, set_hand  # noqa: E402
+    set_enemy(g, "J", "H")
+    set_hand(g, ["3C", "9S", "8S"], player=0)
+    set_hand(g, ["3D", "3H", "7C", "AS"], player=1)
+    gs.reveal_hand()
+    gs.hand.set_selection(["3C"])
+    ui.tap(app, *ui.root_point(app, gs.right_btn))
+    shot(app, "56_flute_decision_overlay")
+    ui.tap(app, *ui.root_point(app, ui.button(app, "Show my hand")))
+    gs.hand.set_selection(["3D"])
+    gs.refresh(after_action=False)
+    shot(app, "57_flute_decision_hand")
+    app.open_campaign(slot)
     app.show(MercenaryScreen(app))
     shot(app, "49_mercenary_camp")
     hires = ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Hire" and v.enabled)

@@ -10,7 +10,7 @@ from typing import Callable, Dict, List, Optional, Sequence
 
 import ui
 
-from regicide.cards import SUIT_NAME, SUIT_SYMBOL, Card
+from regicide.cards import CLASS_NAME, SUIT_NAME, SUIT_SYMBOL, Card
 from regicide.engine import Enemy, Game
 
 from . import theme as T
@@ -166,7 +166,9 @@ class EnemyPanel(ui.View):
             imm = "Immunity cancelled by the Jester"
             icol = T.OK
         elif e.suits:
-            imm = "Immune to %s" % " / ".join(SUIT_NAME.get(s, s) for s in e.suits)
+            legacy = g.config.rules_id.startswith("legacy")
+            names = [(CLASS_NAME.get(s, s) + "s") if legacy else SUIT_NAME.get(s, s) for s in e.suits]
+            imm = "Immune to %s" % " / ".join(names)
             icol = T.MUTED
         else:
             imm = "No immunity"
