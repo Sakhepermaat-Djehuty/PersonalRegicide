@@ -269,12 +269,14 @@ class CardStrip(ui.View):
         self.cards: List[Card] = []
         self.background_color = None
         self.title = ""
+        self.dimmed: List[str] = []   # ids drawn greyed out (e.g. revealed cards that may not be picked)
 
-    def set_cards(self, cards: Sequence[Card], title: str = "") -> None:
+    def set_cards(self, cards: Sequence[Card], title: str = "", dimmed: Sequence[str] = ()) -> None:
         for v in list(self.subviews):
             self.remove_subview(v)
         self.cards = list(cards)
         self.title = title
+        self.dimmed = list(dimmed)
         self.layout()
 
     def layout(self) -> None:
@@ -295,6 +297,7 @@ class CardStrip(ui.View):
         for i, c in enumerate(self.cards):
             v = CardView(c)
             v.small = True
+            v.dimmed = c.id in self.dimmed
             v.touch_enabled = False
             v.frame = (4 + i * step, 16, cw, ch)
             self.add_subview(v)

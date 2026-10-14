@@ -8,10 +8,12 @@ Design notes
   and appends structured events to ``last_events`` (for the UI to animate) and lines to
   ``log``.
 * Rule variations (Legacy missions) are injected through ``rules.BaseRules`` hooks.
-* Mid-turn choices by other players (Legacy: the Kinfolk Flute, later Mage picks and the
-  like) pause the game in the ``decide`` phase with a serialisable ``decision`` dict: the
-  rules object produces the decision, lists its legal actions and applies them; the
-  engine stores it and resolves the paused attack afterwards.
+* Mid-turn choices (Legacy: the Kinfolk Flute before an attack resolves, the Mage's pick
+  during its resolution, a mission zone rescue after an exact kill) pause the game in the
+  ``decide`` phase with a serialisable ``decision`` dict: the rules object produces the
+  decision, lists its legal actions and applies them; the engine stores it together with
+  the state needed to resume (``play_index``, and for a pause mid-resolution the suits
+  already done and the damage so far) and continues the paused attack afterwards.
 * Pile convention: index 0 is the TOP of a face-down deck (tavern, castle) and the top
   of the discard pile.
 """
@@ -23,7 +25,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .cards import (BASIC_SUITS, CLUBS, DIAMONDS, HEARTS, SPADES, SUIT_NAME, SUIT_SYMBOL,
+from .cards import (BASIC_SUITS, CLUBS, DIAMONDS, HEARTS, MAGE, SPADES, SUIT_NAME, SUIT_SYMBOL,
                     Card)
 from .rules import BaseRules, GameConfig, get_rules
 
@@ -66,24 +68,29 @@ class Play:
 
     ``jester`` marks an attack formed with a claimed Jester (Legacy): it ignored immunity
     when it resolved and, per rulebook p.20, a paladin in it keeps reducing the enemy's
-    strength even if the enemy later gains paladin immunity."""
+    strength even if the enemy later gains paladin immunity. ``mage`` marks an attack that
+    contains a mage (Legacy): it is banished instead of discarded when the enemy falls,
+    even if the enemy was immune to mages (p.20)."""
     player: int
     card_ids: List[str]
     value: int
     suits: Tuple[str, ...]
     jester: bool = False
+    mage: bool = False
 
     def to_dict(self) -> dict:
         d = {"player": self.player, "card_ids": list(self.card_ids), "value": self.value,
              "suits": list(self.suits)}
         if self.jester:
             d["jester"] = True
+        if self.mage:
+            d["mage"] = True
         return d
 
     @staticmethod
     def from_dict(d: dict) -> "Play":
         return Play(int(d["player"]), list(d["card_ids"]), int(d["value"]), tuple(d["suits"]),
-                    bool(d.get("jester", False)))
+                    bool(d.get("jester", False)), bool(d.get("mage", False)))
 
 
 @dataclass
@@ -335,13 +342,17 @@ class Game:
             return {"ok": False, "reason": str(e)}
         events = list(g.last_events)
         decision = g.phase == PHASE_DECIDE
+        decision_kind = (g.decision or {}).get("kind") if decision else None
         # Other players may still change the attack (Kinfolk Flute): forecast as if they
-        # all declined.
-        while g.phase == PHASE_DECIDE and g.skip_decision():
+        # all declined. A mage peek is forecast as if nothing were added; only the number
+        # of cards it reveals is reported, never which ones (the copy's reserve is the
+        # real one and the player must not learn its order from a forecast).
+        while g.phase == PHASE_DECIDE and g.forecast_decision():
             events.extend(g.last_events)
         damage = 0
         attack = 0
         powers: Dict[str, Any] = {}
+        peeks: List[int] = []
         for ev in events:
             if ev["t"] == "damage":
                 damage = ev["amount"]
@@ -349,10 +360,13 @@ class Game:
                 attack = ev["value"]
             if ev["t"] == "power":
                 powers[ev["suit"]] = ev
+            if ev["t"] == "mage_peek":
+                peeks.append(int(ev["count"]))
         defeated = any(ev["t"] == "defeat" for ev in events)
         exact = any(ev["t"] == "defeat" and ev["exact"] for ev in events)
         return {"ok": True, "kind": kind, "attack": attack, "damage": damage, "powers": powers,
                 "defeats": defeated, "exact": exact, "decision": decision,
+                "decision_kind": decision_kind, "mage_peeks": peeks,
                 "enemy_hp_after": max(0, enemy_hp_before - damage),
                 "enemy_attack_after": g.enemy_attack if not defeated else 0,
                 "phase_after": g.phase}
@@ -370,7 +384,8 @@ class Game:
         me = self.active
         suits = self.play_suits(cards)
         value = self.rules.play_value(self, cards)
-        play = Play(me, [c.id for c in cards], value, suits, jester=bool(self.extra.get("jester_attack")))
+        play = Play(me, [c.id for c in cards], value, suits, jester=bool(self.extra.get("jester_attack")),
+                    mage=any(MAGE in c.suits for c in cards))
         self.plays.append(play)
         self.last_action[me] = "played"
         self._event("play", player=me, cards=[c.id for c in cards], value=value, kind=kind)
@@ -409,7 +424,7 @@ class Game:
             self.phase = PHASE_DECIDE
             self._event("decide", **decision)
             return
-        self._resolve_attack(cards, suits, value, choice)
+        self._resolve_attack(len(self.plays) - 1, choice)
 
     def play_suits(self, cards: Sequence[Card]) -> Tuple[str, ...]:
         """The suits of an attack, each once, in resolution order."""
@@ -427,12 +442,24 @@ class Game:
         self.rules.decide(self, action)
 
     def skip_decision(self) -> bool:
-        """Take the decision's "do nothing" option if there is one (forecasts, bots)."""
+        """Take the decision's "do nothing" option if there is one (bots)."""
         for a in self.legal_actions():
             if a.get("skip"):
                 self.decide(a)
                 return True
         return False
+
+    def forecast_decision(self) -> bool:
+        """Forecasts only (on a copy): apply the neutral option the rules assume for the
+        pending decision (see ``rules.forecast_action``). It skips the legality check
+        because that option need not be offered to players: a mage must add a card when
+        one is eligible, yet a forecast must not pick one for the player."""
+        act = self.rules.forecast_action(self)
+        if act is None or self.decision is None:
+            return False
+        self.last_events = []
+        self.rules.decide(self, act)
+        return True
 
     def flute_add(self, card_ids: Sequence[str]) -> None:
         """Kinfolk Flute: the deciding player adds these hand cards to the pending attack."""
@@ -457,11 +484,42 @@ class Game:
                 raise IllegalAction("Card %s is not in hand." % cid)
         for cid in ids:
             hand.remove(cid)
+        return self._join_play(play_index, player, ids, "hand")
+
+    def mage_add_to_play(self, card_id: str) -> Play:
+        """Mage pick: move one of the pending peek's revealed cards into the attack the
+        decision is about. The paused resolution's running damage grows with the attack
+        (the mage resolves before anything else touches the damage). The rules then
+        discard the other revealed cards and continue or chain (see ``LegacyRules``)."""
+        d = self.decision
+        if d is None or d.get("kind") != "mage_peek":
+            raise IllegalAction("No mage peek pending.")
+        revealed = list(d.get("revealed", []))
+        if card_id not in revealed:
+            raise IllegalAction("Card %s was not revealed." % card_id)
+        if card_id not in d.get("eligible", []):
+            raise IllegalAction("%s cannot join the attack." % self.cards[card_id].label())
+        revealed.remove(card_id)
+        d["revealed"] = revealed
+        play_index = int(d["play_index"])
+        before = self.plays[play_index].value
+        play = self._join_play(play_index, int(d["player"]), [card_id], "mage")
+        if "damage" in d:
+            d["damage"] = int(d["damage"]) + play.value - before
+        return play
+
+    def _join_play(self, play_index: int, player: int, ids: List[str], source: str) -> Play:
+        """Append cards (already taken from wherever they were) to an attack on the table:
+        value, suits and the mage flag are recomputed over the whole attack and
+        ``on_cards_played`` runs for the newcomers (corrupted / restored effects)."""
+        play = self.plays[play_index]
         play.card_ids.extend(ids)
         cards = [self.cards[c] for c in play.card_ids]
         play.value = self.rules.play_value(self, cards)
         play.suits = self.play_suits(cards)
-        self._event("add_to_play", player=player, cards=ids, play_index=play_index, value=play.value)
+        play.mage = play.mage or any(MAGE in c.suits for c in cards)
+        self._event("add_to_play", player=player, cards=ids, play_index=play_index, value=play.value,
+                    source=source)
         self.rules.on_cards_played(self, [self.cards[c] for c in ids])
         return play
 
@@ -479,18 +537,30 @@ class Game:
         decision = self.decision
         if decision is None:
             raise IllegalAction("No decision pending.")
-        play = self.plays[int(decision["play_index"])]
         self.decision = None
         self.phase = PHASE_PLAY
-        cards = [self.cards[c] for c in play.card_ids]
-        self._resolve_attack(cards, play.suits, play.value, decision.get("choice"))
+        self._resolve_attack(int(decision["play_index"]), decision.get("choice"),
+                             decision.get("done_suits", ()), decision.get("damage"))
 
-    def _resolve_attack(self, cards: List[Card], suits: Tuple[str, ...], value: int,
-                        choice: Optional[dict] = None) -> None:
-        damage = value
+    def _resolve_attack(self, play_index: int, choice: Optional[dict] = None,
+                        done_suits: Sequence[str] = (), damage: Optional[int] = None) -> None:
+        """Steps 2 and 3 for the attack ``self.plays[play_index]``: every class power in
+        ``rules.power_order``, then the damage. A power may pause the game (the Legacy mage
+        looks at the reserve and picks): ``rules.resolve_power`` then returns a dict with a
+        ``decision`` and the resolution state (suits done, damage so far, the player's
+        original choice) is kept in that decision until ``resolve_pending_attack`` resumes
+        here with the (possibly larger) attack."""
+        play = self.plays[play_index]
+        cards = [self.cards[c] for c in play.card_ids]
+        suits = play.suits
+        value = play.value
+        done = list(done_suits)
+        if damage is None:
+            damage = value
         for suit in self.rules.power_order:
-            if suit not in suits:
+            if suit not in suits or suit in done:
                 continue
+            done.append(suit)
             if self.immune(suit, cards):
                 self._event("power", suit=suit, value=value, immune=True)
                 self._say("%s is immune to %s." % (self._enemy_label(), SUIT_NAME.get(suit, suit)))
@@ -514,6 +584,18 @@ class Game:
                 res = self.rules.resolve_power(self, suit, value, cards)
                 if isinstance(res, dict) and "damage" in res:
                     damage = int(res["damage"])
+                if isinstance(res, dict) and res.get("decision"):
+                    decision = dict(res["decision"])
+                    decision["play_index"] = play_index
+                    decision["resume"] = "resolve"
+                    decision["done_suits"] = done
+                    decision["damage"] = damage
+                    if choice is not None:
+                        decision["choice"] = choice
+                    self.decision = decision
+                    self.phase = PHASE_DECIDE
+                    self._event("decide", **decision)
+                    return
                 self._event("power", suit=suit, value=value, result=res)
         damage = max(0, damage - self.rules.damage_reduction(self))
         self.extra.pop("jester_attack", None)
@@ -555,7 +637,7 @@ class Game:
             self._event("solo_jester", mode="attack", suit=suit, remaining=self.solo_jesters)
             self._say("Jester attacks as an 8 of %s, ignoring immunity (%d left)." % (
                 SUIT_NAME.get(suit, suit), self.solo_jesters))
-            self._resolve_attack([played], (suit,), 8, None)
+            self._resolve_attack(len(self.plays) - 1)
             return
         p = self.active_player
         old = list(p.hand)
@@ -713,17 +795,24 @@ class Game:
                 return
         plan = self.rules.defeat_plan(self, exact)
         played = [self.cards[c] for p in self.plays for c in p.card_ids]
+        # Legacy p.23: an attack that contains a mage (the mage, the cards played with it
+        # and everything it added) is banished at clean-up, other attacks against the
+        # same enemy are not.
+        mage_ids = [c for p in self.plays if p.mage for c in p.card_ids]
         if self.rules.solo_jester_mode(self) == "attack":
             # Official solo rule: the Jester is never cleaned up to any pile; it goes back
             # to the side, face down, unusable for the rest of this attempt.
             spent = [c for c in played if c.is_jester]
             played = [c for c in played if not c.is_jester]
             self.set_aside.extend(c.id for c in spent)
-        self._event("defeat", enemy=enemy.card_id, exact=exact, plan=plan)
+        self._event("defeat", enemy=enemy.card_id, exact=exact, plan=plan, mage_banished=mage_ids)
         self._say("%s is defeated%s" % (enemy.name, " with exact damage! It joins the tavern deck." if exact else "."))
         self.enemies_defeated += 1
         if plan.get("played_to", "discard") == "discard":
-            self._discard_cards(played)
+            self._discard_cards([c for c in played if c.id not in mage_ids])
+            self.banished.extend(c.id for c in played if c.id in mage_ids)
+            if mage_ids:
+                self._say("The mage attack is banished: %s." % " + ".join(self.cards[c].label() for c in mage_ids))
         elif plan["played_to"] == "banish":
             self.banished.extend(c.id for c in played)
         dest = plan.get("enemy_to", "discard")
@@ -901,6 +990,8 @@ class Game:
             ids.extend(p.card_ids)
         if self.enemy:
             ids.append(self.enemy.card_id)
+        if self.decision:
+            ids.extend(self.decision.get("revealed", []))  # a mage's peek, out of the reserve
         return ids
 
     def summary(self) -> str:

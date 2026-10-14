@@ -209,6 +209,14 @@ class LegacyRules(BaseRules):
             return [{"type": "zone_rescue", "player": int(d["player"]), "card": cid,
                      "label": "Rescue %s to the discard pile" % game.cards[cid].label()}
                     for cid in game.mission_zone]
+        if d and d.get("kind") == "mage_peek":
+            # The pick is mandatory: "nothing to add" exists only when no revealed card may join.
+            player = int(d["player"])
+            eligible = [str(c) for c in d.get("eligible", [])]
+            if eligible:
+                return [{"type": "mage_pick", "player": player, "card": cid,
+                         "label": "Add %s to the attack" % game.cards[cid].label()} for cid in eligible]
+            return [{"type": "mage_skip", "player": player, "skip": True, "label": "Nothing to add"}]
         if not d or d.get("kind") != "flute_add":
             return []
         play = game.plays[int(d["play_index"])]
@@ -238,6 +246,9 @@ class LegacyRules(BaseRules):
                 game.players[int(d["player"])].name, game.cards[cid].label()))
             game.resume_defeat()
             return
+        if d and d.get("kind") == "mage_peek":
+            self._mage_decide(game, d, action)
+            return
         if not d or d.get("kind") != "flute_add":
             raise NotImplementedError(action)
         player = int(d["player"])
@@ -261,6 +272,84 @@ class LegacyRules(BaseRules):
         game._event("decide", **d)
         game._say("Kinfolk Flute: %s may add %ss to %s's attack." % (
             game.players[nxt].name, d["strength"], game.players[play.player].name))
+
+    def forecast_action(self, game) -> Optional[Dict[str, Any]]:
+        d = game.decision
+        if d and d.get("kind") == "mage_peek":
+            # Forecasts assume the mage adds nothing, whether or not a pick is possible.
+            return {"type": "mage_skip", "player": int(d["player"]), "skip": True, "forecast": True}
+        return super().forecast_action(game)
+
+    # ------------------------------------------------------------------ mages
+    # Rulebook p.16 (confirmed): "secretly look at cards from the top of the reserve deck
+    # equal to the attack strength; discard any Jesters or corrupted cards among them;
+    # choose one of the rest and add it to the attack (tucked underneath); put the others
+    # in the discard pile in any order. If the chosen card is a mage, repeat using that
+    # mage's own strength." The chosen cards' classes resolve with the new attack strength
+    # (p.23: an ace with a 9 of mages adding a 6 of bards draws 16 and deals 32) and the
+    # whole attack is banished at clean-up (``Play.mage``, set by the engine). A short
+    # reserve shows what there is; with nothing eligible everything revealed is discarded.
+    def resolve_power(self, game, suit: str, value: int, cards: Sequence[Card]) -> Any:
+        if suit == "M":
+            if value <= 0:
+                return {"peek": 0}
+            return {"decision": self._mage_peek(game, value)}
+        return super().resolve_power(game, suit, value, cards)
+
+    @staticmethod
+    def mage_eligible(card: Card) -> bool:
+        """May a revealed card join the attack? Jesters and corrupted cards never do."""
+        return not card.is_jester and not card.has("corrupted")
+
+    def _mage_peek(self, game, strength: int) -> Dict[str, Any]:
+        """Take the top ``strength`` reserve cards (fewer if the reserve is short) out of
+        the reserve into a mage_peek decision; returns the decision's own fields."""
+        n = min(int(strength), len(game.tavern))
+        revealed = game.tavern[:n]
+        del game.tavern[:n]
+        eligible = [cid for cid in revealed if self.mage_eligible(game.cards[cid])]
+        game._event("mage_peek", player=game.active, strength=int(strength), count=n,
+                    revealed=list(revealed), eligible=list(eligible))
+        if n == 0:
+            game._say("Mage: the reserve deck is empty, there is nothing to look at.")
+        else:
+            game._say("Mage: %s looks at the top %d card%s of the reserve deck." % (
+                game.players[game.active].name, n, "" if n == 1 else "s"))
+        return {"kind": "mage_peek", "player": game.active, "strength": int(strength),
+                "revealed": list(revealed), "eligible": eligible}
+
+    def _mage_discard_rest(self, game, d: Dict[str, Any]) -> List[str]:
+        """The revealed cards not chosen go to the discard pile (Jesters and corrupted ones too)."""
+        rest = [str(c) for c in d.get("revealed", [])]
+        game._discard_cards([game.cards[c] for c in rest])
+        d["revealed"] = []
+        return rest
+
+    def _mage_decide(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        name = game.players[int(d["player"])].name
+        if action["type"] == "mage_pick":
+            cid = str(action["card"])
+            play = game.mage_add_to_play(cid)
+            rest = self._mage_discard_rest(game, d)
+            card = game.cards[cid]
+            game._event("mage_pick", player=int(d["player"]), card=cid, value=play.value, discarded=rest)
+            tail = " %s to the discard pile." % " + ".join(game.cards[c].label() for c in rest) if rest else ""
+            game._say("%s adds %s to the attack (Mage): strength %d.%s" % (name, card.label(), play.value, tail))
+            if "M" in card.suits and self.strength(card) > 0 and not game.immune("M", [card]):
+                game._say("%s is a mage too: look again with its own strength, %d." % (card.label(), self.strength(card)))
+                d.update(self._mage_peek(game, self.strength(card)))
+                game._event("decide", **d)
+                return
+            game.resolve_pending_attack()
+            return
+        rest = self._mage_discard_rest(game, d)
+        game._event("mage_skip", player=int(d["player"]), discarded=rest)
+        if rest:
+            game._say("Mage: nothing may join the attack; %s to the discard pile." % (
+                " + ".join(game.cards[c].label() for c in rest)))
+        else:
+            game._say("Mage: nothing to add.")
+        game.resolve_pending_attack()
 
     # ------------------------------------------------------------------ corruption
     def on_cards_played(self, game, cards: Sequence[Card]) -> None:

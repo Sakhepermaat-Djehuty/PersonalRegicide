@@ -128,6 +128,51 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
         except (ValueError, IllegalAction) as e:
             print("!", e)
         return True
+    if game.phase == PHASE_DECIDE and (game.decision or {}).get("kind") == "mage_peek":
+        # Mage: the attacker looks at the revealed reserve cards and adds one to the attack.
+        d = game.decision or {}
+        revealed = [game.card(c) for c in d.get("revealed", [])]
+        eligible = [str(c) for c in d.get("eligible", [])]
+        print("Mage: %d card%s revealed from the reserve deck%s" % (
+            len(revealed), "" if len(revealed) == 1 else "s", ":" if revealed else " (it is empty)."))
+        for i, c in enumerate(revealed, 1):
+            note = "" if c.id in eligible else "   (%s: discarded)" % ("Jester" if c.is_jester else "corrupted")
+            print("  %2d. %s%s" % (i, c.label(), note))
+        if eligible:
+            ans = input("[number=add that card to the attack, q=quit] > ").strip().lower()
+        else:
+            ans = input("Nothing may join the attack. [enter=continue, q=quit] > ").strip().lower()
+        if ans == "q":
+            return False
+        try:
+            if not eligible:
+                game.decide({"type": "mage_skip"})
+            else:
+                idx = parse_indices(ans, len(revealed))
+                if not idx or len(idx) != 1:
+                    print("type the number of one revealed card")
+                    return True
+                game.decide({"type": "mage_pick", "card": revealed[idx[0]].id})
+        except IllegalAction as e:
+            print("!", e)
+        return True
+    if game.phase == PHASE_DECIDE and (game.decision or {}).get("kind") != "flute_add":
+        # A choice offered as a short list (e.g. which mission zone card to rescue).
+        acts = game.legal_actions()
+        for i, a in enumerate(acts, 1):
+            print("  %2d. %s" % (i, a.get("label", a["type"])))
+        ans = input("[number=choose, q=quit] > ").strip().lower()
+        if ans == "q":
+            return False
+        idx = parse_indices(ans, len(acts))
+        if not idx or len(idx) != 1:
+            print("type the number of one option")
+            return True
+        try:
+            game.decide(acts[idx[0]])
+        except IllegalAction as e:
+            print("!", e)
+        return True
     if game.phase == PHASE_DECIDE:
         # Kinfolk Flute: another player may add kinfolk cards to the attack on the table.
         d = game.decision or {}
@@ -183,6 +228,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print("bot plays " + " + ".join(game.card(c).label() for c in act["cards"]))
             elif act["type"] == "flute_add":
                 print("bot adds " + " + ".join(game.card(c).label() for c in act["card_ids"]))
+            elif act["type"] == "mage_pick":
+                print("bot adds %s to the attack (Mage)" % game.card(act["card"]).label())
             else:
                 print("bot:", act["type"])
             apply_action(game, act)

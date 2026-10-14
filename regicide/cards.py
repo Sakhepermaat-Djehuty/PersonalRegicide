@@ -13,6 +13,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 # Basic suits. Letters are used in ids and in saves; symbols only for display.
 HEARTS, DIAMONDS, CLUBS, SPADES = "H", "D", "C", "S"
 BASIC_SUITS: Tuple[str, ...] = (HEARTS, DIAMONDS, CLUBS, SPADES)
+MAGE = "M"   # Legacy class the engine itself knows: an attack with a mage is banished
 
 SUIT_SYMBOL: Dict[str, str] = {
     HEARTS: "♥",   # ♥

@@ -206,8 +206,18 @@ class BaseRules:
 
     def decide(self, game: "Game", action: Dict[str, Any]) -> None:
         """Apply one of ``decision_actions``. Must end by advancing the decision or by
-        calling ``game.resolve_pending_attack()``."""
+        calling ``game.resolve_pending_attack()`` / ``game.resume_defeat()``."""
         raise NotImplementedError("no decisions in these rules")
+
+    def forecast_action(self, game: "Game") -> Optional[Dict[str, Any]]:
+        """The action a forecast (``Game.preview_play``) assumes for the pending decision:
+        the "do nothing" option by default. Rules may return an option players cannot
+        take (a mage forecast adds nothing although the pick is mandatory). None stops
+        the forecast in the decide phase."""
+        for a in self.decision_actions(game):
+            if a.get("skip"):
+                return a
+        return None
 
     def play_value(self, game: "Game", cards: Sequence[Card]) -> int:
         """Attack value of a play (Legacy beasts copy their partner's value)."""
@@ -224,7 +234,10 @@ class BaseRules:
         pass
 
     def resolve_power(self, game: "Game", suit: str, value: int, cards: Sequence[Card]) -> Any:
-        """Resolve a non-basic suit power (Legacy). Return value is logged."""
+        """Resolve a non-basic suit power (Legacy). The return value is logged; a dict with
+        ``damage`` replaces the running damage, and a dict with a ``decision`` (``kind``,
+        ``player``, ...) pauses the resolution in the decide phase: the rules' ``decide``
+        ends it with ``game.resolve_pending_attack()``, which resumes after this suit."""
         raise NotImplementedError("suit %s has no power in these rules" % suit)
 
     def defeat_plan(self, game: "Game", exact: bool) -> Dict[str, Any]:
