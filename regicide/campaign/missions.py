@@ -208,8 +208,8 @@ MISSIONS: List[Dict[str, Any]] = [
                 "(20/60), all Mages. End of turn: the top reserve card goes face up into the mission zone. "
                 "Enemies are immune to the classes of every card in the zone. A defeated enemy is banished "
                 "with the whole zone; on exact damage one zone card is rescued to the discard pile first.",
-     "rewards_text": "Open pack C and corrupt another character in your party. Open pack F (contents still "
-                     "to be read: the app assumes the Mage class deck joins the party)."},
+     "rewards_text": "Open pack C and corrupt another character in your party. Open pack F: the ten mages "
+                     "join the party."},
     {"number": 4, "title": "Fusion of Darkness", "fan_title": "The Gauntlet", "location": "Biology Laboratory",
      "rules_id": "legacy_m4", "playable": False, "verified": True,
      "summary": "Twelve corrupted experiments: Phase I (10/20), Phase II (15/30), Phase III (20/40), one of "
@@ -545,11 +545,11 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         steps.append(_class_sticker_choice(camp, rng))
     elif number == 3:
         # Reward cards (confirmed): "Open pack C and corrupt another character in your party";
-        # "Open pack F". Pack F's contents are not read yet: the fan transcription says the
-        # Mage class deck (A to 10) joins the party permanently, so that is assumed.
+        # "Open pack F": "Add the 10 mages to your party" (A to 10 of the Mage class; Quill
+        # the owl is the animal mage).
         steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
         steps.append({"kind": "add_cards", "cards": MAGE_DECK,
-                      "label": "Open pack F: the Mage class deck joins the party (unverified)"})
+                      "label": "Open pack F: the ten mages join the party"})
     elif number == 4:
         # Reward cards (confirmed, in order): "Add Gøran to your party"; "Keep Gøran's four
         # beasts in the box beside your party. Each mission attempt you may include one of
@@ -686,8 +686,10 @@ def beast_by_id(bid: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+# Pack F (confirmed): the ten mages, A to 10. Quill (A) is the animal mage.
 MAGE_DECK: List[Dict[str, Any]] = [
-    {"id": "%sM" % r, "rank": r, "suits": ["M"], "value": RANK_VALUE[r], "flags": []}
+    dict({"id": "%sM" % r, "rank": r, "suits": ["M"], "value": RANK_VALUE[r], "flags": []},
+         **({"name": "Quill", "subtitle": "Animal Mage"} if r == "A" else {}))
     for r in ("A", "2", "3", "4", "5", "6", "7", "8", "9", "10")
 ]
 

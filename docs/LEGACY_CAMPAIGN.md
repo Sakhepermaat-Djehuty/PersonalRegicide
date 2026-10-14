@@ -407,9 +407,10 @@ private lore overlay only.
 
 **Reward cards, in order:**
 1. "Open pack C and corrupt another character in your party." Player's choice.
-2. "A party member takes Tōtara aside for a chat. Open pack F." Pack F's contents are
-   not read yet. The fan transcription says the Mage class deck (A to 10) joins the party
-   permanently after this mission; the app assumes that until the pack is photographed.
+2. "A party member takes Tōtara aside for a chat. Open pack F." **Pack F (confirmed):**
+   an F card (the Head Prefect: "We shall join you, those of us who can") reading "Add
+   the 10 mages to your party": the Mage class A to 10 (flame icon); Quill, Animal Mage,
+   is the ace.
 
 **Engine status:** mission 3 is playable and its rules are marked verified. The reserve
 card enters the zone at the end of every turn that is not a kill (end-of-turn effects
@@ -1051,8 +1052,8 @@ Numbers are attack / health.
    Mages. End of each turn (skipped on a kill): top reserve card face up into the
    mission zone. Enemies are immune to every class in the zone. Enemy defeated: banish it
    with the whole zone; exact kill: rescue one zone card to the discard pile first.
-   Rewards: open pack C and corrupt another character (random); open pack F
-   (contents to be read; assumed to be the Mage class deck A to 10).
+   Rewards: open pack C and corrupt another character (random); open pack F: the
+   ten mages (A to 10) join the party.
 4. **Fusion of Darkness** (Biology Laboratory; fan name: The Gauntlet) — **confirmed:**
    twelve corrupted experiments, Phase I 10/20, Phase II 15/30, Phase III 20/40, one per
    class. Each enemy's strength is increased by the strength of the top card of the
@@ -1159,7 +1160,7 @@ perfect-kill variant, what joins and leaves the party, and the reward pack conte
 Globally confirm: whether a solo player may yield in Legacy (the base reading forbids it;
 the fan engine allows it unless the previous action was a yield; the solo rules on p.26
 do not mention yielding), whether unspent coins are lost when a mission is won, the
-Evergreen Mother effects, the Mission 6 second-printing rules, the E-box procedure, and
-what pack F is. Already confirmed from the rulebook: the class-ability text and
-resolution order for every class, the coin and mercenary-persistence rules, the Jester
-claim rules, and the 2/5 and Wild Animal declarations.
+E-box procedure, and the contents of pack P. Already confirmed from the cards: every
+mission, every relic on both sides, the class-ability text and resolution order, the
+coin and mercenary rules and costs, the Jester claim rules, the 2/5 and Wild Animal
+declarations, pack C's corruption procedure, and pack F (the ten mages).

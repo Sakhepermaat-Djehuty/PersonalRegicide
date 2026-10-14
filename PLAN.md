@@ -50,10 +50,9 @@ docs/LEGACY_CAMPAIGN.md), the player helper card, the coin and mercenary rule (e
 failure adds coins equal to the failures so far; hired mercenaries stay until the mission
 is won; same-cost swaps after each failure), the solo Jester text, second-edition
 Mission 6, and every mission's location, story, rules, summary, enemy stat and reward
-cards (missions 1 to 12), with all five relics on both sides. Still needed as photos:
-pack C (corruption rules), pack P (the pilgrims), pack F, pack M (the M card and the
-mercenary costs), the E box, mission 3's "Rules continued" side, and one enemy card from
-mission 7.
+cards (missions 1 to 12), with all five relics on both sides, pack C, pack F and pack M.
+Still needed as photos: pack P (the pilgrims), the E box, the "Rules continued" sides
+of missions 3 and 12, one enemy card from mission 7, and the four beasts.
 
 **G3 — answered:** progressive reveal stays on. Campaigns are save files: main menu
 Continue / Load game / New game / Quick play / Lore (all games); game menu Next
