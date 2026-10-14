@@ -123,6 +123,25 @@ def _temple_castle(rng: random.Random) -> List[dict]:
     return tiers[0] + tiers[1] + [boss]
 
 
+def _ruins_castle(camp) -> List[dict]:
+    """Mission 10's enemy deck: the corrupted party members themselves (moved out of the
+    party by the setup card into ``camp.away``), face up, ordered from 9 on the bottom to
+    2 on the top; health five times the base strength, strength equal to it. They keep
+    their classes (stickers included) and their corruption, so a defeated one drawn from
+    the discard pile plays as the corrupted party card it is."""
+    enemies = []
+    for c in sorted(camp.away, key=lambda d: (int(d.get("value", 0)), str(d["id"]))):
+        e = dict(c)
+        e["attack"] = int(c.get("value", 0))
+        e["health"] = 5 * int(c.get("value", 0))
+        flags = list(c.get("flags", []))
+        if "corrupted" not in flags:
+            flags.append("corrupted")
+        e["flags"] = flags
+        enemies.append(e)
+    return enemies
+
+
 def _hydra_castle(rng: random.Random) -> List[dict]:
     hydras = []
     for i, (a, b) in enumerate(itertools.combinations(BASIC_SUITS, 2)):
@@ -230,8 +249,15 @@ MISSIONS: List[Dict[str, Any]] = [
                      "(4) or feltrix (8): the first unstickered one revealed from the shuffled party gains "
                      "the Mage class. Ash, Myla's beast (Mage), joins the party."},
     {"number": 10, "title": "Pride to Fall", "fan_title": "The Corruption", "location": "Twinseed Temple Ruins",
-     "rules_id": "legacy_m10", "playable": False, "verified": False,
-     "summary": "Your corrupted party members are the enemies.", "rewards_text": "They return; Goran is lost."},
+     "rules_id": "legacy_m10", "playable": False, "verified": True,
+     "summary": "The corrupted members leave the party and form the enemy deck, face up, 2 on top down to 9. "
+                "Each has health five times its strength and gains strength from every card in the mission "
+                "zone. Start of turn: the top reserve card goes into the zone. Warriors double their total "
+                "strength; paladins shrug off damage equal to their base strength; clerics pull the top "
+                "discard into the zone at the end of each turn; bards make the current player put a hand "
+                "card into the zone. Enemy defeated: banish the zone and discard the enemy; on exact damage "
+                "the zone is discarded instead.",
+     "rewards_text": "Gøran is lost. The corrupted characters return to the party."},
     {"number": 11, "title": "Descent Into Darkness", "fan_title": "The Beast Hunt", "location": "Caverns of Decay",
      "rules_id": "legacy_m11", "playable": False, "verified": False,
      "summary": "Four classless enemies (10/30), then Evil Goran (20/90). Beasts shape the battlefield.",
@@ -269,6 +295,8 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
         castle = _edge_castle(rng)
     elif number == 9:
         castle = _temple_castle(rng)
+    elif number == 10:
+        castle = _ruins_castle(camp)
     else:
         raise NotImplementedError("Mission %d is not implemented yet (see PLAN.md stage ladder)." % number)
     banished_start: List[dict] = []
@@ -355,6 +383,10 @@ def start_steps(camp, number: int) -> List[Step]:
     if number == 8 and any(P.find(camp.party, str(d["id"])) is None for d in CHANTERS):
         # Card (confirmed): "Add the four Chanters to your party."
         steps.append({"kind": "add_cards", "cards": CHANTERS, "label": "Thrum. Thrum. Thrum. The chanters beat their drums"})
+    if number == 10 and P.corrupted_ids(camp.party):
+        # Card (confirmed): "Remove the corrupted characters from your party. For this
+        # mission they will form the enemy deck."
+        steps.append({"kind": "corrupted_leave", "label": "Friends turned foe: the corrupted characters leave the party"})
     return steps
 
 
@@ -520,6 +552,13 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         steps.append({"kind": "choice_mage_student", "options": ["4", "8"],
                       "label": "A new student: choose dwarves (4) or feltrix (8); the first unstickered one revealed gains the Mage class"})
         steps.append({"kind": "add_card", "card": ASH, "label": "Ash, Myla's beast (Mage), joins the party"})
+    elif number == 10:
+        # Reward cards (confirmed, in order): "Remove Gøran (8, Evergreen) from your party";
+        # "Return the corrupted characters (the enemies from the previous mission) to your
+        # party."
+        steps.append({"kind": "remove_card", "card_id": GORAN_RENEWED["id"],
+                      "label": "The floor decays to dust: Gøran and the Arcana fall into the darkness"})
+        steps.append({"kind": "away_return", "label": "The infected members return to themselves, corruption halted but not cured"})
     return steps
 
 
@@ -654,6 +693,22 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
         target = rng.choice(pool)
         P.add_suit(camp.party, target, "M")
         return "%s takes up the mages' studies: gains the Mage class." % P.to_card(P.find(camp.party, target)).label()
+    if kind == "corrupted_leave":
+        moved = []
+        for cid in P.corrupted_ids(camp.party):
+            c = P.remove_card(camp.party, cid)
+            if c is not None:
+                camp.away.append(dict(c))
+                moved.append(P.to_card(c).label())
+        return "The corrupted characters leave the party: %s." % ", ".join(moved) if moved else "No corrupted character to remove."
+    if kind == "away_return":
+        back = []
+        for c in list(camp.away):
+            if P.find(camp.party, str(c["id"])) is None:
+                P.add_card(camp.party, dict(c))
+            back.append(P.to_card(c).label())
+        camp.away = []
+        return "Back in the party: %s." % ", ".join(back) if back else "Nobody was away."
     if kind == "set_flag":
         camp.flags[str(step["flag"])] = step.get("value", True)
         return str(step.get("label", "Flag %s set." % step["flag"]))

@@ -25,6 +25,7 @@ class CampaignState:
         self.party: List[dict] = P.starting_party()
         self.relics: List[str] = []
         self.corrupted: List[str] = []
+        self.away: List[dict] = []           # party cards temporarily out of the party (mission 10's corrupted enemies)
         self.flags: Dict[str, Any] = {}
         self.mission = 1                 # current mission number
         self.completed: List[int] = []
@@ -51,6 +52,7 @@ class CampaignState:
             "players": self.players,
             "names": list(self.names), "party": [dict(c) for c in self.party],
             "relics": list(self.relics), "corrupted": list(self.corrupted), "flags": dict(self.flags),
+            "away": [dict(c) for c in self.away],
             "mission": self.mission, "completed": list(self.completed),
             "attempts": dict(self.attempts), "losses": dict(self.losses), "coins": self.coins,
             "m_box_opened": self.m_box_opened, "mercenaries": list(self.mercenaries),

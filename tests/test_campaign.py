@@ -1105,3 +1105,38 @@ def test_mission9_setup_and_rewards_follow_the_cards():
     assert "8" in line and P.find(c2.party, "8S")["suits"] == ["S", "M"]
     c2.pending.append({"kind": "choice_mage_student", "options": ["4", "8"], "label": "x"})
     assert "no student" in c2.resolve_choice("8")
+
+
+def test_mission10_corrupted_party_members_form_the_enemy_deck_and_return():
+    c = CampaignState.new(1, ["Solo"], seed=120)
+    c.mission = 10
+    c.completed = list(range(1, 10))
+    P.add_card(c.party, dict(M.GORAN_RENEWED))
+    P.add_card(c.party, dict(M.ASH))
+    for cid in ("2S", "3H", "4D", "5C", "6C", "7S", "8H", "9D"):
+        P.add_flag(c.party, cid, "corrupted")
+        c.corrupted.append(cid)
+    P.add_suit(c.party, "4D", "U")   # Glamelyn, corrupted and a druid
+    rng = random.Random(7)
+    steps = M.start_steps(c, 10)
+    assert [s["kind"] for s in steps] == ["corrupted_leave"]
+    M.apply_step(c, steps[0], rng)
+    assert P.corrupted_ids(c.party) == [] and sorted(d["id"] for d in c.away) == ["2S", "3H", "4D", "5C", "6C", "7S", "8H", "9D"]
+    assert M.start_steps(c, 10) == []   # retries do not move anything more
+    extra = M.build_setup(c, 10, rng)
+    enemies = extra["castle"]
+    assert [e["id"] for e in enemies] == ["2S", "3H", "4D", "5C", "6C", "7S", "8H", "9D"]  # 2 on top, 9 at the bottom
+    assert [(e["attack"], e["health"]) for e in enemies] == [(2, 10), (3, 15), (4, 20), (5, 25), (6, 30), (7, 35), (8, 40), (9, 45)]
+    assert all("corrupted" in e["flags"] for e in enemies)
+    assert enemies[2]["suits"] == ["D", "U"]     # keeps her sticker as an enemy
+    assert not any(d["id"] in extra_ids for d in c.away for extra_ids in [[p["id"] for p in extra["party"]]])
+    # save round trip keeps the away cards
+    c2 = CampaignState.from_dict(json.loads(json.dumps(c.to_dict())))
+    assert c2.away == c.away
+    steps = M.reward_steps(c, 10, rng)
+    assert [s["kind"] for s in steps] == ["remove_card", "away_return"]
+    for s in steps:
+        M.apply_step(c, s, rng)
+    assert P.find(c.party, "GOR8E") is None and c.away == []
+    assert sorted(P.corrupted_ids(c.party)) == ["2S", "3H", "4D", "5C", "6C", "7S", "8H", "9D"]
+    assert P.find(c.party, "4D")["suits"] == ["D", "U"]

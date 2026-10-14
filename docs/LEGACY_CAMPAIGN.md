@@ -757,6 +757,66 @@ three captured piles, the end-of-turn banish-to-rescue or rotate choice, the exa
 pile pick, Myla's unignorable immunity), beasts and the Evergreen Mother on both sides
 are to be built.
 
+## Mission 10, Pride to Fall (confirmed, transcribed from the owner's photos)
+
+**Location card:** Twinseed Temple Ruins (grey smoke under a red sky, QR code; map piece
+on the back with the ruined tree marked by a cross).
+
+**Setup card.** "Remove the corrupted characters from your party. For this mission they
+will form the enemy deck."
+
+**Enemy stats card:** eight unknown enemies: 2 / 10, 3 / 15, 4 / 20, 5 / 25, 6 / 30,
+7 / 35, 8 / 40, 9 / 45. So the eight corruptions of missions 1 to 8 are one each of
+strengths 2 to 9, which confirms the "never repeat a strength" rule the app uses for
+corruption candidates.
+
+**Mission rules card (front).** *Setup:* take the eight corrupted cards previously in
+your party and place these face up into the enemy deck, ordered from 9 on the bottom to
+2 on the top. *Start of turn:* take the top card of the reserve deck and place it into
+the mission zone. Each enemy has health equal to five times their base strength. Each
+enemy has additional strength equal to the combined strength of all cards in the
+mission zone. *Enemy defeated:* banish all cards in the mission zone and put the enemy
+in the discard pile. If the enemy was dealt exact damage, place the cards in the mission
+zone in the discard pile instead.
+
+**Rules continued.** Each enemy is immune to class powers matching its own class (as
+normal), and has additional class powers: *Warrior:* has double total strength,
+including additional strength from cards in the mission zone. *Paladin:* reduces the
+damage you deal to this enemy by the enemy's base strength. *Cleric:* at the end of each
+turn place the top card of the discard pile into the mission zone. *Bard:* at the end of
+each turn the current player must put a card from their hand into the mission zone if
+able. *Example:* Wicket (2, gnome paladin, corrupted) as the enemy with a 6 and Glamelyn
+(4, dwarf bard) in the mission zone: the player deals 2 less damage to Wicket, then
+suffers 12 damage from the enemy's strike back.
+
+**Rules summary card:** Start of turn: put the top of the reserve into the mission
+zone. Cards in the mission zone add strength to the enemy. Enemy powers: warrior has
+double total strength; paladin reduces damage taken by base strength. End of turn enemy
+powers: cleric puts the top card of the discard pile into the mission zone; bard puts a
+card from hand into the mission zone. Enemy defeated: banish mission zone and discard
+enemy; exact kill: discard mission zone instead of banishing it.
+
+**Story cards:** intro (the fires die down, Gøran admits they need the corruption, the
+High Arcana steps out of the shadows: "you brought an army right to me") and outcome
+(the Syndicate subdues its corrupt members and corners the Arcana; Gøran bolts in);
+texts in the private lore overlay only.
+
+**Reward cards, in order:**
+1. "Remove Gøran (8, Evergreen) from your party." The Arcana decays the floor and both
+   fall into the darkness.
+2. "Return the corrupted characters (the enemies from the previous mission) to your
+   party." They come back still corrupted ("halted but not fully cured").
+
+**Notes.** Defeated enemies go to the discard pile, so a corrupted character defeated
+early can be drawn and played as the corrupted party card it is, with its stickers. A
+corrupted card with a class sticker is a two-class enemy: immune to both classes and,
+if a second class is among the four, with both powers (the app's reading).
+
+**Engine status:** data, setup step and rewards are in (the corrupted cards move to a
+new "away" list in the campaign save for the mission and return afterwards); the
+mission rules (five-times health, zone strength, the four enemy powers, the discard or
+banish of the zone) are to be built.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
@@ -908,12 +968,15 @@ Numbers are attack / health.
    sides confirmed); Gøran renewed (8, Evergreen: all four classes, ignores immunity);
    the first unstickered 4 or 8 revealed (player picks the strength) gains Mage; Ash
    (B, Mage beast) joins permanently.
-10. **Pride to Fall** (fan name: The Corruption; Twinseed Temple Ruins) — your corrupted cards leave the party and become the enemies:
-    health 5 × value, attack value + mission zone total, and a suit ability (♣ doubles
-    its total attack, ♠ reduces incoming damage by its value, ♥ moves the top discard to
-    the zone each end of turn, ♦ makes you put a hand card in the zone). Start of turn:
-    top tavern card to the zone. Kill: zone banished, enemy to discard (perfect: zone to
-    discard). Reward: corrupted cards return; Goran leaves for good.
+10. **Pride to Fall** (Twinseed Temple Ruins; fan name: The Corruption) — **confirmed:**
+    the corrupted characters leave the party and form the enemy deck face up, 2 on top
+    to 9 at the bottom; health 5 × strength; strength + the whole mission zone; start of
+    turn: top reserve card into the zone. Enemy powers: warrior doubles the total
+    strength; paladin reduces damage taken by its base strength; cleric moves the top
+    discard into the zone at end of turn; bard makes the current player put a hand card
+    into the zone at end of turn. Enemy defeated: banish the zone, discard the enemy;
+    exact kill: discard the zone instead. Rewards: Gøran is lost; the corrupted
+    characters return (still corrupted).
 11. **Descent Into Darkness** (fan name: The Beast Hunt; Caverns of Decay) — Esme (6♣) is removed. 4 suitless enemies 10/30 then Evil Goran
     20/90. Enemies are immune to the suits on top of the banished and discard piles and
     gain attack equal to those two cards' values. Start of turn: a random basic-suit
