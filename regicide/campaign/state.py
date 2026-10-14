@@ -91,13 +91,12 @@ class CampaignState:
         mercenaries carry no names. Older saves stored names on the party's cards, on
         cards waiting in reward steps, in those steps' labels and in the campaign log;
         replace them with the plain wording (once for the log: ``flags["plain_text"]``).
-        Restored cards play as all four basic classes (the restoration tree)."""
+        Restored cards keep their own classes (a short-lived build gave them all four)."""
         from . import old_names
         M.strip_flavour_names(self.party)
         M.strip_flavour_names(self.away)
         for c in self.party:
-            if "restored" in c.get("flags", []):
-                M.make_all_classes(c)
+            M.undo_all_classes(c)
         keep = [str(n) for n in self.names]
         for step in self.pending:
             if isinstance(step.get("card"), dict):

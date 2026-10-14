@@ -96,19 +96,19 @@ def card_color(card: Card) -> str:
     return "#444444"
 
 
-TREE_PIP = "tree"   # pseudo-suit: the geometric tree that stands for all four basic classes
+TREE_PIP = "tree"   # pseudo-suit: the Evergreen tree, standing for the four basic classes
 
 
 def all_classes(card: Card) -> bool:
-    """Whether the card is a cleric, bard, warrior and paladin at once: an Evergreen card
-    (the renewed Gøran, Esme) or a restored one."""
-    return all(s in card.suits for s in BASIC_SUITS)
+    """Whether the card is an Evergreen card (the renewed Gøran, Esme): a cleric, bard,
+    warrior and paladin at once, ignoring immunity. Restored cards keep their own classes."""
+    return card.has("evergreen") and all(s in card.suits for s in BASIC_SUITS)
 
 
 def face_pips(card: Card) -> List[str]:
-    """The class pips on a card's face. The tree replaces the four basic class icons on a
-    card that has all four (owner's choice: the tree represents all classes); a sticker
-    class (Mage, Reaver, Guardian, Druid, Chanter) keeps its own icon beside it."""
+    """The class pips on a card's face. On an Evergreen card the tree replaces the four
+    basic class icons (owner: the tree represents the four base classes); any other class
+    keeps its own icon beside it."""
     suits = list(card.suits)
     if all_classes(card):
         return [TREE_PIP] + [s for s in suits if s not in BASIC_SUITS]

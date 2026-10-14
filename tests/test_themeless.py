@@ -105,22 +105,24 @@ def test_card_faces_show_rank_and_class_and_names_only_the_story_characters():
         nineteen = [m["card"] for m in MERCENARIES if m["id"] == "merc_19_1"][0]
         assert face(nineteen) == ["19", "19"]
         assert face(M.GORAN) == ["8", "8", "Gøran"]
-        # corrupted and restored cards are shown by their sleeve (a purple or green edge),
-        # not by a word; the tree replaces the four basic class icons on a card that has all
-        # four (a restored card, an Evergreen card), a sticker class keeps its own icon
+        # corrupted and restored cards are shown by their sleeve only (a purple or green
+        # edge) and keep their own class icons; the tree replaces the four basic class icons
+        # on the Evergreen cards only (the renewed Gøran, Esme)
         corrupted = {"id": "6C", "rank": "6", "suits": ["C"], "value": 6, "flags": ["corrupted"]}
-        restored = {"id": "6C", "rank": "6", "suits": ["H", "D", "C", "S"], "value": 6, "flags": ["restored"]}
-        stickered = {"id": "4D", "rank": "4", "suits": ["H", "D", "C", "S", "U"], "value": 4, "flags": ["restored"]}
-        assert face(corrupted) == ["6", "♣", "♣"]
-        assert face(restored) == ["6"] and face(dict(M.GORAN_RENEWED)) == ["8", "Gøran"]   # pips are trees
-        assert face(stickered) == ["4", "✿", "✿"]
+        restored = {"id": "6C", "rank": "6", "suits": ["C"], "value": 6, "flags": ["restored"]}
+        stickered = {"id": "4D", "rank": "4", "suits": ["D", "U"], "value": 4, "flags": ["restored"]}
+        assert face(corrupted) == ["6", "♣", "♣"] and face(restored) == ["6", "♣", "♣"]
+        assert face(stickered) == ["4", "♦", "✿", "♦", "✿"]
+        assert face(dict(M.GORAN_RENEWED)) == ["8", "Gøran"]          # its pips are trees
     finally:
         ui.draw_string = real
     assert widgets.sleeve_color(P.to_card(corrupted)) == T.CORRUPTED
     assert widgets.sleeve_color(P.to_card(restored)) == T.RESTORED
     assert widgets.sleeve_color(P.to_card(M.GORAN_RENEWED)) == "" and widgets.sleeve_color(P.to_card(M.BEASTS[0])) == ""
-    assert widgets.face_pips(P.to_card(stickered)) == [widgets.TREE_PIP, "U"]
-    assert widgets.card_color(P.to_card(restored)) == T.EVERGREEN
+    assert widgets.face_pips(P.to_card(stickered)) == ["D", "U"]
+    assert widgets.face_pips(P.to_card(M.ESME_REBORN)) == [widgets.TREE_PIP]
+    assert widgets.card_color(P.to_card(M.GORAN_RENEWED)) == T.EVERGREEN
+    assert widgets.card_color(P.to_card(restored)) == T.SUIT_COLOR["C"]
     trees = []
     real_tree = widgets.draw_tree
     widgets.draw_tree = lambda *a: trees.append(a)
@@ -131,8 +133,8 @@ def test_card_faces_show_rank_and_class_and_names_only_the_story_characters():
             ui.render(v)
     finally:
         widgets.draw_tree = real_tree
-    # corner + centre, small: one, none when corrupted, corner + centre for Esme
-    assert len(trees) == 5 and all(t[-1] == T.EVERGREEN for t in trees)
+    # none on a restored or corrupted card; corner + centre on Esme
+    assert len(trees) == 2 and all(t[-1] == T.EVERGREEN for t in trees)
     assert card_caption(P.to_card(M.BEASTS[0])) == "" and card_caption(P.to_card(M.PUPPY)) == "pilgrim"
     assert card_caption(P.to_card([m["card"] for m in MERCENARIES if m["id"] == "merc_ace_1"][0])) == "any class"
 
@@ -168,27 +170,37 @@ def test_saves_from_before_lose_the_flavour_names(tmp_path, monkeypatch):
     assert g2.cards["GOR8"].name == "Gøran" and g2.cards[g2.enemy.card_id].name == enemy_name
 
 
-def test_restored_cards_are_all_four_basic_classes_and_keep_sticker_classes():
-    """Owner's reading: the restoration tree represents all classes. Mission 12's setup
-    restores the corrupted members as clerics, bards, warriors and paladins at once,
-    keeping any sticker class; old saves are upgraded the same way."""
+def test_restored_cards_keep_their_own_classes():
+    """Owner: restored cards have green borders and keep their classes; only the Evergreen
+    cards (Gøran and Esme) are the four base classes. A short-lived build gave restored
+    cards all four; such saves and attempts go back to the printed classes."""
     c = CampaignState.new(1, ["Ana"], seed=4)
     for cid in ("3H", "4D"):
         P.add_flag(c.party, cid, "corrupted")
         c.corrupted.append(cid)
     P.add_suit(c.party, "4D", "U")
     M.apply_step(c, {"kind": "restore_all", "label": "x"}, random.Random(1))
-    assert P.find(c.party, "3H")["suits"] == ["H", "D", "C", "S"] and P.find(c.party, "3H")["base_suits"] == ["H"]
-    assert P.find(c.party, "4D")["suits"] == ["H", "D", "C", "S", "U"]
-    assert P.to_card(P.find(c.party, "3H")).label() == "3♥♦♣♠"
-    # an old save with a one-class restored card
+    assert P.find(c.party, "3H")["suits"] == ["H"] and P.find(c.party, "4D")["suits"] == ["D", "U"]
+    assert P.find(c.party, "3H")["flags"] == ["restored"] and P.to_card(P.find(c.party, "3H")).label() == "3♥"
+    # a save from the short-lived build: with and without its record of the printed classes
     d = c.to_dict()
     for card in d["party"]:
         if card["id"] == "3H":
-            card["suits"] = ["H"]
-            card.pop("base_suits")
+            card["suits"], card["base_suits"] = ["H", "D", "C", "S"], ["H"]
+        if card["id"] == "4D":
+            card["suits"] = ["H", "D", "C", "S", "U"]
+    esme = dict(M.ESME_REBORN, flags=["evergreen", "ignores_immunity", "restored"])
+    d["party"].append(esme)
     c2 = CampaignState.from_dict(json.loads(json.dumps(d)))
-    assert P.find(c2.party, "3H")["suits"] == ["H", "D", "C", "S"]
+    assert P.find(c2.party, "3H")["suits"] == ["H"] and "base_suits" not in P.find(c2.party, "3H")
+    assert P.find(c2.party, "4D")["suits"] == ["D", "U"]
+    assert P.find(c2.party, "ESME6E")["suits"] == ["H", "D", "C", "S"]       # the Evergreen stays all four
+    # an attempt saved by that build
+    g = c2.start_attempt(seed=8)
+    if "3H" in g.cards:
+        g.cards["3H"] = g.cards["3H"].with_changes(suits=("H", "D", "C", "S"))
+        M.strip_game_names(g)
+        assert g.cards["3H"].suits == ("H",)
 
 
 def test_old_save_text_and_attempt_enemy_are_rewritten(tmp_path, monkeypatch):

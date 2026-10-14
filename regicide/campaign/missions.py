@@ -705,28 +705,33 @@ def strip_flavour_names(cards: List[Any]) -> int:
     return changed
 
 
-def all_class_suits(suits: List[str]) -> List[str]:
-    """A restored card's classes: the restoration tree stands for all four basic classes
-    (owner's reading), so cleric, bard, warrior and paladin, plus any other class it has
-    from a sticker (a Mage, Reaver, Guardian, Druid or Chanter)."""
-    return list(BASIC_SUITS) + [str(s) for s in suits if s not in BASIC_SUITS]
+def printed_suits(card_id: str, suits: List[str], flags: List[str]) -> Optional[List[str]]:
+    """Restored cards keep their own classes (owner): only the Evergreen cards, Gøran and
+    Esme, are all four basic classes. One short-lived build gave restored cards all four;
+    for such a card this returns its printed classes (the basic class in its id, e.g. the
+    H of "3H", plus any sticker class), else None when nothing needs undoing."""
+    if "restored" not in flags or "evergreen" in flags:
+        return None
+    if not all(s in suits for s in BASIC_SUITS) or card_id[-1:] not in BASIC_SUITS:
+        return None
+    return [card_id[-1]] + [str(s) for s in suits if s not in BASIC_SUITS]
 
 
-def make_all_classes(card: Dict[str, Any]) -> bool:
-    """Give a restored card dict all four basic classes, remembering its printed classes
-    in ``base_suits``. Returns whether anything changed."""
-    suits = [str(s) for s in card.get("suits", [])]
-    if all(s in suits for s in BASIC_SUITS):
-        return False
-    card.setdefault("base_suits", list(suits))
-    card["suits"] = all_class_suits(suits)
+def undo_all_classes(card: Dict[str, Any]) -> bool:
+    """Put a restored party card dict back to its printed classes (see ``printed_suits``)."""
+    base = card.pop("base_suits", None)
+    fixed = printed_suits(str(card.get("id", "")), [str(s) for s in card.get("suits", [])],
+                          list(card.get("flags", [])))
+    if fixed is None:
+        return base is not None
+    card["suits"] = [str(s) for s in base] if base else fixed
     return True
 
 
 def strip_game_names(game) -> int:
     """The same for an attempt saved before the change: its plain cards lose their names
     (the current enemy too, when it is one of them: mission 10 fights the corrupted party
-    members), and a restored card plays as all four basic classes."""
+    members), and a restored card keeps only its own classes."""
     ids = plain_card_ids()
     changed = 0
     for cid, card in list(game.cards.items()):
@@ -734,8 +739,9 @@ def strip_game_names(game) -> int:
             card = card.with_changes(name="")
             game.cards[cid] = card
             changed += 1
-        if card.has("restored") and not all(s in card.suits for s in BASIC_SUITS):
-            game.cards[cid] = card.with_changes(suits=tuple(all_class_suits(list(card.suits))))
+        fixed = printed_suits(cid, list(card.suits), list(card.flags))
+        if fixed is not None:
+            game.cards[cid] = card.with_changes(suits=tuple(fixed))
             changed += 1
     enemy = getattr(game, "enemy", None)
     if enemy is not None and enemy.card_id in ids:
@@ -864,7 +870,6 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
                 if "restored" not in flags:
                     flags.append("restored")
                 c["flags"] = flags
-                make_all_classes(c)
                 changed.append(P.to_card(c).label())
             elif c["id"] == ESME_REBORN["id"] and "restored" not in flags:
                 flags.append("restored")
