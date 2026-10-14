@@ -1494,8 +1494,11 @@ def test_mission8_setup_and_rewards_follow_the_cards():
     assert (enemies[0]["attack"], enemies[0]["health"], enemies[-1]["attack"], enemies[-1]["health"]) == (10, 20, 25, 50)
     assert [d["id"] for d in extra["zone_start"]] == ["PILA"] and extra["pilgrims"] == []
     assert len(extra["pilgrims_in_reserve"]) == 24 and all(d["id"] != "PILA" for d in extra["pilgrims_in_reserve"])
-    names = {d["value"]: d["name"] for d in extra["pilgrims_in_reserve"]}
-    assert names[2] == "Traveller" and names[3] == "Follower" and names[4] == "Servant" and names[6] == "Acolyte"
+    names = {}
+    for d in extra["pilgrims_in_reserve"]:
+        names.setdefault(d["value"], set()).add(d["name"])
+    assert names[2] == {"Traveller", "Seeker"} and names[3] == {"Follower"} and names[4] == {"Servant"} and names[6] == {"Acolyte"}
+    assert sorted(names) == [2, 3, 4, 5, 6, 7] and all(sum(1 for d in extra["pilgrims_in_reserve"] if d["value"] == v) == 4 for v in names)
     steps = M.reward_steps(c, 8, rng)
     assert [s["kind"] for s in steps] == ["add_suit", "corrupt_random", "remove_card", "remove_card", "remove_card", "choice_suit", "set_flag"]
     for s in steps:
