@@ -29,7 +29,7 @@ points where I need you. The gates where I need you are marked **G0–G4**.
 | 1 | **Alpha 0 — engine + console**: full base Regicide for 1–4 players, solo Jester powers and medals, legal-move enumeration, save/load, bots, text client (`python -m regicide.cli`), test suite (rule-by-rule tests, thousands of bot games checking invariants), CI on Python 3.8/3.10/3.12 | done |
 | 2 | **Alpha 1 — phone UI**: Pythonista touch client for the base game (solo + pass-and-play with a hand-over screen), tap-to-select cards, forecast of a play, discard picker, Jester choice, autosave/resume, undo, game log, history, settings, one-file bootstrap installer | done |
 | 3 | **Alpha 2 — campaign skeleton**: party deck with per-card classes and flags, relics, corruption, mission log and attempts, coins and mercenaries, campaign save file, progressive reveal; Missions 1–2 playable (Call to Arms, Shadow and Mist) with the Kinfolk Flute, the Arcane 25, corrupted cards, feign death and the Legacy Jester rules (claim in multiplayer, strength-8 class attack in solo) | done (content unverified, see G2) |
-| 3b | **Rulebook reconciliation** (as the owner's photos arrive): a serialisable decision phase in the engine for mid-turn choices (done; used by the Kinfolk Flute's multiplayer side, next by Mage, Reaver, Druid and Chanter); per-attack ignores-immunity flag so Jester and corrupted paladins keep their strength reduction after an enemy gains paladin immunity; Legacy kinfolk as any number of equal-strength cards; beasts; one-at-a-time discards; player-chosen clean-up order; 2/5 and Wild Animal declarations; relic solo/multiplayer sides | missions 1 to 3 confirmed and playable; rest in progress |
+| 3b | **Rulebook reconciliation** (as the owner's photos arrive): a serialisable decision phase in the engine for mid-turn choices (done; used by the Kinfolk Flute's multiplayer side, next by Mage, Reaver, Druid and Chanter); per-attack ignores-immunity flag so Jester and corrupted paladins keep their strength reduction after an enemy gains paladin immunity; Legacy kinfolk as any number of equal-strength cards; beasts; one-at-a-time discards; player-chosen clean-up order; 2/5 and Wild Animal declarations; relic solo/multiplayer sides | all twelve missions transcribed from the cards; 1 to 3 playable, 4 to 12 have data and rewards, rules in progress |
 | 4 | **Alpha 3 — Missions 3–6**: Mage class with the interactive reveal/pick, mission zone, dynamic immunities, shield recalculation, Reavers, Guardians, Beasts, Scarlet Whistle, Azure Emblem, carry-over damage, mission-zone damage | after G2 answers where they matter, otherwise built on the transcription |
 | 5 | **Alpha 4 — Missions 7–9**: Druids (discard sorting), Pilgrim deck, Chanters, ascending placement, captured piles, Evergreen Mother | same |
 | 6 | **Alpha 5 — Missions 10–12 and Eternal mode**: corrupted party as enemies, Beast hunt, restored cards, final boss, Location/Bane/Boon generator | needs E-box transcription (G2) |
@@ -49,10 +49,11 @@ confirmed so far: the whole rulebook (pages 2 to 26, transcribed in
 docs/LEGACY_CAMPAIGN.md), the player helper card, the coin and mercenary rule (each
 failure adds coins equal to the failures so far; hired mercenaries stay until the mission
 is won; same-cost swaps after each failure), the solo Jester text, second-edition
-Mission 6. Still needed as photos: every mission's rules, overview and enemy stat cards,
-the M card and mercenary costs, the relics (both sides), the special party cards, the C
-and E box rules and cards, pack F. Until then missions 3 to 12 are built from the fan
-transcription and labelled "unverified".
+Mission 6, and every mission's location, story, rules, summary, enemy stat and reward
+cards (missions 1 to 12), with all five relics on both sides. Still needed as photos:
+pack C (corruption rules), pack P (the pilgrims), pack F, pack M (the M card and the
+mercenary costs), the E box, mission 3's "Rules continued" side, and one enemy card from
+mission 7.
 
 **G3 — answered:** progressive reveal stays on. Campaigns are save files: main menu
 Continue / Load game / New game / Quick play / Lore (all games); game menu Next

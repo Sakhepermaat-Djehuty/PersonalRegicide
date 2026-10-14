@@ -82,6 +82,96 @@ def _garden_castle(rng: random.Random) -> List[dict]:
     return tiers[0] + tiers[1]
 
 
+def _well_castle(rng: random.Random) -> List[dict]:
+    """Mission 7's enemy stat card: Shoal 10/20, Deep 15/30, Abyssal 20/40 pondkin, one of
+    each class per tier (twelve enemies)."""
+    tiers = []
+    for rank, name, atk, hp in (("J", "Shoal Pondkin", 10, 20), ("Q", "Deep Pondkin", 15, 30), ("K", "Abyssal Pondkin", 20, 40)):
+        tier = [{"id": "WL%s%s" % (rank, s), "rank": rank, "suits": [s], "value": RANK_VALUE[rank],
+                 "name": name, "attack": atk, "health": hp, "flags": []} for s in BASIC_SUITS]
+        rng.shuffle(tier)
+        tiers.append(tier)
+    return tiers[0] + tiers[1] + tiers[2]
+
+
+def _edge_castle(rng: random.Random) -> List[dict]:
+    """Mission 8's enemy stat card: six Trolls 10/20 and six Wyverns 25/50, each with a
+    distinct pair of the four classes (immune to both)."""
+    tiers = []
+    for rank, name, atk, hp in (("J", "Troll", 10, 20), ("K", "Wyvern", 25, 50)):
+        tier = []
+        for i, (a, b) in enumerate(itertools.combinations(BASIC_SUITS, 2)):
+            tier.append({"id": "HE%s%d" % (rank, i + 1), "rank": rank, "suits": [a, b], "value": RANK_VALUE[rank],
+                         "name": name, "attack": atk, "health": hp, "flags": []})
+        rng.shuffle(tier)
+        tiers.append(tier)
+    return tiers[0] + tiers[1]
+
+
+def _temple_castle(rng: random.Random) -> List[dict]:
+    """Mission 9's enemy stat card: four Loreguards 15/30 and four Lorekeepers 20/40, one
+    of each class per tier, then Myla 20/80 (bard and paladin; her immunity can never be
+    ignored)."""
+    tiers = []
+    for rank, name, atk, hp in (("Q", "Loreguard", 15, 30), ("K", "Lorekeeper", 20, 40)):
+        tier = [{"id": "TT%s%s" % (rank, s), "rank": rank, "suits": [s], "value": RANK_VALUE[rank],
+                 "name": name, "attack": atk, "health": hp, "flags": []} for s in BASIC_SUITS]
+        rng.shuffle(tier)
+        tiers.append(tier)
+    boss = {"id": "MYLA_BOSS", "rank": "K", "suits": ["D", "S"], "value": 20, "name": "Myla",
+            "attack": 20, "health": 80, "flags": ["fixed_immunity"]}
+    return tiers[0] + tiers[1] + [boss]
+
+
+def _ruins_castle(camp) -> List[dict]:
+    """Mission 10's enemy deck: the corrupted party members themselves (moved out of the
+    party by the setup card into ``camp.away``), face up, ordered from 9 on the bottom to
+    2 on the top; health five times the base strength, strength equal to it. They keep
+    their classes (stickers included) and their corruption, so a defeated one drawn from
+    the discard pile plays as the corrupted party card it is."""
+    enemies = []
+    for c in sorted(camp.away, key=lambda d: (int(d.get("value", 0)), str(d["id"]))):
+        e = dict(c)
+        e["attack"] = int(c.get("value", 0))
+        e["health"] = 5 * int(c.get("value", 0))
+        flags = list(c.get("flags", []))
+        if "corrupted" not in flags:
+            flags.append("corrupted")
+        e["flags"] = flags
+        enemies.append(e)
+    return enemies
+
+
+def _caverns_castle(rng: random.Random) -> List[dict]:
+    """Mission 11's enemy stat card: four Justicars 10/30, then the Corrupted Evergreen
+    20/90. Both carry a dark gem icon rather than a class; the app reads it as no innate
+    class, so their immunities come only from the tops of the discard and banished piles
+    as the mission rules say."""
+    tier = [{"id": "CV_J%d" % (i + 1), "rank": "J", "suits": [], "value": 10, "name": "Justicar",
+             "attack": 10, "health": 30, "flags": []} for i in range(4)]
+    rng.shuffle(tier)
+    boss = {"id": "CV_EVERGREEN", "rank": "K", "suits": [], "value": 20, "name": "Corrupted Evergreen",
+            "attack": 20, "health": 90, "flags": []}
+    return tier + [boss]
+
+
+def _throne_castle(rng: random.Random) -> List[dict]:
+    """Mission 12's enemy stat card: four Queens 15/30 and four Kings 20/40, one of each
+    class per tier, then the High Arcana 25/120 (dark gem icon: no class). The royals are
+    corrupted (the summary's corrupted-card rule applies to them): a corrupted card can
+    never enter the reserve deck and goes to the bottom of the banished pile instead."""
+    tiers = []
+    for rank, name, atk, hp in (("Q", "Queen", 15, 30), ("K", "King", 20, 40)):
+        tier = [{"id": "TH%s%s" % (rank, s), "rank": rank, "suits": [s], "value": RANK_VALUE[rank],
+                 "name": "%s %s" % (CLASS_NAME[s], name), "attack": atk, "health": hp, "flags": ["corrupted"]}
+                for s in BASIC_SUITS]
+        rng.shuffle(tier)
+        tiers.append(tier)
+    boss = {"id": "TH_ARCANA", "rank": "K", "suits": [], "value": 25, "name": "High Arcana",
+            "attack": 25, "health": 120, "flags": ["corrupted"]}
+    return tiers[0] + tiers[1] + [boss]
+
+
 def _hydra_castle(rng: random.Random) -> List[dict]:
     hydras = []
     for i, (a, b) in enumerate(itertools.combinations(BASIC_SUITS, 2)):
@@ -152,28 +242,74 @@ MISSIONS: List[Dict[str, Any]] = [
                      "Azure Emblem. Choose Bronze (8 Cleric), Snow (8 Bard) or Shadow (8 Warrior) to gain the "
                      "Guardian class. Runo (3, Guardian) stays; the other three Guardians leave."},
     {"number": 7, "title": "Tales of Rebirth", "fan_title": "The Pilgrimage", "location": "Well of Tears",
-     "rules_id": "legacy_m7", "playable": False, "verified": False,
-     "summary": "Royals again, with a deck of pilgrims wandering into the mission zone; match their values "
-                "to banish them. Druids help.", "rewards_text": "A Druid stays."},
+     "rules_id": "legacy_m7", "playable": False, "verified": True,
+     "summary": "Four Druids join for the mission. Shoal (10/20), Deep (15/30) and Abyssal (20/40) pondkin, "
+                "one of each class. Pack P's pilgrims form a face-down deck in the mission zone; at the start "
+                "of every turn one is turned face up. A card entering play may banish one pilgrim of the "
+                "same strength. Pilgrims never leave players' hands. Enemy defeated: discard reserve cards "
+                "equal to the zone's total strength, discard the zone, banish the enemy; on exact damage one "
+                "zone card may be banished first.",
+     "rewards_text": "Gøran gains the Cleric class. Open pack C and corrupt another character. Alantha (7, "
+                     "Druid) stays and the other three Druids leave. Choose Glamelyn (4 Bard), Herbod (4 "
+                     "Warrior) or Dhonatir (4 Paladin) to gain the Druid class."},
     {"number": 8, "title": "Winds of Chaos", "fan_title": "The Troll Bridge", "location": "Heaven's Edge",
-     "rules_id": "legacy_m8", "playable": False, "verified": False,
-     "summary": "Six Trolls (10/20) then six Wyverns (25/50), all two-class. Build the mission zone in "
-                "ascending order; a 10 clears it. Chanters help.", "rewards_text": "A Chanter stays."},
+     "rules_id": "legacy_m8", "playable": False, "verified": True,
+     "summary": "Four Chanters join for the mission. The pilgrim puppy starts in the mission zone and the "
+                "other pilgrims are shuffled into the reserve. Six Trolls (10/20) then six Wyverns (25/50), "
+                "each immune to two classes. Non-pilgrim cards in the zone add their strength to the "
+                "enemy. Enemy defeated: banish it, then cards in play may be moved into the zone one at a "
+                "time, each exactly one strength higher than the zone's highest (the puppy is 1); a 10 "
+                "clears the zone into the discard pile, lets you banish any discards and heals the rest "
+                "under the reserve. Exact damage: any discard pile card goes on top of the reserve.",
+     "rewards_text": "Gøran gains the Bard class. Open pack C and corrupt another character. Druldox (9, "
+                     "Chanter) stays and the other three Chanters leave. Choose Sprinkle (2 Cleric), Dinky "
+                     "(2 Warrior) or Wicket (2 Paladin) to gain the Chanter class. The puppy goes back in "
+                     "the box."},
     {"number": 9, "title": "Hope From Ashes", "fan_title": "The Rescue", "location": "Twinseed Temple",
-     "rules_id": "legacy_m9", "playable": False, "verified": False,
-     "summary": "Thirty party cards are captured in three piles. Eight enemies, then Myla (20/80).",
-     "rewards_text": "A Mage Beast; Goran ignores immunity; Evergreen Mother."},
+     "rules_id": "legacy_m9", "playable": False, "verified": True,
+     "summary": "Gøran, your beast, Jesters and mercenaries are set aside; thirty of the remaining party "
+                "cards are dealt into three captured piles in the mission zone, top cards face up; the "
+                "pilgrims and the set-aside cards are shuffled into the rest of the reserve. Four "
+                "Loreguards (15/30), four Lorekeepers (20/40), then Myla (20/80), immune to bards and "
+                "paladins in a way nothing can ignore. End of turn: banish a card from hand to rescue the "
+                "top card of one pile to the discard pile, or rotate every pile. Enemy defeated: banish it; "
+                "on exact damage a pile's top card may go on top of the reserve deck.",
+     "rewards_text": "Acquire the Evergreen Mother (corrupt relic). Gøran is renewed: the old card leaves "
+                     "and the Evergreen Gøran (8, all four classes, ignores immunity) joins. Choose dwarves "
+                     "(4) or feltrix (8): the first unstickered one revealed from the shuffled party gains "
+                     "the Mage class. Ash, Myla's beast (Mage), joins the party."},
     {"number": 10, "title": "Pride to Fall", "fan_title": "The Corruption", "location": "Twinseed Temple Ruins",
-     "rules_id": "legacy_m10", "playable": False, "verified": False,
-     "summary": "Your corrupted party members are the enemies.", "rewards_text": "They return; Goran is lost."},
+     "rules_id": "legacy_m10", "playable": False, "verified": True,
+     "summary": "The corrupted members leave the party and form the enemy deck, face up, 2 on top down to 9. "
+                "Each has health five times its strength and gains strength from every card in the mission "
+                "zone. Start of turn: the top reserve card goes into the zone. Warriors double their total "
+                "strength; paladins shrug off damage equal to their base strength; clerics pull the top "
+                "discard into the zone at the end of each turn; bards make the current player put a hand "
+                "card into the zone. Enemy defeated: banish the zone and discard the enemy; on exact damage "
+                "the zone is discarded instead.",
+     "rewards_text": "Gøran is lost. The corrupted characters return to the party."},
     {"number": 11, "title": "Descent Into Darkness", "fan_title": "The Beast Hunt", "location": "Caverns of Decay",
-     "rules_id": "legacy_m11", "playable": False, "verified": False,
-     "summary": "Four classless enemies (10/30), then Evil Goran (20/90). Beasts shape the battlefield.",
-     "rewards_text": "Esme returns with every class."},
+     "rules_id": "legacy_m11", "playable": False, "verified": True,
+     "summary": "One corrupted member of the Eternal Vine dies at the machine and is torn up for good. "
+                "Gøran's four beasts form a face-down beast deck in the mission zone (none may join the "
+                "reserve; Ash may). Start of turn: reveal a beast and apply its class: warrior banishes the "
+                "top discard, paladin discards the top reserve card, cleric makes you discard a hand card, "
+                "bard makes you banish one; revealed beasts pile up face up and reform the deck when all "
+                "four are out. Four Justicars (10/30), then the Corrupted Evergreen (20/90); each enemy is "
+                "immune to the classes of, and gains the strength of, the top cards of the discard and "
+                "banished piles. Enemy defeated: banish it; on exact damage no beast is revealed next turn.",
+     "rewards_text": "The reborn Evergreen joins the party: Esme (6, Evergreen: all four classes, ignores "
+                     "immunity). Gøran's beasts return to the box beside the party."},
     {"number": 12, "title": "Decay to Growth", "fan_title": "The Final Stand", "location": "Throne of Corruption",
-     "rules_id": "legacy_m12", "playable": False, "verified": False,
-     "summary": "Four Queens, four Kings and the High Arcana (25/120). Corrupted cards are restored.",
-     "rewards_text": "The campaign ends; Eternal mode unlocks."},
+     "rules_id": "legacy_m12", "playable": False, "verified": True,
+     "summary": "Esme's light restores every corrupted party member (and Esme herself): restored cards "
+                "ignore immunity and return the top banished card under the reserve when played, and the "
+                "restored Evergreen Mother keeps them out of the banished pile. Four Queens (15/30), four "
+                "Kings (20/40), then the High Arcana (25/120). Start of turn: the top banished card goes "
+                "into the mission zone; the zone adds its strength to the enemy and grants immunity to its "
+                "classes. Enemy defeated: banish the zone, the enemy and the whole discard pile; on exact "
+                "damage the next start of turn is skipped. Corrupted cards never enter the reserve.",
+     "rewards_text": "The High Arcana is dead. Open pack E: the campaign is complete and Eternal mode begins."},
 ]
 
 
@@ -197,6 +333,18 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
         castle = _grove_castle(rng)
     elif number == 6:
         castle = _garden_castle(rng)
+    elif number == 7:
+        castle = _well_castle(rng)
+    elif number == 8:
+        castle = _edge_castle(rng)
+    elif number == 9:
+        castle = _temple_castle(rng)
+    elif number == 10:
+        castle = _ruins_castle(camp)
+    elif number == 11:
+        castle = _caverns_castle(rng)
+    elif number == 12:
+        castle = _throne_castle(rng)
     else:
         raise NotImplementedError("Mission %d is not implemented yet (see PLAN.md stage ladder)." % number)
     banished_start: List[dict] = []
@@ -208,8 +356,36 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
     if number == 6:
         # Mission rules (confirmed): "Place Myla (7) face up into the mission zone."
         zone_start.append(dict(MYLA))
+    pilgrims: List[dict] = []
+    pilgrims_in_reserve: List[dict] = []
+    if number == 7:
+        # Mission rules (confirmed): "Open pack P. Shuffle the pilgrims and place them in a
+        # facedown pilgrim deck in the mission zone."
+        pilgrims = [dict(c) for c in PILGRIMS]
+        rng.shuffle(pilgrims)
+    if number == 8:
+        # Mission rules (confirmed): "Place the pilgrim puppy into the mission zone. Open
+        # pack P and shuffle the pilgrims into the reserve deck."
+        zone_start.append(dict(PUPPY))
+        pilgrims_in_reserve = [dict(c) for c in PILGRIMS if c["id"] != PUPPY["id"]]
+    capture: Dict[str, Any] = {}
+    if number == 9:
+        # Mission rules (confirmed): set Gøran, the chosen beast and any Jesters or
+        # mercenaries aside; shuffle the rest of the reserve and deal 30 cards face down
+        # into three captured piles of 10 in the mission zone, top cards face up; shuffle
+        # the pilgrims and the set-aside cards into the remaining reserve deck. (The puppy
+        # went back into the mission 8 box.)
+        pilgrims_in_reserve = [dict(c) for c in PILGRIMS if c["id"] != PUPPY["id"]]
+        capture = {"piles": 3, "size": 10, "exempt": []}  # exempt ids filled in below
+    beast_deck: List[dict] = []
+    if number == 11:
+        # Mission rules (confirmed): all four of Gøran's beasts, shuffled, form a face-down
+        # beast deck in the mission zone; none may be in the reserve deck (Ash may, he is in
+        # the party). After the mission they go back to the box beside the party.
+        beast_deck = [dict(b) for b in BEASTS]
+        rng.shuffle(beast_deck)
     # Gøran's beast chosen for this attempt (reward of mission 4)
-    if camp.beast and camp.flags.get("beasts"):
+    if camp.beast and camp.flags.get("beasts") and number != 11:
         beast = beast_by_id(camp.beast)
         if beast is not None and P.find(party, str(beast["id"])) is None:
             party.append(dict(beast))
@@ -224,10 +400,17 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
             continue
         if P.find(party, str(card["id"])) is None:
             party.append(card)
+    if capture:
+        # Gøran, the chosen beast, mercenaries (and Jesters, which the rules add) are never
+        # captured; Ash, a party beast, is set aside too ("your chosen beast" and beasts alike).
+        capture["exempt"] = [str(c["id"]) for c in party
+                             if c.get("name") == "Gøran" or "beast" in c.get("flags", []) or "mercenary" in c.get("flags", [])]
     return {
         "party": party, "castle": castle, "relics": list(camp.relics),
         "extra_jesters": extra_jesters, "discard_low_to_high": bool(camp.flags.get("discard_low_to_high")),
         "mission": number, "banished_start": banished_start, "zone_start": zone_start,
+        "pilgrims": pilgrims, "pilgrims_in_reserve": pilgrims_in_reserve, "capture": capture,
+        "beast_deck": beast_deck,
     }
 
 
@@ -250,7 +433,73 @@ def start_steps(camp, number: int) -> List[Step]:
                           "label": "Myla turns on the party: she animates the statues of the veil"})
         if any(P.find(camp.party, str(g["id"])) is None for g in GUARDIANS):
             steps.append({"kind": "add_cards", "cards": GUARDIANS, "label": "The four Guardians raise their shields"})
+    if number == 7 and any(P.find(camp.party, str(d["id"])) is None for d in DRUIDS):
+        # Card (confirmed): "Add the four Druids to your party."
+        steps.append({"kind": "add_cards", "cards": DRUIDS, "label": "The druids draw out scythes, swords and shields"})
+    if number == 8 and any(P.find(camp.party, str(d["id"])) is None for d in CHANTERS):
+        # Card (confirmed): "Add the four Chanters to your party."
+        steps.append({"kind": "add_cards", "cards": CHANTERS, "label": "Thrum. Thrum. Thrum. The chanters beat their drums"})
+    if number == 10 and P.corrupted_ids(camp.party):
+        # Card (confirmed): "Remove the corrupted characters from your party. For this
+        # mission they will form the enemy deck."
+        steps.append({"kind": "corrupted_leave", "label": "Friends turned foe: the corrupted characters leave the party"})
+    if number == 11 and not camp.flags.get("vine_ripped"):
+        # Card (confirmed): "From your corrupted party members, choose one of them that has
+        # a cloak of the Eternal Vine. Rip up the chosen card." The reborn Evergreen is Esme
+        # (6), so Esme, the 6 of warriors, is the cloaked member the app knows; if she is
+        # not corrupted every corrupted card is offered and the player picks the cloaked one.
+        corrupted = P.corrupted_ids(camp.party)
+        options = ["6C"] if "6C" in corrupted else corrupted
+        steps.append({"kind": "choice_rip", "phase": "setup", "options": options,
+                      "label": "A member of the Eternal Vine dies at the machine: rip up one corrupted character"})
+    if number == 12:
+        # Setup cards (confirmed): "Take all the corrupted party members, remove their
+        # corrupted sleeve and replace them with restored sleeves. These cards are no longer
+        # corrupted. Sleeve Esme (6, Evergreen) with a restored sleeve." and "Put the corrupted
+        # Evergreen Mother relic in the mission 12 box. Acquire the new restored Evergreen
+        # Mother relic."
+        if P.corrupted_ids(camp.party) or (P.find(camp.party, ESME_REBORN["id"]) is not None
+                                           and "restored" not in P.find(camp.party, ESME_REBORN["id"]).get("flags", [])):
+            steps.append({"kind": "restore_all", "label": "Esme's light burns the corruption away: the party is restored"})
+        if "mother" in camp.relics or "mother_restored" not in camp.relics:
+            steps.append({"kind": "relic_swap", "old": "mother", "new": "mother_restored",
+                          "label": "The Evergreen Mother blooms once more: the restored relic replaces the corrupt one"})
     return steps
+
+
+# Mission 8's Chanters: Roslyn (3, halfling), an avion (5), an elf (7) and Druldox (9,
+# drakonid). Only Druldox stays after the mission.
+CHANTERS: List[Dict[str, Any]] = [
+    {"id": "3T", "rank": "3", "suits": ["T"], "value": 3, "name": "Roslyn", "subtitle": "Halfling Chanter", "flags": []},
+    {"id": "5T", "rank": "5", "suits": ["T"], "value": 5, "name": "Avion Chanter", "subtitle": "Avion Chanter", "flags": []},
+    {"id": "7T", "rank": "7", "suits": ["T"], "value": 7, "name": "Elf Chanter", "subtitle": "Elf Chanter", "flags": []},
+    {"id": "9T", "rank": "9", "suits": ["T"], "value": 9, "name": "Druldox", "subtitle": "Drakonid Chanter", "flags": []},
+]
+
+
+# Mission 7's Druids: Tolman (3, halfling), an avion (5), Alantha (7, elf) and a drakonid
+# (9). Only Alantha stays after the mission.
+DRUIDS: List[Dict[str, Any]] = [
+    {"id": "3U", "rank": "3", "suits": ["U"], "value": 3, "name": "Tolman", "subtitle": "Halfling Druid", "flags": []},
+    {"id": "5U", "rank": "5", "suits": ["U"], "value": 5, "name": "Avion Druid", "subtitle": "Avion Druid", "flags": []},
+    {"id": "7U", "rank": "7", "suits": ["U"], "value": 7, "name": "Alantha", "subtitle": "Elf Druid", "flags": []},
+    {"id": "9U", "rank": "9", "suits": ["U"], "value": 9, "name": "Drakonid Druid", "subtitle": "Drakonid Druid", "flags": []},
+]
+
+# Pack P, the pilgrim deck (missions 7 and 8). Named from the mission cards: Puppy (A,
+# animal), Traveller (2, gnome), Follower (3, halfling), Servant (4, dwarf), Acolyte (6,
+# human); the 5 and 7 are unnamed. The full contents follow the fan transcription until
+# the pack is photographed: four each of 2 to 7 plus the puppy, no class.
+PUPPY: Dict[str, Any] = {"id": "PILA", "rank": "A", "suits": [], "value": 1, "name": "Puppy",
+                         "subtitle": "Animal Pilgrim", "flags": ["pilgrim"]}
+_PILGRIM_NAMES = {"2": ("Traveller", "Gnome Pilgrim"), "3": ("Follower", "Halfling Pilgrim"),
+                  "4": ("Servant", "Dwarf Pilgrim"), "6": ("Acolyte", "Human Pilgrim")}
+PILGRIMS: List[Dict[str, Any]] = [dict(PUPPY)] + [
+    {"id": "PIL%s_%d" % (r, i + 1), "rank": r, "suits": [], "value": int(r),
+     "name": _PILGRIM_NAMES.get(r, ("Pilgrim", "Pilgrim"))[0],
+     "subtitle": _PILGRIM_NAMES.get(r, ("Pilgrim", "Pilgrim"))[1], "flags": ["pilgrim"]}
+    for r in ("2", "3", "4", "5", "6", "7") for i in range(4)
+]
 
 
 # Mission 6's Guardians: Runo (3, halfling), Teko (5, avion), an elf (7) and a drakonid
@@ -338,7 +587,82 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         for g in GUARDIANS:
             if g["id"] != "3G":
                 steps.append({"kind": "remove_card", "card_id": g["id"], "label": "%s stays to rebuild the garden" % g["name"]})
+    elif number == 7:
+        # Reward cards (confirmed, in order): "Add a Cleric sticker to Gøran"; "Open pack C
+        # and corrupt another character in your party"; "Alantha (7 Druid) remains in your
+        # party. Remove the other three Druids from your party and return them to the
+        # mission 7 box"; "Choose either Glamelyn (4 bard), Herbod (4 warrior) or Dhonatir
+        # (4 paladin), then put a Druid sticker on them."
+        steps.append({"kind": "add_suit", "card_id": GORAN["id"], "suit": "H", "label": "Gøran gains the Cleric class"})
+        steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
+        for d in DRUIDS:
+            if d["id"] != "7U":
+                steps.append({"kind": "remove_card", "card_id": d["id"], "label": "%s stays at the Well" % d["name"]})
+        steps.append({"kind": "choice_suit", "suit": "U", "options": [c for c in ("4D", "4C", "4S") if P.find(camp.party, c)],
+                      "label": "Alantha teaches a 4: Glamelyn (Bard), Herbod (Warrior) or Dhonatir (Paladin) gains the Druid class"})
+    elif number == 8:
+        # Reward cards (confirmed, in order): "Add a Bard sticker to Gøran"; "Open pack C and
+        # corrupt another character in your party"; "Druldox (9 Chanter) remains in your
+        # party. Remove the other three Chanters..."; "Choose either Sprinkle (2 cleric), Dinky
+        # (2 warrior) or Wicket (2 paladin), then put a Chanter sticker on them"; "Put the
+        # puppy back in the mission 8 box."
+        steps.append({"kind": "add_suit", "card_id": GORAN["id"], "suit": "D", "label": "Gøran gains the Bard class"})
+        steps.append(_corrupt_choice(camp, "Open pack C: corrupt another character in your party"))
+        for d in CHANTERS:
+            if d["id"] != "9T":
+                steps.append({"kind": "remove_card", "card_id": d["id"], "label": "%s stays with the order" % d["name"]})
+        steps.append({"kind": "choice_suit", "suit": "T", "options": [c for c in ("2H", "2C", "2S") if P.find(camp.party, c)],
+                      "label": "A song or two: Sprinkle (Cleric), Dinky (Warrior) or Wicket (Paladin) gains the Chanter class"})
+        steps.append({"kind": "set_flag", "flag": "puppy_boxed", "value": True,
+                      "label": "The puppy stays at Heaven's Edge (back in the mission 8 box)"})
+    elif number == 9:
+        # Reward cards (confirmed, in order): "Acquire the new relic" (Evergreen Mother,
+        # corrupt relic); "Remove Gøran from your party. Add the new, renewed Gøran (8,
+        # evergreen) to your party"; "Choose either dwarves (4) or feltrix (8). Flip cards
+        # from your reserve until you reveal one of the chosen race (except Gøran or a mage)
+        # that has no stickers on them. Put a Mage sticker on them"; "Add Ash (B, Mage) to
+        # your party."
+        steps.append({"kind": "relic", "relic": "mother", "label": "Relic: Evergreen Mother (corrupt)"})
+        steps.append({"kind": "remove_card", "card_id": GORAN["id"], "label": "Gøran reaches into the Mother's soul"})
+        steps.append({"kind": "add_card", "card": GORAN_RENEWED,
+                      "label": "The renewed Gøran (8, Evergreen: all four classes, ignores immunity) joins the party"})
+        steps.append({"kind": "choice_mage_student", "options": ["4", "8"],
+                      "label": "A new student: choose dwarves (4) or feltrix (8); the first unstickered one revealed gains the Mage class"})
+        steps.append({"kind": "add_card", "card": ASH, "label": "Ash, Myla's beast (Mage), joins the party"})
+    elif number == 10:
+        # Reward cards (confirmed, in order): "Remove Gøran (8, Evergreen) from your party";
+        # "Return the corrupted characters (the enemies from the previous mission) to your
+        # party."
+        steps.append({"kind": "remove_card", "card_id": GORAN_RENEWED["id"],
+                      "label": "The floor decays to dust: Gøran and the Arcana fall into the darkness"})
+        steps.append({"kind": "away_return", "label": "The infected members return to themselves, corruption halted but not cured"})
+    elif number == 11:
+        # Reward card (confirmed): "Add the reborn Evergreen to your party." Esme, 6, Human
+        # Evergreen (holographic): the Evergreen icon, so all four basic classes, ignoring
+        # immunity. The mission rules add: Gøran's beasts return to the box by the party.
+        steps.append({"kind": "add_card", "card": ESME_REBORN,
+                      "label": "The reborn Evergreen touches down: Esme (6, Evergreen) joins the party"})
+    elif number == 12:
+        # Outcome cards (confirmed): the High Arcana is dead; "Open pack E" (Eternal mode).
+        steps.append({"kind": "set_flag", "flag": "pack_e_opened", "value": True,
+                      "label": "A new dawn is here. Open pack E: Eternal mode"})
     return steps
+
+
+# The reborn Evergreen (mission 11 reward).
+ESME_REBORN: Dict[str, Any] = {"id": "ESME6E", "rank": "6", "suits": ["H", "D", "C", "S"], "value": 6, "name": "Esme",
+                               "subtitle": "Human Evergreen", "flags": ["evergreen", "ignores_immunity"]}
+
+
+# The renewed Gøran (mission 9 reward): the Evergreen icon stands for cleric, bard,
+# warrior and paladin at once, ignoring immunity to those four (rulebook p.15).
+GORAN_RENEWED: Dict[str, Any] = {"id": "GOR8E", "rank": "8", "suits": ["H", "D", "C", "S"], "value": 8, "name": "Gøran",
+                                 "subtitle": "Feltrix Evergreen", "flags": ["evergreen", "ignores_immunity"]}
+
+# Ash (mission 9 reward): Myla's beast, Mage class, a permanent party member. Beasts pair
+# with one other card and copy its strength; alone they are worth 0.
+ASH: Dict[str, Any] = {"id": "B_ASH", "rank": "B", "suits": ["M"], "value": 0, "name": "Ash", "subtitle": "Beast",
+                       "flags": ["beast"]}
 
 
 GORAN: Dict[str, Any] = {"id": "GOR8", "rank": "8", "suits": [], "value": 8, "name": "Gøran",
@@ -444,6 +768,75 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
             raise ValueError("%s is not one of the choices" % option)
         P.add_suit(camp.party, str(option), str(step["suit"]))
         return "%s gains the %s class." % (P.to_card(P.find(camp.party, str(option))).label(), CLASS_NAME[str(step["suit"])])
+    if kind == "choice_mage_student":
+        options = [str(x) for x in step.get("options", ["4", "8"])]
+        if option is None:
+            raise ValueError("choose dwarves (4) or feltrix (8)")
+        if str(option) not in options:
+            raise ValueError("%s is not one of the choices" % option)
+        # "Flip cards from your reserve until you reveal one of the chosen race (except
+        # Gøran or a mage) that has no stickers on them": a random card of that strength
+        # with its single original class, no class sticker and (assumed) no corruption.
+        pool = sorted(str(c["id"]) for c in camp.party
+                      if c["rank"] == str(option) and not c.get("name") and len(c.get("suits", [])) == 1
+                      and c["suits"][0] in BASIC_SUITS and "corrupted" not in c.get("flags", []))
+        if not pool:
+            return "No unstickered %s left in the party: the mages find no student." % option
+        target = rng.choice(pool)
+        P.add_suit(camp.party, target, "M")
+        return "%s takes up the mages' studies: gains the Mage class." % P.to_card(P.find(camp.party, target)).label()
+    if kind == "restore_all":
+        changed = []
+        for c in camp.party:
+            flags = list(c.get("flags", []))
+            if "corrupted" in flags:
+                flags.remove("corrupted")
+                if "restored" not in flags:
+                    flags.append("restored")
+                c["flags"] = flags
+                changed.append(P.to_card(c).label())
+            elif c["id"] == ESME_REBORN["id"] and "restored" not in flags:
+                flags.append("restored")
+                c["flags"] = flags
+                changed.append(P.to_card(c).label())
+        camp.corrupted = []
+        return "Restored: %s." % ", ".join(changed) if changed else "Nobody needed restoring."
+    if kind == "relic_swap":
+        if step["old"] in camp.relics:
+            camp.relics.remove(step["old"])
+        if step["new"] not in camp.relics:
+            camp.relics.append(step["new"])
+        return str(step.get("label", "Relic %s replaces %s." % (step["new"], step["old"])))
+    if kind == "choice_rip":
+        options = [str(x) for x in step.get("options", [])]
+        if not options:
+            camp.flags["vine_ripped"] = True
+            return "No corrupted character wears a cloak of the Eternal Vine; nothing is ripped up."
+        if option is None:
+            raise ValueError("choose the character to rip up")
+        if option not in options:
+            raise ValueError("%s is not one of the choices" % option)
+        c = P.remove_card(camp.party, str(option))
+        if str(option) in camp.corrupted:
+            camp.corrupted.remove(str(option))
+        camp.flags["vine_ripped"] = True
+        return "%s dies at the machine: the card is ripped up." % (P.to_card(c).label() if c else option)
+    if kind == "corrupted_leave":
+        moved = []
+        for cid in P.corrupted_ids(camp.party):
+            c = P.remove_card(camp.party, cid)
+            if c is not None:
+                camp.away.append(dict(c))
+                moved.append(P.to_card(c).label())
+        return "The corrupted characters leave the party: %s." % ", ".join(moved) if moved else "No corrupted character to remove."
+    if kind == "away_return":
+        back = []
+        for c in list(camp.away):
+            if P.find(camp.party, str(c["id"])) is None:
+                P.add_card(camp.party, dict(c))
+            back.append(P.to_card(c).label())
+        camp.away = []
+        return "Back in the party: %s." % ", ".join(back) if back else "Nobody was away."
     if kind == "set_flag":
         camp.flags[str(step["flag"])] = step.get("value", True)
         return str(step.get("label", "Flag %s set." % step["flag"]))

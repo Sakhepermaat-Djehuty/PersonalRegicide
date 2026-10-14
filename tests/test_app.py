@@ -729,3 +729,35 @@ def test_emblem_place_handover_flow_for_two_players(app):
     # (5 + 7) doubled kills the Justicar; the mage attack is banished and Ana plays on
     assert g.enemies_defeated == 1 and "5M" in g.banished and "7C" in g.banished
     assert g.phase == PHASE_PLAY and g.active == 0 and gs.overlay is None
+
+def test_mission11_setup_choice_shows_before_the_first_attempt(app, monkeypatch):
+    from app.screens import CampaignScreen
+    from regicide.campaign import party as P
+    from regicide.campaign.missions import mission as mission_info
+    monkeypatch.setitem(mission_info(11), "playable", True)   # setup choices are queued for playable missions
+    app.new_campaign(1, ["Solo"])
+    camp = app.campaign
+    camp.mission = 11
+    camp.completed = list(range(1, 11))
+    for cid in ("2S", "6C"):
+        P.add_flag(camp.party, cid, "corrupted")
+        camp.corrupted.append(cid)
+    app.save_campaign()
+    app.show(CampaignScreen(app))
+    # the setup card's choice is queued and offered instead of the start button
+    with pytest.raises(KeyError):
+        ui.button(app, "Next mission: start")
+    setup = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Mission setup:"))]
+    assert setup and "rip up" in setup[0].title
+    ui.tap(app, *ui.root_point(app, setup[0]))
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert any(t == "Mission setup" for t in texts)
+    from app.widgets import CardView
+    cards = ui.find(app, lambda v: isinstance(v, CardView))
+    assert [v.card.id for v in cards] == ["6C"]
+    ui.tap(app, *ui.root_point(app, cards[0]))
+    _tap_button(app, "Confirm")
+    assert P.find(app.campaign.party, "6C") is None and app.campaign.flags.get("vine_ripped")
+    assert not app.campaign.pending
+    # nothing is queued again: the start button is back
+    assert ui.button(app, "Next mission: start")

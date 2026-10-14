@@ -576,6 +576,361 @@ the zone, the move-to-zone choice, team damage discarded by any players, Guardia
 prevention), the Guardian ability and both sides of the Azure Emblem are being added
 with the Mage work.
 
+## Mission 7, Tales of Rebirth (confirmed, transcribed from the owner's photos)
+
+**Location card:** Well of Tears (a lake village under a great metal spider, QR code;
+map piece on the back with the well marked by a cross).
+
+**Setup card.** "Add the four Druids to your party": Tolman (3, Halfling Druid), a 5
+(Avion Druid), Alantha (7, Elf Druid) and a 9 (Drakonid Druid), all of the Druid class
+(red feather icon).
+
+**Enemy stats card:** Shoal 10 / 20, Deep 15 / 30, Abyssal 20 / 40; one pondkin of each
+class per tier, twelve enemies. (Whether they sit in corrupted sleeves was not visible on
+the stat card; an enemy card photo would settle it.)
+
+**Mission rules card (front).** *Setup:* open pack P. Shuffle the pilgrims and place
+them in a face-down pilgrim deck in the mission zone. *Start of turn:* place a card from
+the top of the pilgrim deck face up in the mission zone. When a card enters play (placed
+on your playmat), if it matches the strength of a pilgrim in the mission zone, you may
+banish that pilgrim (once per card). Pilgrims may never leave players' hands (for this
+mission only).
+
+**Rules continued.** *Enemy defeated:* put a number of cards from the top of the reserve
+deck into the discard pile equal to the total strength of all cards in the mission zone.
+Then move all cards from the mission zone to the discard pile and banish the enemy. If
+the enemy was dealt exact damage you may first choose one card in the mission zone and
+move it to the banished pile. *Example:* mission zone Follower (3, halfling pilgrim),
+Acolyte (6, human pilgrim), Follower (3), Follower (3); two 3s are played, so two
+3-strength pilgrims are banished.
+
+**Rules summary card:** Start of turn: flip pilgrim into mission zone. Banish pilgrims
+from the mission zone if they match the strength of cards you play. Pilgrims may never
+leave players' hands. Enemy defeated: discard cards from the reserve equal to total
+strength in the mission zone; discard mission zone and banish enemy; exact kill: banish
+one card in mission zone.
+
+**Pack P (pilgrims):** not yet photographed. The card example shows 3 Followers and a 6
+Acolyte; the fan transcription says 25 cards, four each of 2 to 7 plus one Ace (the
+animal pilgrim), no class. The app uses that until the pack is read.
+
+**Story cards:** intro (the driftwood village, the metal spider, trapped pilgrims, the
+pondkin) and outcome (Gøran reborn on the island, the afflicted refuse the cure, on to
+Heaven's Edge); texts in the private lore overlay only.
+
+**Reward cards, in order:**
+1. "Add a Cleric sticker to Gøran."
+2. "Open pack C and corrupt another character in your party." Player's choice.
+3. "Alantha (7 Druid) remains in your party. Remove the other three Druids from your
+   party and return them to the mission 7 box."
+4. "Choose either Glamelyn (4 bard), Herbod (4 warrior) or Dhonatir (4 paladin), then
+   put a Druid sticker on them." Player's choice.
+
+**Engine status:** data, setup steps and rewards are in; the mission rules (pilgrim
+deck, matching banishes, pilgrims stuck in hands, the reserve discard at defeat) and the
+Druid ability are to be built.
+
+## Mission 8, Winds of Chaos (confirmed, transcribed from the owner's photos)
+
+**Location card:** Heaven's Edge (red cliffs, waterfalls, QR code; map piece on the back
+with the edge marked by a cross).
+
+**Setup card.** "Add the four Chanters to your party": Roslyn (3, Halfling Chanter), a 5
+(Avion Chanter), a 7 (Elf Chanter) and Druldox (9, Drakonid Chanter), all of the
+Chanter class (drum icon).
+
+**Enemy stats card:** Trolls 10 / 20 (six, one for every pair of the four classes) and
+Wyverns 25 / 50 (six, the same pairs). Each is immune to both of its classes.
+
+**Mission rules card (front).** *Setup:* place the pilgrim puppy into the mission zone.
+Open pack P and shuffle the pilgrims into the reserve deck. Each enemy has additional
+strength equal to the combined strength of non-pilgrim cards in the mission zone.
+*Enemy defeated:* banish the enemy. Then, from the cards in play, you may move them one
+at a time to the mission zone provided each card you move has strength exactly one
+higher than the highest-strength card in the mission zone (the stray puppy has strength
+1). If the enemy was dealt exact damage you may place any one card from the discard pile
+on top of the reserve deck.
+
+**Rules continued.** *Mission zone filled:* when you move a 10-strength card to the
+mission zone, you gain the following bonus instantly (in order): 1. place the entire
+mission zone into the discard pile; 2. search through the discard pile and banish any
+cards you want from it; 3. shuffle the remaining cards in the discard pile and put them
+on the bottom of the reserve deck. You may no longer move cards to the mission zone.
+*Example:* mission zone Puppy (A, animal pilgrim), Traveller (2, gnome pilgrim), River
+(3, halfling bard), Servant (4, dwarf pilgrim): +3 enemy strength. After the enemy is
+defeated, a 2, 3, then 4 are moved to the mission zone. (So pilgrims drawn from the
+reserve are playable cards this mission and may be moved into the zone, where they add
+nothing to the enemy.)
+
+**Rules summary card:** Non-pilgrims in mission zone add their strength to enemy. Enemy
+defeated: banish enemy; you may add cards in play to mission zone; cards must be added
+in numerical order (2 to 10); exact kill: put any one card from discard pile on top of
+reserve deck. Mission zone filled: when a 10 is added, discard all cards from mission
+zone, banish any cards in discard pile, heal the rest.
+
+**Pilgrim names from the card:** Puppy (A, Animal Pilgrim), Traveller (2, Gnome Pilgrim),
+Follower (3, Halfling Pilgrim), Servant (4, Dwarf Pilgrim), Acolyte (6, Human Pilgrim).
+
+**Story cards:** intro (Heaven's Edge untouched, trolls at the base, wyverns on the
+horizon, Gøran: do not kill the trolls) and outcome (the corrupted got carried away,
+Gøran's stolen memory of the Twinseed Temple); texts in the private lore overlay only.
+
+**Reward cards, in order:**
+1. "Add a Bard sticker to Gøran." (Gøran now has all four basic classes.)
+2. "Open pack C and corrupt another character in your party." Player's choice.
+3. "Druldox (9 Chanter) remains in your party. Remove the other three Chanters from your
+   party and return them to the mission 8 box."
+4. "Choose either Sprinkle (2 cleric), Dinky (2 warrior) or Wicket (2 paladin), then put
+   a Chanter sticker on them." Player's choice.
+5. "Put the puppy back in the mission 8 box."
+
+**Open question:** nothing on these cards says where the other pilgrims go after the
+mission (back into pack P, presumably, since mission 9's fan transcription shuffles them
+into the reserve again). The app keeps them in the pack.
+
+**Engine status:** data, setup steps and rewards are in; the mission rules (puppy in the
+zone, pilgrims in the reserve as playable classless cards, the ascending move-to-zone
+choice, the 10 bonus with its banish-any-discards choice, the exact-kill discard pick)
+and the Chanter ability are to be built.
+
+## Mission 9, Hope From Ashes (confirmed, transcribed from the owner's photos)
+
+**Location card:** Twinseed Temple (a vast tree in sunlight, QR code; map piece on the
+back with the temple at the tree's roots marked by a cross).
+
+**Enemy stats card:** Loreguards 15 / 30 (four, one per class), Lorekeepers 20 / 40
+(four, one per class), then Myla 20 / 80, bard and paladin.
+
+**Mission rules card (front).** *Setup:* set Gøran, your chosen beast and any Jesters or
+mercenaries in your reserve deck aside. Shuffle the remainder of your reserve deck, deal
+30 cards face down into three "captured piles" in the mission zone with 10 cards in
+each, then flip over the top card of each pile. Shuffle the pilgrims and the cards you
+set aside into your remaining reserve deck. *End of turn:* you may banish a card from
+hand and put a card from the top of one captured pile into the discard pile, then flip
+the next card in that pile face up. If you choose not to banish a card, put the top
+card of each captured pile on the bottom of its pile and flip the top card of each
+captured pile face up. Myla's immunity to bards and paladins can never be ignored (e.g.
+via corruption and jesters).
+
+**Rules continued.** *Enemy defeated:* banish the enemy. If you defeated the enemy with
+exact damage, you may move a card from the top of one captured pile to the top of the
+reserve deck, then flip the next card in that pile face up. *Remember:* skip end of turn
+effects when you defeat an enemy (i.e. you can't banish a card from your hand).
+*Example:* piles showing Bite (8, feltrix paladin), Duck (A, animal bard) and Eragar (9,
+drakonid cleric): at end of turn the player banishes a card from hand and rescues Eragar
+to the discard pile.
+
+**Rules summary card:** Myla's immunity to paladins and bards cannot be ignored. End of
+turn: you may banish a card from hand to put a captured card in the discard pile; if
+you don't, put the top of all captured piles on the bottom. Enemy defeated: banish
+enemy; remember to skip end of turn effects; exact kill: may put a card from a captured
+pile on top of the reserve deck.
+
+**Story cards:** intro (the Winter Wastes, the Dreamfields, the Rootmarsh; the temple
+set ablaze; Myla's lorekeepers; the Syndicate cut in two) and outcome (Gøran steps on
+Myla's back; her last breath; the pilgrims must depart); texts in the private lore
+overlay only.
+
+**Reward cards, in order:**
+1. "Acquire the new relic." Evergreen Mother, corrupt relic. *Solo:* "Whenever a
+   corrupted card enters play, if the discard pile is not empty, you may choose to
+   banish a card from the top of the discard pile instead of the reserve deck." *Two or
+   more players:* "Whenever a corrupted card enters play, instead of banishing a card
+   from the top of the reserve deck, another player must banish a card from their hand.
+   If all other players' hands are empty, do not banish any card."
+2. "Remove Gøran from your party. Add the new, renewed Gøran (8, Evergreen) to your
+   party." The renewed card: 8, Feltrix Evergreen, holographic, a single Evergreen icon
+   (rulebook p.15: cleric, bard, warrior and paladin at once, ignoring immunity to those
+   four).
+3. "Choose either dwarves (4) or feltrix (8). Flip cards from your reserve until you
+   reveal one of the chosen race (except Gøran or a mage) that has no stickers on them.
+   Put a Mage sticker on them." Player chooses the strength; the card is random.
+4. "Add Ash (B, Mage) to your party." Ash: B, Beast, Mage class, a permanent party
+   member (not one of Gøran's four).
+
+**Open questions.** "No stickers" for the mage student: the app excludes cards with a
+class sticker and also corrupted cards, assuming corruption is a sticker (pack C still
+to be read). The outcome card says the pilgrims depart; no reward card returns pack P,
+so the app keeps the pilgrims in the pack until a later mission says otherwise.
+
+**Engine status:** data, setup description and rewards are in; the mission rules (the
+three captured piles, the end-of-turn banish-to-rescue or rotate choice, the exact-kill
+pile pick, Myla's unignorable immunity), beasts and the Evergreen Mother on both sides
+are to be built.
+
+## Mission 10, Pride to Fall (confirmed, transcribed from the owner's photos)
+
+**Location card:** Twinseed Temple Ruins (grey smoke under a red sky, QR code; map piece
+on the back with the ruined tree marked by a cross).
+
+**Setup card.** "Remove the corrupted characters from your party. For this mission they
+will form the enemy deck."
+
+**Enemy stats card:** eight unknown enemies: 2 / 10, 3 / 15, 4 / 20, 5 / 25, 6 / 30,
+7 / 35, 8 / 40, 9 / 45. So the eight corruptions of missions 1 to 8 are one each of
+strengths 2 to 9, which confirms the "never repeat a strength" rule the app uses for
+corruption candidates.
+
+**Mission rules card (front).** *Setup:* take the eight corrupted cards previously in
+your party and place these face up into the enemy deck, ordered from 9 on the bottom to
+2 on the top. *Start of turn:* take the top card of the reserve deck and place it into
+the mission zone. Each enemy has health equal to five times their base strength. Each
+enemy has additional strength equal to the combined strength of all cards in the
+mission zone. *Enemy defeated:* banish all cards in the mission zone and put the enemy
+in the discard pile. If the enemy was dealt exact damage, place the cards in the mission
+zone in the discard pile instead.
+
+**Rules continued.** Each enemy is immune to class powers matching its own class (as
+normal), and has additional class powers: *Warrior:* has double total strength,
+including additional strength from cards in the mission zone. *Paladin:* reduces the
+damage you deal to this enemy by the enemy's base strength. *Cleric:* at the end of each
+turn place the top card of the discard pile into the mission zone. *Bard:* at the end of
+each turn the current player must put a card from their hand into the mission zone if
+able. *Example:* Wicket (2, gnome paladin, corrupted) as the enemy with a 6 and Glamelyn
+(4, dwarf bard) in the mission zone: the player deals 2 less damage to Wicket, then
+suffers 12 damage from the enemy's strike back.
+
+**Rules summary card:** Start of turn: put the top of the reserve into the mission
+zone. Cards in the mission zone add strength to the enemy. Enemy powers: warrior has
+double total strength; paladin reduces damage taken by base strength. End of turn enemy
+powers: cleric puts the top card of the discard pile into the mission zone; bard puts a
+card from hand into the mission zone. Enemy defeated: banish mission zone and discard
+enemy; exact kill: discard mission zone instead of banishing it.
+
+**Story cards:** intro (the fires die down, Gøran admits they need the corruption, the
+High Arcana steps out of the shadows: "you brought an army right to me") and outcome
+(the Syndicate subdues its corrupt members and corners the Arcana; Gøran bolts in);
+texts in the private lore overlay only.
+
+**Reward cards, in order:**
+1. "Remove Gøran (8, Evergreen) from your party." The Arcana decays the floor and both
+   fall into the darkness.
+2. "Return the corrupted characters (the enemies from the previous mission) to your
+   party." They come back still corrupted ("halted but not fully cured").
+
+**Notes.** Defeated enemies go to the discard pile, so a corrupted character defeated
+early can be drawn and played as the corrupted party card it is, with its stickers. A
+corrupted card with a class sticker is a two-class enemy: immune to both classes and,
+if a second class is among the four, with both powers (the app's reading).
+
+**Engine status:** data, setup step and rewards are in (the corrupted cards move to a
+new "away" list in the campaign save for the mission and return afterwards); the
+mission rules (five-times health, zone strength, the four enemy powers, the discard or
+banish of the zone) are to be built.
+
+## Mission 11, Descent Into Darkness (confirmed, transcribed from the owner's photos)
+
+**Location card:** Caverns of Decay (a crystal cavern with dark tendrils, QR code; map
+piece on the back with the cross at the tree's roots below the ruins).
+
+**Setup card.** "From your corrupted party members, choose one of them that has a cloak
+of the Eternal Vine. Rip up the chosen card." (A green cloak is pictured.) The reward is
+Esme reborn, so Esme, the 6 of warriors, is the cloaked member; which other characters
+wear the cloak is not visible on the cards photographed.
+
+**Enemy stats card:** Justicars 10 / 30 (four) and the Corrupted Evergreen 20 / 90, all
+marked with a dark gem icon rather than a class icon.
+
+**Mission rules card (front).** *Setup:* take all four of Gøran's Beasts, shuffle them
+and form a face-down beast deck in the mission zone. *Start of turn:* reveal the top
+card of the beast deck and do the following depending on the class revealed: warrior:
+put the top card of the discard pile into the banished pile; paladin: put the top card
+of the reserve deck into the discard pile; cleric: the current player puts a card from
+hand into the discard pile; bard: the current player puts a card from hand into the
+banished pile. After carrying out the class effect, place the revealed beast card into
+a separate face-up pile in the mission zone.
+
+**Rules continued (1).** *Note:* when starting the game, perform the first start of
+turn effect (reveal a beast), then when a player decides to go first, they must carry
+out the beast effect. *Remember:* you can't include any of Gøran's Beasts in your
+reserve deck for this mission (but you can keep Ash in your deck since he's in your
+party). *Mission success:* when you successfully complete the mission, return Gøran's
+Beasts to the box by your party and you may include one of them in your reserve deck
+for each mission attempt, as normal.
+
+**Rules continued (2).** When all four beasts are in the face-up pile in the mission
+zone, shuffle them and place them face down in the mission zone to reform the beast
+deck. Each enemy has immunity to the classes of the cards on the top of the discard
+pile and banished pile. Each enemy has additional strength equal to the combined
+strength of the cards on top of the discard pile and banished pile. *Remember:* beasts
+in the mission zone don't grant any immunity to the enemy. *Enemy defeated:* banish the
+enemy. If the enemy was dealt exact damage, do not reveal a card from the beast deck at
+the start of the next turn.
+
+**Rules summary card:** Start of turn, reveal effect card: bard: banish a card from
+hand; cleric: discard a card from hand; warrior: banish the top card of the discard
+pile; paladin: discard the top card of the reserve deck. Top of discard and banished
+pile grant strength and immunity to the enemy. Enemy defeated: banish enemy; exact
+kill: don't reveal an effect card next turn.
+
+**Story cards:** intro (the grand cavern, Gøran strapped to the machine, the justicars,
+the shackled beasts, "Welcome to the Veil of Decay"), setup (a dozen dart to save him;
+one dies, wearing the green cloak; a corrupted Evergreen lumbers towards the Syndicate)
+and outcome (the machine explodes, Gøran lies dead, a radiant light, "Who is that?");
+texts in the private lore overlay only.
+
+**Reward card:** "Add the reborn Evergreen to your party." Esme: 6, Human Evergreen,
+holographic, the Evergreen icon (all four basic classes, ignoring immunity, p.15).
+
+**Open questions.** The dark gem icon on the enemies: the app treats it as no innate
+class, so their immunities come only from the pile tops. Whether a player with an empty
+hand simply skips the cleric or bard effect (the app assumes yes). If the top of the
+discard pile is a beast or a classless card it grants strength but no immunity.
+
+**Engine status:** data, the setup choice (queued before the first attempt as a
+"Mission setup" screen) and the reward are in; the mission rules (beast deck and its
+four effects, pile-top strength and immunity, exact-kill skip) are to be built.
+
+## Mission 12, Decay to Growth (confirmed, transcribed from the owner's photos)
+
+**Location card:** Throne of Corruption (a red throne under a chandelier among black
+roots, QR code; the map on the back is the Caverns of Decay piece again).
+
+**Setup cards.** "Take all the corrupted party members, remove their corrupted sleeve
+and replace them with restored sleeves. These cards are no longer corrupted. Sleeve
+Esme (6, Evergreen) with a restored sleeve." "Put the corrupted Evergreen Mother relic in
+the mission 12 box. Acquire the new restored Evergreen Mother relic." Both sides of the
+restored relic read: "Restored cards can never enter the banished pile. If they would,
+instead put them on the bottom of the reserve deck."
+
+**Enemy stats card:** Queens 15 / 30 (four, one per class), Kings 20 / 40 (four, one
+per class), then the High Arcana 25 / 120 (dark gem icon, no class).
+
+**Mission rules card (front).** *Start of turn:* place the top card of the banished
+pile into the mission zone. Each enemy has additional strength equal to the combined
+strength of cards in the mission zone. Each enemy has immunity to the classes of the
+cards in the mission zone. *Enemy defeated:* banish all cards in the mission zone (in
+any order), then banish the enemy, then banish the discard pile (without changing the
+order). If the enemy was dealt exact damage, do not place the top card of the banished
+pile into the mission zone at the start of the next turn. The "Rules continued" side was
+not photographed; the summary card carries its one extra rule.
+
+**Rules summary card:** Start of turn: put the top of the banished pile into the
+mission zone. Cards in the mission zone grant strength and immunity to the enemy.
+Corrupted cards (purple icon) can't enter the reserve: put them on the bottom of the
+banished pile. Enemy defeated: banish the mission zone, the enemy and the entire discard
+pile; exact kill: skip the start of turn effect next turn.
+
+**Story cards:** intro ("How fortuitous", the underground throne room, the eight
+hobbled royals), outcome (the High Arcana keels over, the Rootmarsh, a new dawn) and the
+epilogue ("Many moons pass... 'I need your help.' 'Always.' Herbod grabs his axe. Open
+pack E."); texts in the private lore overlay only.
+
+**Rewards:** none for the party. "Open pack E": the campaign is complete and Eternal
+mode begins.
+
+**Notes.** The royals are corrupted (the intro and the summary's corrupted-card rule),
+so a restored card's effect that would return a banished royal under the reserve sends
+it to the bottom of the banished pile instead. The restored party cards each return the
+top banished card under the reserve when played (rulebook p.15) and never enter the
+banished pile (the relic), so the whole-discard-pile banish at each kill is the
+mission's pressure.
+
+**Engine status:** data, setup steps (restore all, relic swap) and the pack E flag are
+in; the mission rules (banished-top into the zone, zone strength and immunity, banish
+zone + enemy + discard pile, exact-kill skip, the restored relic and the corrupted-card
+rule) are to be built. All twelve missions' cards are now transcribed.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
@@ -600,11 +955,13 @@ with the Mage work.
     on top of the reserve deck; once per attack even if a mage adds another mage. Solo:
     when resolving a mage ability, after selecting the card to add, you may put one of
     the other cards you looked at on top of the reserve deck before discarding the rest.
-  * Evergreen Mother, corrupted (from M9): the fan engine banishes from the discard
-    pile instead of the reserve; the owner remembers it banishing a card from another
-    player's hand instead. VERIFY from the card (photo pending). Replaced in M12 by
-    Evergreen Mother, restored: restored cards that would be banished go under the
-    reserve deck instead. VERIFY.
+  * Evergreen Mother, corrupt relic (after M9): **confirmed, both sides.** Solo: when a
+    corrupted card enters play you may banish the top card of the discard pile instead
+    of the reserve deck (if the discard pile is not empty). 2+ players: another player
+    must banish a card from hand instead of the reserve deck; if all other hands are
+    empty nothing is banished. Replaced at the start of M12 by the Evergreen Mother,
+    restored relic (**confirmed, both sides the same**): restored cards can never enter
+    the banished pile; if they would, put them on the bottom of the reserve deck.
 * **New suits / classes** (each has 3/5/7/9 cards that join temporarily, one stays):
   * ★ Mages (M3, permanent A–10★ added): reveal N cards from the tavern, pick one to add
     to the combo (its suits and value join), discard the rest; a picked Mage chains.
@@ -694,47 +1051,68 @@ Numbers are attack / health.
    gains Paladin; corrupt another character (player's choice); Azure Emblem; Bronze,
    Snow or Shadow (the 8s of cleric, bard, warrior) gains Guardian (player's choice);
    Runo (3 Guardian) stays, the other Guardians leave.
-7. **Tales of Rebirth** (fan name: The Pilgrimage; Well of Tears) — standard royals (corrupted). Druids 3/5/7/9 join. A 25-card
-   pilgrim deck (four each of 2–7 plus one Ace, no suits). Start of turn: top pilgrim to
-   the mission zone. Playing a card banishes a pilgrim of the same value. Pilgrims in
-   hand are dead weight this mission. Kill: move top tavern cards to the discard equal to
-   the zone's total, then the zone to the discard, banish the enemy; perfect kill: banish
-   one zone card first. Reward: Druid 7 stays; choose a 4 (♦♠♣) to get the Druid suit;
-   Goran gains ♥; corrupt a card.
-8. **Winds of Chaos** (fan name: The Troll Bridge; Heaven's Edge) — 6 Trolls 10/20 then 6 Wyverns 25/50, dual-suited. Drums
-   3/5/7/9 join; the pilgrim Ace starts in the zone. Enemy attack + total of non-pilgrim
-   zone cards. During cleanup you may move played cards into the zone in strictly
-   ascending value (starting one above the current highest); placing a 10 clears the
-   zone to the discard, lets you banish any discard cards, shuffles the rest under the
-   tavern, and ends placements for the mission. Perfect kill: top discard card to the
-   top of the tavern. Reward: Drum 9 stays; pilgrim Ace removed; choose a 2 (♠♣♥) to get
-   the Drum suit; Goran gains ♦; corrupt a card.
-9. **Hope From Ashes** (fan name: The Rescue; Twinseed Temple) — gain Evergreen Mother (corrupted). Goran, the chosen Beast and any
-   mercenaries are set aside; 30 random party cards form three captured piles of 10;
-   the pilgrim deck, the rest of the party and the set-aside cards form the tavern.
-   Enemies: 4 at 15/30, 4 at 20/40, then Myla 20/80 (♠♦, immunity cannot be cancelled).
-   End of turn: either banish a hand card and take a pile's top card to the discard, or
-   rotate all three piles. Perfect kill: a pile's top card to the top of the tavern.
-   Reward: permanent ★ Beast; choose "4" or "8" and a random card of that rank gains ★;
-   Goran ignores immunities; the pilgrim deck is gone.
-10. **Pride to Fall** (fan name: The Corruption; Twinseed Temple Ruins) — your corrupted cards leave the party and become the enemies:
-    health 5 × value, attack value + mission zone total, and a suit ability (♣ doubles
-    its total attack, ♠ reduces incoming damage by its value, ♥ moves the top discard to
-    the zone each end of turn, ♦ makes you put a hand card in the zone). Start of turn:
-    top tavern card to the zone. Kill: zone banished, enemy to discard (perfect: zone to
-    discard). Reward: corrupted cards return; Goran leaves for good.
-11. **Descent Into Darkness** (fan name: The Beast Hunt; Caverns of Decay) — Esme (6♣) is removed. 4 suitless enemies 10/30 then Evil Goran
-    20/90. Enemies are immune to the suits on top of the banished and discard piles and
-    gain attack equal to those two cards' values. Start of turn: a random basic-suit
-    Beast enters the zone and triggers (♣ top discard → banished, ♠ top tavern →
-    discard, ♥ you discard a hand card, ♦ you banish a hand card). Perfect kill: skip the
-    next Beast. Reward: Esme returns with all four suits.
-12. **Decay to Growth** (fan name: The Final Stand; Throne of Corruption) — all corrupted cards become restored; Evergreen Mother
-    restored. 4 Q 15/30, 4 K 20/40, then the High Arcana 25/120. Enemy attack + zone
-    total; immune to every suit in the zone. Start of turn: top banished card to the
-    zone. Kill: banish the zone (your order), the enemy and the whole discard pile;
-    perfect kill skips the next placement. Win = campaign complete; the E box unlocks
-    endless mode (a generator: location card + bad cards + good cards per game).
+7. **Tales of Rebirth** (Well of Tears; fan name: The Pilgrimage) — **confirmed:** four
+   Druids (3, 5, 7, 9) join for the mission. 4 Shoal 10/20, 4 Deep 15/30, 4 Abyssal
+   20/40 pondkin, one per class. Pack P's pilgrims form a face-down deck in the zone;
+   start of turn: one pilgrim face up. A card entering play may banish a zone pilgrim of
+   the same strength (once per card). Pilgrims never leave players' hands. Enemy
+   defeated: discard reserve cards equal to the zone's total strength, discard the zone,
+   banish the enemy; exact kill: banish one zone card first. Rewards: Gøran gains
+   Cleric; corrupt another character (player's choice); Alantha (7 Druid) stays, the
+   other Druids leave; Glamelyn, Herbod or Dhonatir (the 4s) gains Druid (player's
+   choice). Pack P contents still to be read (fan: 4 × 2 to 7 plus one Ace).
+8. **Winds of Chaos** (Heaven's Edge; fan name: The Troll Bridge) — **confirmed:** four
+   Chanters (3, 5, 7, 9) join for the mission; the puppy starts in the mission zone and
+   the other pilgrims are shuffled into the reserve. 6 Trolls 10/20 and 6 Wyverns 25/50,
+   each immune to a distinct pair of classes. Non-pilgrim zone cards add their strength
+   to the enemy. Enemy defeated: banish it; cards in play may be moved to the zone one at
+   a time, each exactly one higher than the zone's highest; a 10 clears the zone to the
+   discard pile, lets you banish any discards, and heals the rest under the reserve (no
+   more moves afterwards). Exact kill: any discard pile card to the top of the reserve.
+   Rewards: Gøran gains Bard; corrupt another character (player's choice); Druldox (9
+   Chanter) stays, the other Chanters leave; Sprinkle, Dinky or Wicket (the 2s) gains
+   Chanter (player's choice); the puppy goes back in the box.
+9. **Hope From Ashes** (Twinseed Temple; fan name: The Rescue) — **confirmed:** Gøran, the
+   chosen beast, Jesters and mercenaries are set aside; 30 of the remaining party cards
+   are dealt into three captured piles of 10 in the mission zone, tops face up; the
+   pilgrims and the set-aside cards are shuffled into the rest of the reserve. 4
+   Loreguards 15/30, 4 Lorekeepers 20/40, then Myla 20/80 (bard and paladin, immunity
+   never ignorable). End of turn: banish a hand card to rescue a pile's top card to the
+   discard pile, or rotate every pile. Enemy defeated: banish it; exact kill: a pile's
+   top card may go on top of the reserve. Rewards: Evergreen Mother (corrupt relic, both
+   sides confirmed); Gøran renewed (8, Evergreen: all four classes, ignores immunity);
+   the first unstickered 4 or 8 revealed (player picks the strength) gains Mage; Ash
+   (B, Mage beast) joins permanently.
+10. **Pride to Fall** (Twinseed Temple Ruins; fan name: The Corruption) — **confirmed:**
+    the corrupted characters leave the party and form the enemy deck face up, 2 on top
+    to 9 at the bottom; health 5 × strength; strength + the whole mission zone; start of
+    turn: top reserve card into the zone. Enemy powers: warrior doubles the total
+    strength; paladin reduces damage taken by its base strength; cleric moves the top
+    discard into the zone at end of turn; bard makes the current player put a hand card
+    into the zone at end of turn. Enemy defeated: banish the zone, discard the enemy;
+    exact kill: discard the zone instead. Rewards: Gøran is lost; the corrupted
+    characters return (still corrupted).
+11. **Descent Into Darkness** (Caverns of Decay; fan name: The Beast Hunt) —
+    **confirmed:** a corrupted member of the Eternal Vine (Esme, the 6 of warriors) is
+    ripped up at setup. Gøran's four beasts form a face-down beast deck in the mission
+    zone (none in the reserve; Ash stays). Start of turn: reveal a beast and apply its
+    class (warrior: top discard banished; paladin: top reserve card discarded; cleric:
+    discard a hand card; bard: banish a hand card); revealed beasts pile face up and
+    reform the deck when all four are out. 4 Justicars 10/30 then the Corrupted
+    Evergreen 20/90, no innate class; each enemy is immune to the classes of, and gains
+    the strength of, the top cards of the discard and banished piles (beasts grant no
+    immunity). Enemy defeated: banish it; exact kill: no beast revealed next turn.
+    Reward: the reborn Evergreen, Esme (6, Evergreen); the beasts return to the box.
+12. **Decay to Growth** (Throne of Corruption; fan name: The Final Stand) —
+    **confirmed:** at setup every corrupted party member and Esme become restored, and
+    the restored Evergreen Mother replaces the corrupt one (restored cards never enter
+    the banished pile: bottom of the reserve instead). 4 Queens 15/30 and 4 Kings
+    20/40, one per class, then the High Arcana 25/120 (no class); all corrupted. Start
+    of turn: top banished card into the mission zone; the zone adds strength and grants
+    immunity to its classes. Enemy defeated: banish the zone (any order), the enemy,
+    then the whole discard pile in order; exact kill: skip the next start of turn.
+    Corrupted cards never enter the reserve (bottom of the banished pile). Reward: open
+    pack E; the campaign is complete.
 
 ## Eternal mode ("E" box)
 

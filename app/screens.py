@@ -1151,12 +1151,15 @@ class CampaignScreen(Screen):
             self.add_subview(make_label(stats, (m, y, w - 2 * m, 20), 12, False, T.MUTED))
             y += 26
             in_progress = store.has_attempt(camp.slot)
+            if not in_progress and info.get("playable") and not camp.pending and camp.prepare_mission():
+                app.save_campaign()
             choice = camp.pending_choice()
             if in_progress:
                 self.add_subview(make_button("Continue attempt", lambda s: app.resume_attempt(), (x, y, bw, 46)))
                 y += 54
             elif choice is not None:
-                self.add_subview(make_button("Reward: %s" % choice.get("label", "choose"),
+                prefix = "Mission setup" if choice.get("phase") == "setup" else "Reward"
+                self.add_subview(make_button("%s: %s" % (prefix, choice.get("label", "choose")),
                                              lambda s: app.show(ChoiceScreen(app)), (x, y, bw, 46)))
                 y += 54
             elif info.get("playable"):
@@ -1401,9 +1404,10 @@ class ChoiceScreen(Screen):
         m = T.MARGIN
         y = T.TOP_INSET
         self.add_subview(make_button("‹ Back", lambda s: app.show(CampaignScreen(app)), (m, y, 80, 36), False, 14))
-        self.add_subview(make_label("Reward", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
-        y += 48
         step = camp.pending_choice() if camp is not None else None
+        heading = "Mission setup" if step is not None and step.get("phase") == "setup" else "Reward"
+        self.add_subview(make_label(heading, (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
+        y += 48
         if step is None:
             self.add_subview(make_label("Nothing to choose.", (m, y, w - 2 * m, 30), 14, False, T.MUTED))
             return
@@ -1412,9 +1416,29 @@ class ChoiceScreen(Screen):
         self.confirm_btn = make_button("Confirm", lambda s: self._confirm(), (m, h - T.BOTTOM_INSET - 50, w - 2 * m, 46))
         if step["kind"] == "choice_classes":
             self._layout_classes(step, y)
+        elif step["kind"] == "choice_mage_student":
+            self._layout_options(step, y, {"4": "Dwarves (the 4s)", "8": "Feltrix (the 8s)"})
         else:
             self._layout_pick(step, y)
         self.add_subview(self.confirm_btn)
+
+    # -- pick one option from a short list ----------------------------------
+    def _layout_options(self, step: dict, y: float, titles: dict) -> None:
+        w = self.width
+        m = T.MARGIN
+        self.add_subview(make_label("The first unstickered card of the chosen strength revealed from the shuffled party "
+                                    "gains the Mage class (never Gøran or a mage).", (m, y, w - 2 * m, 56), 12, False, T.MUTED, lines=3))
+        y += 60
+        options = [str(o) for o in step.get("options", [])]
+        for o in options:
+            b = make_button(titles.get(o, o), (lambda opt: lambda s: self._pick_option(opt))(o), (m, y, w - 2 * m, 44), self.chosen == o)
+            self.add_subview(b)
+            y += 52
+        set_enabled(self.confirm_btn, self.chosen in options)
+
+    def _pick_option(self, opt: str) -> None:
+        self.chosen = opt
+        self.layout()
 
     # -- pick one card ------------------------------------------------------
     def _layout_pick(self, step: dict, y: float) -> None:
@@ -1424,7 +1448,9 @@ class ChoiceScreen(Screen):
         hint = {"choice_corrupt": "Tap the character who takes the corruption. Corrupted cards banish the top "
                                   "card of the reserve when played and their own class ignores immunity.",
                 "choice_suit": "Tap the character who gets the %s sticker. The card keeps its own class and "
-                               "gains this one too." % CLASS_NAME.get(str(step.get("suit", "")), "class")}.get(step["kind"], "")
+                               "gains this one too." % CLASS_NAME.get(str(step.get("suit", "")), "class"),
+                "choice_rip": "Tap the corrupted character who wears a cloak of the Eternal Vine. The card is "
+                              "torn up and leaves the campaign for good."}.get(step["kind"], "")
         if hint:
             self.add_subview(make_label(hint, (m, y, w - 2 * m, 56), 12, False, T.MUTED, lines=3))
             y += 60
@@ -1523,7 +1549,7 @@ class ChoiceScreen(Screen):
                     camp.pending.pop(0)
                     camp.log.append("%s: no card qualified." % step.get("label", "reward"))
             elif step.get("options"):
-                camp.resolve_choice(self.chosen)
+                camp.resolve_choice(self.chosen)  # one card id, or "4" / "8" for the mage student
             else:
                 camp.pending.pop(0)
                 camp.log.append("%s: nothing qualified." % step.get("label", "reward"))

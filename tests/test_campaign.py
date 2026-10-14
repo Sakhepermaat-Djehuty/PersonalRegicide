@@ -1450,3 +1450,246 @@ def test_emblem_multiplayer_pass_skip_empty_hands_and_immunity():
     set_hand(g, ["7C", "3D"], player=1)
     g.play(["5M"])
     assert g.decision is None and g.phase == PHASE_SUFFER and dict(_powers(g))["M"]["immune"]
+
+def test_mission7_setup_and_rewards_follow_the_cards():
+    c = CampaignState.new(1, ["Solo"], seed=90)
+    c.mission = 7
+    c.completed = [1, 2, 3, 4, 5, 6]
+    P.add_card(c.party, dict(M.GORAN))
+    rng = random.Random(4)
+    for step in M.start_steps(c, 7):
+        M.apply_step(c, step, rng)
+    assert [P.find(c.party, x)["name"] for x in ("3U", "5U", "7U", "9U")] == ["Tolman", "Avion Druid", "Alantha", "Drakonid Druid"]
+    assert M.start_steps(c, 7) == []
+    extra = M.build_setup(c, 7, rng)
+    enemies = extra["castle"]
+    assert [e["name"] for e in enemies] == ["Shoal Pondkin"] * 4 + ["Deep Pondkin"] * 4 + ["Abyssal Pondkin"] * 4
+    assert (enemies[0]["attack"], enemies[0]["health"], enemies[-1]["attack"], enemies[-1]["health"]) == (10, 20, 20, 40)
+    pil = extra["pilgrims"]
+    assert len(pil) == 25 and all("pilgrim" in d["flags"] and d["suits"] == [] for d in pil)
+    assert sorted(d["value"] for d in pil) == [1] + sorted([v for v in range(2, 8) for _ in range(4)])
+    assert len({d["id"] for d in pil}) == 25
+    steps = M.reward_steps(c, 7, rng)
+    assert [s["kind"] for s in steps] == ["add_suit", "choice_corrupt", "remove_card", "remove_card", "remove_card", "choice_suit"]
+    for s in steps:
+        if s["kind"].startswith("choice"):
+            c.pending.append(s)
+        else:
+            M.apply_step(c, s, rng)
+    assert P.find(c.party, "GOR8")["suits"] == ["H"]
+    assert P.find(c.party, "7U") is not None and all(P.find(c.party, x) is None for x in ("3U", "5U", "9U"))
+    c.resolve_choice(c.pending_choice()["options"][0])
+    step = c.pending_choice()
+    assert step["kind"] == "choice_suit" and step["options"] == ["4D", "4C", "4S"]
+    c.resolve_choice("4S")
+    assert P.find(c.party, "4S")["suits"] == ["S", "U"] and not c.pending
+
+
+def test_mission8_setup_and_rewards_follow_the_cards():
+    c = CampaignState.new(1, ["Solo"], seed=100)
+    c.mission = 8
+    c.completed = [1, 2, 3, 4, 5, 6, 7]
+    P.add_card(c.party, dict(M.GORAN))
+    rng = random.Random(5)
+    for step in M.start_steps(c, 8):
+        M.apply_step(c, step, rng)
+    assert [P.find(c.party, x)["name"] for x in ("3T", "5T", "7T", "9T")] == ["Roslyn", "Avion Chanter", "Elf Chanter", "Druldox"]
+    assert M.start_steps(c, 8) == []
+    extra = M.build_setup(c, 8, rng)
+    enemies = extra["castle"]
+    assert [e["name"] for e in enemies] == ["Troll"] * 6 + ["Wyvern"] * 6
+    assert all(len(e["suits"]) == 2 for e in enemies)
+    assert len({tuple(sorted(e["suits"])) for e in enemies[:6]}) == 6 and len({tuple(sorted(e["suits"])) for e in enemies[6:]}) == 6
+    assert (enemies[0]["attack"], enemies[0]["health"], enemies[-1]["attack"], enemies[-1]["health"]) == (10, 20, 25, 50)
+    assert [d["id"] for d in extra["zone_start"]] == ["PILA"] and extra["pilgrims"] == []
+    assert len(extra["pilgrims_in_reserve"]) == 24 and all(d["id"] != "PILA" for d in extra["pilgrims_in_reserve"])
+    names = {d["value"]: d["name"] for d in extra["pilgrims_in_reserve"]}
+    assert names[2] == "Traveller" and names[3] == "Follower" and names[4] == "Servant" and names[6] == "Acolyte"
+    steps = M.reward_steps(c, 8, rng)
+    assert [s["kind"] for s in steps] == ["add_suit", "choice_corrupt", "remove_card", "remove_card", "remove_card", "choice_suit", "set_flag"]
+    for s in steps:
+        if s["kind"].startswith("choice"):
+            c.pending.append(s)
+        else:
+            M.apply_step(c, s, rng)
+    assert P.find(c.party, "GOR8")["suits"] == ["D"] and c.flags.get("puppy_boxed") is True
+    assert P.find(c.party, "9T") is not None and all(P.find(c.party, x) is None for x in ("3T", "5T", "7T"))
+    c.resolve_choice(c.pending_choice()["options"][0])
+    step = c.pending_choice()
+    assert step["kind"] == "choice_suit" and step["options"] == ["2H", "2C", "2S"]
+    c.resolve_choice("2C")
+    assert P.find(c.party, "2C")["suits"] == ["C", "T"] and not c.pending
+
+
+def test_mission9_setup_and_rewards_follow_the_cards():
+    c = CampaignState.new(1, ["Solo"], seed=110)
+    c.mission = 9
+    c.completed = [1, 2, 3, 4, 5, 6, 7, 8]
+    P.add_card(c.party, dict(M.GORAN))
+    for s in ("C", "S", "H", "D"):
+        P.add_suit(c.party, "GOR8", s)
+    c.flags["beasts"] = True
+    c.beast = "B_H"
+    c.m_box_opened = True
+    c.coins = 5
+    c.hire("merc_12H")
+    P.add_suit(c.party, "4D", "U")       # Glamelyn has a Druid sticker
+    P.add_flag(c.party, "8H", "corrupted")
+    rng = random.Random(6)
+    assert M.start_steps(c, 9) == []
+    extra = M.build_setup(c, 9, rng)
+    enemies = extra["castle"]
+    assert [e["name"] for e in enemies] == ["Loreguard"] * 4 + ["Lorekeeper"] * 4 + ["Myla"]
+    assert enemies[-1]["attack"] == 20 and enemies[-1]["health"] == 80 and sorted(enemies[-1]["suits"]) == ["D", "S"]
+    assert "fixed_immunity" in enemies[-1]["flags"]
+    assert len(extra["pilgrims_in_reserve"]) == 24 and extra["zone_start"] == []
+    cap = extra["capture"]
+    assert cap["piles"] == 3 and cap["size"] == 10
+    assert set(cap["exempt"]) == {"GOR8", "B_H", "M12H"}
+    steps = M.reward_steps(c, 9, rng)
+    assert [s["kind"] for s in steps] == ["relic", "remove_card", "add_card", "choice_mage_student", "add_card"]
+    for s in steps:
+        if s["kind"].startswith("choice"):
+            c.pending.append(s)
+        else:
+            M.apply_step(c, s, rng)
+    assert "mother" in c.relics
+    assert P.find(c.party, "GOR8") is None
+    new = P.find(c.party, "GOR8E")
+    assert new["name"] == "Gøran" and sorted(new["suits"]) == ["C", "D", "H", "S"] and "ignores_immunity" in new["flags"]
+    ash = P.find(c.party, "B_ASH")
+    assert ash["suits"] == ["M"] and "beast" in ash["flags"] and ash["value"] == 0
+    step = c.pending_choice()
+    assert step["kind"] == "choice_mage_student" and step["options"] == ["4", "8"]
+    with pytest.raises(ValueError):
+        c.resolve_choice("6")
+    line = c.resolve_choice("4")
+    assert "Mage" in line
+    stickered = [x for x in c.party if x["rank"] == "4" and "M" in x.get("suits", [])]
+    assert len(stickered) == 1 and stickered[0]["id"] != "4D"  # Glamelyn already has a sticker
+    assert not c.pending
+    # feltrix: the renewed Gøran (an 8) and a corrupted 8 are never chosen
+    c2 = CampaignState.new(1, ["Solo"], seed=111)
+    P.add_card(c2.party, dict(M.GORAN_RENEWED))
+    for s in ("H", "D", "C"):
+        P.add_flag(c2.party, "8" + s, "corrupted")
+    c2.pending.append({"kind": "choice_mage_student", "options": ["4", "8"], "label": "x"})
+    line = c2.resolve_choice("8")
+    assert "8" in line and P.find(c2.party, "8S")["suits"] == ["S", "M"]
+    c2.pending.append({"kind": "choice_mage_student", "options": ["4", "8"], "label": "x"})
+    assert "no student" in c2.resolve_choice("8")
+
+
+def test_mission10_corrupted_party_members_form_the_enemy_deck_and_return():
+    c = CampaignState.new(1, ["Solo"], seed=120)
+    c.mission = 10
+    c.completed = list(range(1, 10))
+    P.add_card(c.party, dict(M.GORAN_RENEWED))
+    P.add_card(c.party, dict(M.ASH))
+    for cid in ("2S", "3H", "4D", "5C", "6C", "7S", "8H", "9D"):
+        P.add_flag(c.party, cid, "corrupted")
+        c.corrupted.append(cid)
+    P.add_suit(c.party, "4D", "U")   # Glamelyn, corrupted and a druid
+    rng = random.Random(7)
+    steps = M.start_steps(c, 10)
+    assert [s["kind"] for s in steps] == ["corrupted_leave"]
+    M.apply_step(c, steps[0], rng)
+    assert P.corrupted_ids(c.party) == [] and sorted(d["id"] for d in c.away) == ["2S", "3H", "4D", "5C", "6C", "7S", "8H", "9D"]
+    assert M.start_steps(c, 10) == []   # retries do not move anything more
+    extra = M.build_setup(c, 10, rng)
+    enemies = extra["castle"]
+    assert [e["id"] for e in enemies] == ["2S", "3H", "4D", "5C", "6C", "7S", "8H", "9D"]  # 2 on top, 9 at the bottom
+    assert [(e["attack"], e["health"]) for e in enemies] == [(2, 10), (3, 15), (4, 20), (5, 25), (6, 30), (7, 35), (8, 40), (9, 45)]
+    assert all("corrupted" in e["flags"] for e in enemies)
+    assert enemies[2]["suits"] == ["D", "U"]     # keeps her sticker as an enemy
+    assert not any(d["id"] in extra_ids for d in c.away for extra_ids in [[p["id"] for p in extra["party"]]])
+    # save round trip keeps the away cards
+    c2 = CampaignState.from_dict(json.loads(json.dumps(c.to_dict())))
+    assert c2.away == c.away
+    steps = M.reward_steps(c, 10, rng)
+    assert [s["kind"] for s in steps] == ["remove_card", "away_return"]
+    for s in steps:
+        M.apply_step(c, s, rng)
+    assert P.find(c.party, "GOR8E") is None and c.away == []
+    assert sorted(P.corrupted_ids(c.party)) == ["2S", "3H", "4D", "5C", "6C", "7S", "8H", "9D"]
+    assert P.find(c.party, "4D")["suits"] == ["D", "U"]
+
+
+def test_mission11_rip_up_choice_beast_deck_and_reborn_evergreen():
+    c = CampaignState.new(1, ["Solo"], seed=130)
+    c.mission = 11
+    c.completed = list(range(1, 11))
+    P.add_card(c.party, dict(M.ASH))
+    c.flags["beasts"] = True
+    c.beast = "B_D"
+    for cid in ("2S", "3H", "4D", "5C", "6C", "7S", "8H", "9D"):
+        P.add_flag(c.party, cid, "corrupted")
+        c.corrupted.append(cid)
+    rng = random.Random(8)
+    # the setup card needs a choice: Esme (6C) is the known cloaked member
+    with pytest.raises(RuntimeError):
+        c.start_attempt(seed=131)
+    step = c.pending_choice()
+    assert step["kind"] == "choice_rip" and step["phase"] == "setup" and step["options"] == ["6C"]
+    assert c.prepare_mission() and len(c.pending) == 1   # not queued twice
+    with pytest.raises(ValueError):
+        c.resolve_choice("2S")
+    line = c.resolve_choice("6C")
+    assert "ripped up" in line and P.find(c.party, "6C") is None and "6C" not in c.corrupted
+    assert c.flags["vine_ripped"] is True and not c.prepare_mission()
+    assert M.start_steps(c, 11) == []                       # retries ask nothing more
+    extra = M.build_setup(c, 11, rng)
+    enemies = extra["castle"]
+    assert [e["name"] for e in enemies] == ["Justicar"] * 4 + ["Corrupted Evergreen"]
+    assert (enemies[0]["attack"], enemies[0]["health"], enemies[-1]["attack"], enemies[-1]["health"]) == (10, 30, 20, 90)
+    assert all(e["suits"] == [] for e in enemies)
+    assert sorted(b["id"] for b in extra["beast_deck"]) == ["B_C", "B_D", "B_H", "B_S"]
+    ids = [d["id"] for d in extra["party"]]
+    assert "B_D" not in ids and "B_ASH" in ids             # no chosen beast this mission; Ash stays
+    assert P.find(c.party, "6C") is None
+    for s in M.reward_steps(c, 11, rng):
+        M.apply_step(c, s, rng)
+    esme = P.find(c.party, "ESME6E")
+    assert esme is not None and esme["value"] == 6 and sorted(esme["suits"]) == ["C", "D", "H", "S"]
+    assert "ignores_immunity" in esme["flags"] and "corrupted" not in esme["flags"]
+    assert len(c.corrupted) == 7
+    # without Esme corrupted, every corrupted card is offered
+    c2 = CampaignState.new(1, ["Solo"], seed=133)
+    c2.mission = 11
+    for cid in ("2S", "3H"):
+        P.add_flag(c2.party, cid, "corrupted")
+        c2.corrupted.append(cid)
+    assert c2.prepare_mission() and sorted(c2.pending_choice()["options"]) == ["2S", "3H"]
+
+
+def test_mission12_setup_restores_the_party_and_swaps_the_mother_relic():
+    c = CampaignState.new(1, ["Solo"], seed=140)
+    c.mission = 12
+    c.completed = list(range(1, 12))
+    P.add_card(c.party, dict(M.ESME_REBORN))
+    P.add_card(c.party, dict(M.ASH))
+    c.relics += ["flute", "whistle", "emblem", "mother"]
+    for cid in ("2S", "3H", "4D", "5C", "7S", "8H", "9D"):
+        P.add_flag(c.party, cid, "corrupted")
+        c.corrupted.append(cid)
+    rng = random.Random(9)
+    steps = M.start_steps(c, 12)
+    assert [s["kind"] for s in steps] == ["restore_all", "relic_swap"]
+    for s in steps:
+        M.apply_step(c, s, rng)
+    assert P.corrupted_ids(c.party) == [] and c.corrupted == []
+    assert sorted(P.restored_ids(c.party)) == ["2S", "3H", "4D", "5C", "7S", "8H", "9D", "ESME6E"]
+    assert "mother" not in c.relics and "mother_restored" in c.relics and "flute" in c.relics
+    assert M.start_steps(c, 12) == []
+    extra = M.build_setup(c, 12, rng)
+    enemies = extra["castle"]
+    assert [e["name"].split()[-1] for e in enemies] == ["Queen"] * 4 + ["King"] * 4 + ["Arcana"]
+    assert (enemies[0]["attack"], enemies[0]["health"]) == (15, 30)
+    assert (enemies[4]["attack"], enemies[4]["health"]) == (20, 40)
+    assert (enemies[-1]["attack"], enemies[-1]["health"], enemies[-1]["suits"]) == (25, 120, [])
+    assert all("corrupted" in e["flags"] for e in enemies)
+    assert sorted(e["suits"][0] for e in enemies[:4]) == ["C", "D", "H", "S"]
+    steps = M.reward_steps(c, 12, rng)
+    assert [s["kind"] for s in steps] == ["set_flag"]
+    M.apply_step(c, steps[0], rng)
+    assert c.flags["pack_e_opened"] is True
