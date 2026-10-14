@@ -188,7 +188,7 @@ class CampaignState:
         """The reward step waiting for the player's decision, if any."""
         return dict(self.pending[0]) if self.pending else None
 
-    def resolve_choice(self, option: str) -> str:
+    def resolve_choice(self, option: Any) -> str:
         """Apply the first pending reward step with the player's ``option``; returns the
         log line. Raises ValueError when the option is not allowed."""
         if not self.pending:

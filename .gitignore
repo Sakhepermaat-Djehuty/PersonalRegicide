@@ -18,3 +18,5 @@ saves/
 tools/out*/
 # private story-card transcriptions (copyrighted text; lives on the phone only)
 lore_private.json
+# agent worktrees created by the harness
+.claude/worktrees/

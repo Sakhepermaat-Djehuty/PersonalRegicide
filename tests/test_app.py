@@ -232,7 +232,7 @@ def test_campaign_flow_win_then_mission2(app):
     _tap_button(app, "Next mission: start")
     assert "m2_intro" in app.campaign.lore_seen
     assert app.game.config.rules_id == "legacy_m2"
-    assert app.game.enemy.name == "Hydra"
+    assert app.game.enemy.name == "Hydra Head"
     # the flute button appears when a 2-5 is in hand
     gs = _game_screen(app)
     g = app.game
@@ -444,3 +444,85 @@ def test_map_screen_selection(app):
     x, y = pts[4]
     ui.tap(app, scr.canvas.x + x, scr.canvas.y + y)
     assert scr.selected == 5 and "Unknown" in scr.caption.text
+
+
+def test_mission2_class_sticker_assignment_screen(app):
+    from app import store
+    from app.screens import CampaignScreen
+    from regicide.campaign import party as P
+    app.new_campaign(1, ["Solo"])
+    camp = app.campaign
+    # reach the end of mission 2 through the engine, then drive the reward screens
+    g = camp.start_attempt(seed=31)
+    g.castle = []
+    g.enemy.hp = g.enemy.max_hp = 1
+    g.play([g.active_player.hand[0]])
+    camp.finish_attempt(g)
+    camp.resolve_choice(camp.pending_choice()["options"][0])
+    g = camp.start_attempt(seed=32)
+    g.castle = []
+    for cid in list(g.active_player.hand):
+        info = g.preview_play([cid])
+        if info.get("ok") and info.get("damage", 0) > 0:
+            g.enemy.hp = g.enemy.max_hp = info["damage"]
+            g.play([cid])
+            break
+    assert g.phase == "won"
+    camp.finish_attempt(g)
+    app.save_campaign()
+    app.show(CampaignScreen(app))
+    # first the corruption choice
+    reward = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Reward:"))]
+    assert reward and "corrupt" in reward[0].title
+    ui.tap(app, *ui.root_point(app, reward[0]))
+    from app.widgets import CardView
+    cards = ui.find(app, lambda v: isinstance(v, CardView))
+    ui.tap(app, *ui.root_point(app, cards[0]))
+    _tap_button(app, "Confirm")
+    assert len(app.campaign.corrupted) == 2
+    # then the class stickers
+    reward = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Reward:"))]
+    assert reward and "stickers" in reward[0].title
+    ui.tap(app, *ui.root_point(app, reward[0]))
+    step = app.campaign.pending_choice()
+    assert step["kind"] == "choice_classes"
+    assert not ui.button(app, "Confirm").enabled
+    names = {"H": "Cleric", "D": "Bard", "C": "Warrior", "S": "Paladin"}
+    shown = ui.find(app, lambda v: isinstance(v, CardView))
+    assert [v.card.id for v in shown] == step["cards"]
+    # a card's own class is disabled on its row
+    rows = {}
+    for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title in names.values()):
+        rows.setdefault(round(b.y), []).append(b)
+    assert len(rows) == 4
+    for (y, btns), cid in zip(sorted(rows.items()), step["cards"]):
+        own = P.find(app.campaign.party, cid)["suits"][0]
+        for b in btns:
+            assert b.enabled == (b.title != names[own])
+    # pick a legal assignment up front (greedy row by row can dead-end), then tap it
+    import itertools
+    plan = None
+    for perm in itertools.permutations(step["classes"], len(step["cards"])):
+        if all(s not in P.find(app.campaign.party, cid)["suits"] for cid, s in zip(step["cards"], perm)):
+            plan = dict(zip(step["cards"], perm))
+            break
+    assert plan is not None
+    chosen = {}
+    for i, cid in enumerate(step["cards"]):
+        btns = sorted(ui.find(app, lambda v: isinstance(v, ui.Button) and v.title in names.values()), key=lambda b: (round(b.y), b.x))
+        row = [b for b in btns if round(b.y) == sorted({round(x.y) for x in btns})[i]]
+        pick = [b for b in row if b.title == names[plan[cid]]][0]
+        assert pick.enabled
+        ui.tap(app, *ui.root_point(app, pick))
+        chosen[cid] = pick.title
+    assert ui.button(app, "Confirm").enabled
+    # a class chosen on one row is disabled on the others
+    btns = ui.find(app, lambda v: isinstance(v, ui.Button) and v.title in names.values())
+    for title in set(chosen.values()):
+        assert sum(1 for b in btns if b.title == title and b.enabled) == 1
+    _tap_button(app, "Confirm")
+    assert not app.campaign.pending
+    for cid, title in chosen.items():
+        suits = P.find(app.campaign.party, cid)["suits"]
+        assert len(suits) == 2 and names[suits[1]] == title
+    assert store.load_campaign(app.campaign.slot).pending == []
