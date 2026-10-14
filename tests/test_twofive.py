@@ -427,6 +427,7 @@ def app(tmp_path, monkeypatch):
     from app.screens import App, MenuScreen
     ui.set_screen_size(390, 844)
     a = App()
+    a.settings["rules_card"] = False    # the mission rules card has its own tests
     a.show(MenuScreen(a))
     return a
 

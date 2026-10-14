@@ -214,16 +214,20 @@ class App(ui.View):
         self.in_campaign = True
         self.game = self.campaign.start_attempt(open_hands=self.open_hands())
         self.undo_stack = []
-        # the rules card pops up the first time a mission loads (the game menu has it too)
-        seen = self.campaign.flags.setdefault("rules_seen", [])
-        first = self.campaign.mission not in seen and bool(self.settings.get("rules_card", True))
-        if first:
-            seen.append(self.campaign.mission)
         self.save_campaign()
         self.autosave()
         screen = GameScreen(self)
-        screen.rules_pending = first
+        screen.rules_pending = self.rules_card_due()
         self.show(screen)
+
+    def rules_card_due(self) -> bool:
+        """The rules card pops up the first time a mission loads, until it is dismissed
+        (``RulesOverlay`` records it in ``flags["rules_seen"]``); Settings can turn it off.
+        Evergreen attempts show their setup on the Evergreen screen instead."""
+        camp = self.campaign
+        if camp is None or camp.finished or not bool(self.settings.get("rules_card", True)):
+            return False
+        return camp.mission not in camp.flags.get("rules_seen", [])
 
     def start_evergreen_attempt(self) -> None:
         """Pack E: play the drawn Evergreen setup with the finished campaign's party."""
@@ -248,7 +252,9 @@ class App(ui.View):
         self.in_campaign = True
         self.game = g
         self.undo_stack = []
-        self.show(GameScreen(self))
+        screen = GameScreen(self)
+        screen.rules_pending = self.rules_card_due()
+        self.show(screen)
         return True
 
     @ui.in_background
@@ -1998,6 +2004,12 @@ def mission_rules_text(camp, game: Optional[Game] = None) -> str:
         parts.append(info["summary"])
     players = game.n_players if game is not None else (camp.players if camp is not None else 1)
     relics = list(game.extra.get("relics", [])) if game is not None else list(camp.relics if camp is not None else [])
+    if game is None and camp is not None and not camp.finished:
+        # the mission's setup cards may swap a relic (mission 12: the restored Mother)
+        from regicide.campaign import missions as M
+        for step in M.start_steps(camp, camp.mission):
+            if step.get("kind") == "relic_swap" and step.get("old") in relics:
+                relics[relics.index(step["old"])] = step["new"]
     if relics:
         parts.append("Your relics (%s side):" % ("solo" if players == 1 else "two or more players"))
         for r in relics:
@@ -2034,6 +2046,12 @@ class RulesOverlay(Overlay):
         self.panel.frame = ((self.width - pw) / 2, max(T.TOP_INSET, (self.height - ph) / 2), pw, ph)
 
     def _close(self, sender) -> None:
+        app = self.screen.app
+        if self.screen.rules_pending and app.campaign is not None and not app.campaign.finished:
+            seen = app.campaign.flags.setdefault("rules_seen", [])
+            if app.campaign.mission not in seen:
+                seen.append(app.campaign.mission)
+                app.save_campaign()
         self.screen.rules_pending = False
         self.screen.refresh(after_action=False)
 
@@ -2198,7 +2216,7 @@ class CampaignScreen(Screen):
             self.add_subview(make_label(stats, (m, y, w - 2 * m, 20), 12, False, T.MUTED))
             y += 26
             in_progress = store.has_attempt(camp.slot)
-            beasts = camp.beasts_available()
+            beasts = camp.beasts_available() if camp.mission != 11 else []   # mission 11: all four form the beast deck
             if beasts and not in_progress:
                 # Rulebook p.7: for each attempt you may include one of Gøran's beasts.
                 self.add_subview(make_label("Gøran's beast for this attempt", (m, y, w - 2 * m, 18), 12, False, T.MUTED))
@@ -2815,15 +2833,24 @@ class PartyScreen(Screen):
         # mercenaries hired for this mission (they leave when it is won)
         mercs = list((camp.evergreen or {}).get("mercenaries", []) if camp.finished else camp.mercenaries)
         if mercs:
-            when = "the Evergreen mission" if camp.finished else "mission %d" % camp.mission
-            yy = heading("Mercenaries · until %s is won" % when, yy)
+            when = ("while this Evergreen setup lasts" if camp.finished
+                    else "until mission %d is won" % camp.mission)
+            yy = heading("Mercenaries · %s" % when, yy)
             yy = card_row([P.to_card(merc_by_id(mid)["card"]) for mid in mercs], yy)
-        # Gøran's beast chosen for the next attempt
-        if camp.beast and camp.flags.get("beasts") and not camp.finished:
-            beast = M.beast_by_id(camp.beast)
-            if beast is not None:
-                yy = heading("Gøran's beast · this attempt", yy)
-                yy = card_row([P.to_card(beast)], yy)
+        # Gøran's beast(s) the next attempt takes, as the setup code does it: none in
+        # mission 11 (all four form its beast deck), all four with Evergreen boon 26
+        beasts: List[dict] = []
+        if camp.flags.get("beasts"):
+            setup = camp.evergreen_setup() if camp.finished else None
+            if setup is not None and any(int(b["n"]) == 26 for b in setup.get("boons", [])):
+                beasts = [dict(b) for b in M.BEASTS]
+            elif camp.beast and (camp.finished or camp.mission != 11):
+                b = M.beast_by_id(camp.beast)
+                beasts = [b] if b is not None else []
+        if beasts:
+            label = "Gøran's beasts · this Evergreen setup" if len(beasts) > 1 else "Gøran's beast · next attempt"
+            yy = heading(label, yy)
+            yy = card_row([P.to_card(b) for b in beasts], yy)
         cards = sorted(camp.party_cards(), key=lambda c: (c.suits[0] if c.suits else "Z", c.value))
         yy = heading("Party · %d cards" % len(cards), yy)
         yy = card_row(cards, yy)

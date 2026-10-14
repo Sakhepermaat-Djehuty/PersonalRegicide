@@ -38,6 +38,7 @@ def main(argv):
         print("wrote", path)
 
     app = App()
+    app.settings["rules_card"] = False   # straight to the hands (the rules card is checked in tests)
     app.show(MenuScreen(app))
     shot(app, "01_menu")
     app.show(NewGameScreen(app, 3))

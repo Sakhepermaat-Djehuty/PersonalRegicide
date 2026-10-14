@@ -143,3 +143,44 @@ def test_wild_animal_has_a_class_icon_in_each_corner_and_multi_class_pips_keep_t
         assert ("⛨", T.SUIT_COLOR["G"]) in calls and ("♥", T.SUIT_COLOR["H"]) in calls
     finally:
         ui.draw_string = real
+
+
+def test_the_rules_card_counts_as_seen_only_once_dismissed_and_returns_on_resume(app):
+    from app.screens import GameScreen, RulesOverlay
+    _tap(app, "New game")
+    _tap(app, "Start")
+    _tap(app, "Next mission: start")
+    assert isinstance(app.current.overlay, RulesOverlay)
+    assert app.campaign.flags.get("rules_seen", []) == []          # not yet dismissed
+    app.autosave()
+    assert app.resume_attempt()
+    assert isinstance(app.current, GameScreen) and isinstance(app.current.overlay, RulesOverlay)
+    _tap(app, "Got it")
+    assert app.campaign.flags["rules_seen"] == [1]
+    assert app.resume_attempt() and app.current.overlay is None
+
+
+def test_mission_rules_before_mission_12_show_the_restored_mother(app):
+    from app.screens import mission_rules_text
+    _tap(app, "New game")
+    _tap(app, "Start")
+    camp = app.campaign
+    camp.mission, camp.completed = 12, list(range(1, 12))
+    camp.relics.extend(["flute", "mother"])
+    text = mission_rules_text(camp)
+    assert "Evergreen Mother (restored)" in text and "Evergreen Mother (corrupt)" not in text
+
+
+def test_deck_list_beasts_follow_the_setup_rules(app):
+    from app.screens import PartyScreen
+    _tap(app, "New game")
+    _tap(app, "Start")
+    camp = app.campaign
+    camp.flags["beasts"] = True
+    camp.set_beast("B_H")
+    camp.mission = 10
+    app.show(PartyScreen(app))
+    assert "Gøran's beast · next attempt" in _texts(app)
+    camp.mission = 11                                                  # all four form the beast deck
+    app.show(PartyScreen(app))
+    assert not any(t.startswith("Gøran's beast") for t in _texts(app))
