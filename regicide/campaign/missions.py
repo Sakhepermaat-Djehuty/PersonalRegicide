@@ -678,12 +678,13 @@ GORAN: Dict[str, Any] = {"id": "GOR8", "rank": "8", "suits": [], "value": 8, "na
                          "subtitle": "Feltrix Evergreen", "flags": []}
 
 # Gøran's beasts (mission 4 reward): rank B, one per basic class, strength 0 on their own
-# and equal to the paired card's strength while attacking. Only Bonty's name was read.
+# and equal to the paired card's strength while attacking. Names from the card fronts:
+# Bonty the cleric, Cosmo the bard, Tui the warrior, Lola the paladin.
 BEASTS: List[Dict[str, Any]] = [
     {"id": "B_H", "rank": "B", "suits": ["H"], "value": 0, "name": "Bonty", "flags": ["beast"]},
-    {"id": "B_D", "rank": "B", "suits": ["D"], "value": 0, "name": "Bard beast", "flags": ["beast"]},
-    {"id": "B_C", "rank": "B", "suits": ["C"], "value": 0, "name": "Warrior beast", "flags": ["beast"]},
-    {"id": "B_S", "rank": "B", "suits": ["S"], "value": 0, "name": "Paladin beast", "flags": ["beast"]},
+    {"id": "B_D", "rank": "B", "suits": ["D"], "value": 0, "name": "Cosmo", "flags": ["beast"]},
+    {"id": "B_C", "rank": "B", "suits": ["C"], "value": 0, "name": "Tui", "flags": ["beast"]},
+    {"id": "B_S", "rank": "B", "suits": ["S"], "value": 0, "name": "Lola", "flags": ["beast"]},
 ]
 
 

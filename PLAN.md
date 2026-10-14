@@ -51,9 +51,9 @@ failure adds coins equal to the failures so far; hired mercenaries stay until th
 is won; same-cost swaps after each failure), the solo Jester text, second-edition
 Mission 6, and every mission's location, story, rules, summary, enemy stat and reward
 cards (missions 1 to 12), with all five relics on both sides, pack C, pack F and pack M.
-The owner has photographed the whole box. Small open
-points: the "Rules continued" side of mission 12 if it exists, the fronts of
-Gøran's four beasts, and whether mission 7's enemies are in corrupted sleeves.
+The owner has photographed the whole box, including the back of mission 12's rules
+card, Gøran's four beasts (Bonty, Cosmo, Tui, Lola) and mission 7's pondkin (plain
+sleeves). Nothing from the box is left open.
 
 **G3 — answered:** progressive reveal stays on. Campaigns are save files: main menu
 Continue / Load game / New game / Quick play / Lore (all games); game menu Next
