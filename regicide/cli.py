@@ -157,7 +157,15 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
             print("!", e)
         return True
     if game.phase == PHASE_DECIDE and (game.decision or {}).get("kind") != "flute_add":
-        # A choice offered as a short list (e.g. which mission zone card to rescue).
+        # A choice offered as a short list: which mission zone card to rescue, the Azure
+        # Emblem's keep (solo) or place (another player's card goes on the reserve).
+        d = game.decision or {}
+        if d.get("kind") == "emblem_keep":
+            print("Azure Emblem: %s may put one of the other revealed cards back on top of the reserve deck." % (
+                game.players[game.deciding].name))
+        elif d.get("kind") == "emblem_place":
+            print("Azure Emblem: %s may place one card from hand on top of the reserve deck before %s's mage looks." % (
+                game.players[game.deciding].name, game.players[game.active].name))
         acts = game.legal_actions()
         for i, a in enumerate(acts, 1):
             print("  %2d. %s" % (i, a.get("label", a["type"])))
@@ -230,8 +238,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print("bot adds " + " + ".join(game.card(c).label() for c in act["card_ids"]))
             elif act["type"] == "mage_pick":
                 print("bot adds %s to the attack (Mage)" % game.card(act["card"]).label())
+            elif act["type"] == "emblem_place":
+                print("bot places a card on top of the reserve (Azure Emblem)")
             else:
-                print("bot:", act["type"])
+                print("bot:", act.get("label", act["type"]))
             apply_action(game, act)
             continue
         if not human_turn(game, args.save):

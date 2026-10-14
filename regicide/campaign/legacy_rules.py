@@ -217,6 +217,20 @@ class LegacyRules(BaseRules):
                 return [{"type": "mage_pick", "player": player, "card": cid,
                          "label": "Add %s to the attack" % game.cards[cid].label()} for cid in eligible]
             return [{"type": "mage_skip", "player": player, "skip": True, "label": "Nothing to add"}]
+        if d and d.get("kind") == "emblem_keep":
+            player = int(d["player"])
+            acts = [{"type": "emblem_keep", "player": player, "card": str(cid),
+                     "label": "Keep %s on top of the reserve" % game.cards[str(cid)].label()}
+                    for cid in d.get("revealed", [])]
+            acts.append({"type": "emblem_skip", "player": player, "skip": True, "label": "Discard them all"})
+            return acts
+        if d and d.get("kind") == "emblem_place":
+            player = int(d["player"])
+            acts = [{"type": "emblem_place", "player": player, "card": cid,
+                     "label": "Place %s on top of the reserve" % game.cards[cid].label()}
+                    for cid in game.players[player].hand]
+            acts.append({"type": "emblem_pass", "player": player, "skip": True, "label": "Pass"})
+            return acts
         if not d or d.get("kind") != "flute_add":
             return []
         play = game.plays[int(d["play_index"])]
@@ -248,6 +262,12 @@ class LegacyRules(BaseRules):
             return
         if d and d.get("kind") == "mage_peek":
             self._mage_decide(game, d, action)
+            return
+        if d and d.get("kind") == "emblem_keep":
+            self._emblem_keep_decide(game, d, action)
+            return
+        if d and d.get("kind") == "emblem_place":
+            self._emblem_place_decide(game, d, action)
             return
         if not d or d.get("kind") != "flute_add":
             raise NotImplementedError(action)
@@ -289,10 +309,16 @@ class LegacyRules(BaseRules):
     # (p.23: an ace with a 9 of mages adding a 6 of bards draws 16 and deals 32) and the
     # whole attack is banished at clean-up (``Play.mage``, set by the engine). A short
     # reserve shows what there is; with nothing eligible everything revealed is discarded.
+    # The Azure Emblem (see below) hooks in before the first peek (2+ players) and after
+    # each pick (solo).
     def resolve_power(self, game, suit: str, value: int, cards: Sequence[Card]) -> Any:
         if suit == "M":
             if value <= 0:
                 return {"peek": 0}
+            if self._emblem(game) and game.config.players >= 2:
+                placing = self._emblem_place_start(game, value)
+                if placing is not None:
+                    return {"decision": placing}
             return {"decision": self._mage_peek(game, value)}
         return super().resolve_power(game, suit, value, cards)
 
@@ -326,30 +352,134 @@ class LegacyRules(BaseRules):
         return rest
 
     def _mage_decide(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
-        name = game.players[int(d["player"])].name
+        player = int(d["player"])
+        name = game.players[player].name
         if action["type"] == "mage_pick":
             cid = str(action["card"])
             play = game.mage_add_to_play(cid)
-            rest = self._mage_discard_rest(game, d)
             card = game.cards[cid]
-            game._event("mage_pick", player=int(d["player"]), card=cid, value=play.value, discarded=rest)
+            if self._emblem(game) and game.config.players == 1 and d.get("revealed"):
+                # Azure Emblem, solo side: the rest is not discarded yet, one of those cards
+                # may go back on top of the reserve first (``_emblem_keep_decide``).
+                game._event("mage_pick", player=player, card=cid, value=play.value, discarded=[])
+                game._say("%s adds %s to the attack (Mage): strength %d." % (name, card.label(), play.value))
+                d["kind"] = "emblem_keep"
+                d["picked"] = cid
+                d.pop("eligible", None)
+                game._event("decide", **d)
+                game._say("Azure Emblem: %s may put one of the other revealed cards back on top of the reserve deck." % name)
+                return
+            rest = self._mage_discard_rest(game, d)
+            game._event("mage_pick", player=player, card=cid, value=play.value, discarded=rest)
             tail = " %s to the discard pile." % " + ".join(game.cards[c].label() for c in rest) if rest else ""
             game._say("%s adds %s to the attack (Mage): strength %d.%s" % (name, card.label(), play.value, tail))
-            if "M" in card.suits and self.strength(card) > 0 and not game.immune("M", [card]):
-                game._say("%s is a mage too: look again with its own strength, %d." % (card.label(), self.strength(card)))
-                d.update(self._mage_peek(game, self.strength(card)))
-                game._event("decide", **d)
-                return
-            game.resolve_pending_attack()
+            self._mage_continue(game, d, card)
             return
         rest = self._mage_discard_rest(game, d)
-        game._event("mage_skip", player=int(d["player"]), discarded=rest)
+        game._event("mage_skip", player=player, discarded=rest)
         if rest:
             game._say("Mage: nothing may join the attack; %s to the discard pile." % (
                 " + ".join(game.cards[c].label() for c in rest)))
         else:
             game._say("Mage: nothing to add.")
         game.resolve_pending_attack()
+
+    def _mage_continue(self, game, d: Dict[str, Any], card: Card) -> None:
+        """After a pick (and the Emblem's keep, if any): a chosen mage looks again with its
+        own strength, unless its ability is blocked by immunity; otherwise the attack goes
+        on resolving with its new strength."""
+        d.pop("picked", None)
+        if "M" in card.suits and self.strength(card) > 0 and not game.immune("M", [card]):
+            game._say("%s is a mage too: look again with its own strength, %d." % (card.label(), self.strength(card)))
+            d.update(self._mage_peek(game, self.strength(card)))
+            game._event("decide", **d)
+            return
+        game.resolve_pending_attack()
+
+    # ------------------------------------------------------------------ Azure Emblem
+    # Card text (confirmed). Solo side: "When resolving a mage class ability, after
+    # selecting a card to be added to the attack, you may put one of the other cards you
+    # looked at on top of the reserve deck before discarding the rest." Offered after every
+    # pick of a chain (the once-per-attack limit is printed on the multiplayer side only),
+    # over every other revealed card, Jesters and corrupted ones included: they were looked
+    # at too, and the wording does not exclude them.
+    # Two or more players: "When you form an attack with a mage, before peeking at any
+    # cards, each other player may place one card from their hand on the top of the reserve
+    # deck. This power only happens once per attack: if you use a mage to add an additional
+    # mage to an attack, this relic power does not happen another time." Players are asked
+    # clockwise from the attacker's left, players with an empty hand are skipped, the
+    # placed cards stack with the last placed on top, then the mage peeks. A chained mage
+    # peeks without it, and nothing happens when immunity blocks the mage.
+    def _emblem(self, game) -> bool:
+        return "emblem" in game.extra.get("relics", [])
+
+    def _emblem_next(self, game, queue: Sequence[int]) -> Tuple[Optional[int], List[int]]:
+        """First queued player holding a card, and the players after them."""
+        rest = list(queue)
+        while rest:
+            p = rest.pop(0)
+            if game.players[p].hand:
+                return p, rest
+        return None, []
+
+    def _emblem_place_start(self, game, strength: int) -> Optional[Dict[str, Any]]:
+        attacker = game.active
+        queue = [(attacker + k) % game.n_players for k in range(1, game.n_players)]
+        player, rest = self._emblem_next(game, queue)
+        if player is None:
+            return None
+        game._say("Azure Emblem: %s may place a card on top of the reserve deck before %s's mage looks." % (
+            game.players[player].name, game.players[attacker].name))
+        return {"kind": "emblem_place", "player": player, "queue": rest, "strength": int(strength)}
+
+    def _emblem_place_decide(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        player = int(d["player"])
+        name = game.players[player].name
+        if action["type"] == "emblem_place":
+            cid = str(action["card"])
+            hand = game.players[player].hand
+            if cid not in hand:
+                from ..engine import IllegalAction
+                raise IllegalAction("Card %s is not in hand." % cid)
+            hand.remove(cid)
+            game.tavern.insert(0, cid)
+            game._event("emblem_place", player=player, card=cid)
+            game._say("%s places a card from hand on top of the reserve deck (Azure Emblem)." % name)
+        else:
+            game._event("emblem_pass", player=player)
+            game._say("%s places nothing on the reserve deck." % name)
+        nxt, rest = self._emblem_next(game, d.get("queue", []))
+        if nxt is not None:
+            d["player"] = nxt
+            d["queue"] = rest
+            game._event("decide", **d)
+            game._say("Azure Emblem: %s may place a card on top of the reserve deck." % game.players[nxt].name)
+            return
+        d.pop("queue", None)
+        d.update(self._mage_peek(game, int(d["strength"])))
+        game._event("decide", **d)
+
+    def _emblem_keep_decide(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        player = int(d["player"])
+        name = game.players[player].name
+        if action["type"] == "emblem_keep":
+            cid = str(action["card"])
+            revealed = [str(c) for c in d.get("revealed", [])]
+            if cid not in revealed:
+                from ..engine import IllegalAction
+                raise IllegalAction("Card %s was not revealed." % cid)
+            revealed.remove(cid)
+            d["revealed"] = revealed
+            game.tavern.insert(0, cid)
+            rest = self._mage_discard_rest(game, d)
+            game._event("emblem_keep", player=player, card=cid, discarded=rest)
+            tail = " %s to the discard pile." % " + ".join(game.cards[c].label() for c in rest) if rest else ""
+            game._say("Azure Emblem: %s puts %s back on top of the reserve deck.%s" % (name, game.cards[cid].label(), tail))
+        else:
+            rest = self._mage_discard_rest(game, d)
+            game._event("emblem_skip", player=player, discarded=rest)
+            game._say("Azure Emblem: nothing kept; %s to the discard pile." % " + ".join(game.cards[c].label() for c in rest))
+        self._mage_continue(game, d, game.cards[str(d["picked"])])
 
     # ------------------------------------------------------------------ corruption
     def on_cards_played(self, game, cards: Sequence[Card]) -> None:

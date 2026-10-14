@@ -280,6 +280,7 @@ unspent coins on success, which the sticker does not say (unverified).
   the player.
 * 2/5 and Wild Animal declarations on entering play.
 * Relics with separate solo and multiplayer sides.
+* **Done:** the Mage decision (peek, mandatory pick, chained mages, banished at clean-up even when immunity blocked the ability) and both sides of the Azure Emblem (solo keep after each pick; 2+ players place on the reserve once per attack, before the first peek).
 
 ## Mission 1, Call to Arms (confirmed, transcribed from the owner's photos)
 

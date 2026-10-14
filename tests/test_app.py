@@ -593,3 +593,139 @@ def test_mission3_zone_strip_and_exact_kill_pick_overlay(app):
     ui.tap(app, *ui.root_point(app, btns[0]))
     assert g.phase == "play" and g.enemies_defeated == 1 and "4H" in g.discard and gs.overlay is None
     assert g.mission_zone == [] and "(empty)" in gs.zone.title
+
+
+# ---------------------------------------------------------------------------- mages
+def _mage_attempt(app, names=("Solo",), relics=("emblem",), corrupted=()):
+    from regicide.campaign import missions as M
+    from regicide.campaign import party as P
+    app.new_campaign(len(names), list(names))
+    for d in M.MAGE_DECK:
+        P.add_card(app.campaign.party, dict(d))
+    for cid in corrupted:
+        P.add_flag(app.campaign.party, cid, "corrupted")
+    app.campaign.relics.extend(relics)
+    app.start_attempt()
+    gs = _game_screen(app)
+    return gs, app.game
+
+
+def test_mage_peek_overlay_then_emblem_keep_overlay(app):
+    from app import store
+    from app.screens import EmblemKeepOverlay, MagePeekOverlay
+    from app.widgets import CardStrip
+    gs, g = _mage_attempt(app, corrupted=("7D",))
+    set_enemy(g, "K", "H")
+    set_hand(g, ["5M", "9S", "8S", "7S", "6S"])
+    set_tavern_top(g, ["6C", "7D", "4H", "3S", "2S", "AD"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["5M"])
+    assert "The mage reveals 5 cards" in gs.message.text and "5 damage" in gs.message.text
+    assert g.tavern[:6] == ["6C", "7D", "4H", "3S", "2S", "AD"]       # the preview left the reserve alone
+    _tap_button(app, "Play")
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "mage_peek"
+    assert isinstance(gs.overlay, MagePeekOverlay)
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert "Mage: 5 cards revealed" in texts
+    strip = ui.find(gs.overlay, lambda v: isinstance(v, CardStrip))[0]
+    assert [c.id for c in strip.cards] == ["6C", "7D", "4H", "3S", "2S"] and strip.dimmed == ["7D"]
+    assert len(strip.subviews) == 5 and [v.dimmed for v in strip.subviews] == [False, True, False, False, False]
+    adds = [b.title for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Add"))]
+    assert adds == ["Add 6♣ to the attack", "Add 4♥ to the attack", "Add 3♠ to the attack", "Add 2♠ to the attack"]
+    assert ui.render(app).size[0] > 0
+    assert store.load_attempt(app.campaign.slot).phase == PHASE_DECIDE  # autosaved mid-peek
+    _tap_button(app, "Add 6♣ to the attack")
+    assert g.plays[0].card_ids == ["5M", "6C"] and g.plays[0].value == 11
+    assert "adds 6♣ to the attack (Mage, strength 11)" in gs.message_text and "Azure Emblem" in gs.message_text
+    # Azure Emblem, solo: one of the other revealed cards may go back on top of the reserve
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "emblem_keep"
+    assert isinstance(gs.overlay, EmblemKeepOverlay)
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert "Azure Emblem" in texts
+    keeps = [b.title for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Keep"))]
+    assert keeps == ["Keep 7♦ on top of the reserve", "Keep 4♥ on top of the reserve",
+                     "Keep 3♠ on top of the reserve", "Keep 2♠ on top of the reserve"]
+    assert ui.button(app, "Discard them all")
+    assert ui.render(app).size[0] > 0
+    _tap_button(app, "Keep 4♥ on top of the reserve")
+    assert g.tavern[:2] == ["4H", "AD"] and {"7D", "3S", "2S"} <= set(g.discard)
+    assert g.decision is None and g.phase == PHASE_SUFFER and g.enemy.hp == 40 - 22
+    assert gs.overlay is None and gs.right_btn.title == "Discard"
+    assert "4♥ goes back on top of the reserve" in gs.message_text and "22 damage" in gs.message_text
+    assert store.load_attempt(app.campaign.slot).to_dict() == g.to_dict()
+    # undo steps back into the keep decision, then (through the overlay's own menu button,
+    # the decision cannot be dismissed) into the peek; Resume brings the overlay back
+    _tap_button(app, "Menu")
+    _tap_button(app, "Undo last action")
+    assert app.game.decision["kind"] == "emblem_keep" and isinstance(gs.overlay, EmblemKeepOverlay)
+    _tap_button(app, "Game menu")
+    _tap_button(app, "Resume")
+    assert isinstance(gs.overlay, EmblemKeepOverlay)
+    _tap_button(app, "Game menu")
+    _tap_button(app, "Undo last action")
+    assert app.game.decision["kind"] == "mage_peek" and isinstance(gs.overlay, MagePeekOverlay)
+    assert ui.render(app).size[0] > 0
+
+
+def test_mage_peek_overlay_with_nothing_to_add(app):
+    from app.screens import MagePeekOverlay
+    gs, g = _mage_attempt(app, relics=(), corrupted=("7D",))
+    set_enemy(g, "K", "H")
+    set_hand(g, ["AM", "9S", "8S", "7S", "6S"])
+    set_tavern_top(g, ["7D"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["AM"])
+    assert "The mage reveals 1 card" in gs.message.text
+    _tap_button(app, "Play")
+    assert isinstance(gs.overlay, MagePeekOverlay)
+    assert not ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Add"))
+    _tap_button(app, "Nothing to add")
+    assert g.decision is None and g.phase == PHASE_SUFFER and g.enemy.hp == 39 and "7D" in g.discard
+    assert "nothing may join the attack" in gs.message_text
+
+
+def test_emblem_place_handover_flow_for_two_players(app):
+    from app.screens import DecisionOverlay, HandoverOverlay, MagePeekOverlay
+    gs, g = _mage_attempt(app, names=("Ana", "Ben"))
+    set_enemy(g, "J", "H")
+    set_hand(g, ["5M", "9S", "8S"], player=0)
+    set_hand(g, ["7C", "3D", "AS"], player=1)
+    set_tavern_top(g, ["6C", "4H", "3S", "2S", "2D"])
+    gs.reveal_hand()
+    gs.hand.set_selection(["5M"])
+    assert "Azure Emblem" in gs.message.text and "reveals 5 cards" in gs.message.text
+    _tap_button(app, "Play")
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "emblem_place" and g.deciding == 1
+    # Ben is asked first, flute-style: a handover panel, then his hand
+    assert isinstance(gs.overlay, DecisionOverlay) and gs.hand.cards == []
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert any("Ben: place a card for Ana's 5★ attack?" in t for t in texts)
+    assert any(t.startswith("Azure Emblem") for t in texts)
+    assert ui.render(app).size[0] > 0
+    _tap_button(app, "Show my hand")
+    assert gs.overlay is None and [c.id for c in gs.hand.cards] == ["7C", "3D", "AS"]
+    assert gs.left_btn.title == "Pass" and gs.left_btn.enabled
+    assert gs.right_btn.title == "Place" and not gs.right_btn.enabled and gs.mid_btn.hidden
+    assert "Azure Emblem" in gs.message.text
+    _tap_card(app, gs, "7C")
+    assert gs.hand.selected == ["7C"] and gs.right_btn.enabled and "7♣" in gs.message.text
+    _tap_card(app, gs, "3D")                       # only one card may be placed
+    assert gs.hand.selected == ["3D"] and gs.right_btn.enabled
+    _tap_card(app, gs, "3D")
+    assert gs.hand.selected == [] and not gs.right_btn.enabled
+    _tap_card(app, gs, "7C")
+    _tap_button(app, "Place")
+    # Ben was the last to ask, so the mage looks at once: his card is the first revealed
+    assert "7C" not in g.players[1].hand and g.tavern[0] == "2D"
+    assert "Ben places a card on top of the reserve" in gs.message_text
+    # the phone goes back to Ana before her secret look
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "mage_peek" and g.deciding == 0
+    assert isinstance(gs.overlay, HandoverOverlay) and gs.hand.cards == []
+    _tap_button(app, "Show my hand")
+    assert isinstance(gs.overlay, MagePeekOverlay)
+    assert g.decision["revealed"] == ["7C", "6C", "4H", "3S", "2S"]
+    assert ui.render(app).size[0] > 0
+    _tap_button(app, "Add 7♣")          # five options: two columns with short titles
+    # (5 + 7) doubled kills the Justicar; the mage attack is banished and Ana plays on
+    assert g.enemies_defeated == 1 and "5M" in g.banished and "7C" in g.banished
+    assert g.phase == PHASE_PLAY and g.active == 0 and gs.overlay is None

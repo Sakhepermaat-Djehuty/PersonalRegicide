@@ -102,8 +102,8 @@ def evaluate(game: Game) -> float:
 
 def _settle_decisions(g: Game) -> None:
     """Finish the decisions a simulated action runs into, the simple way: decline when a
-    "do nothing" option exists (Kinfolk Flute), otherwise take the strongest eligible
-    card (a mage's pick, which is mandatory) or the first option (a zone rescue)."""
+    "do nothing" option exists (Kinfolk Flute, Azure Emblem), otherwise take the strongest
+    eligible card (a mage's pick, which is mandatory) or the first option (a zone rescue)."""
     steps = 0
     while g.phase == PHASE_DECIDE and steps < 100:
         steps += 1
@@ -119,22 +119,43 @@ def _settle_decisions(g: Game) -> None:
             apply_action(g, acts[0])
 
 
-def _simulate_turn(game: Game, action: dict) -> Game:
-    """Apply an action on a copy and, if damage follows, pay it with the cheapest cover.
-
-    A play that pauses for other players' decisions (Kinfolk Flute) is forecast as if they
-    all declined; a mage peek as if the strongest eligible card were added."""
-    g = copy.deepcopy(game)
-    apply_action(g, action)
-    _settle_decisions(g)
-    if g.phase == PHASE_SUFFER and g.active == game.active:
+def _pay_cheapest(g: Game, actor: int) -> None:
+    """If ``actor`` must suffer damage now, pay it with the cheapest cover (a solo Jester
+    refresh first when the hand cannot cover it)."""
+    if g.phase == PHASE_SUFFER and g.active == actor:
         if g.hand_defence_value() >= g.pending_damage:
             g.suffer(min_waste_discard(g))
         elif g.can_use_solo_jester():
             g.use_solo_jester()
             if g.phase == PHASE_SUFFER and g.hand_defence_value() >= g.pending_damage:
                 g.suffer(min_waste_discard(g))
+
+
+def _simulate_turn(game: Game, action: dict) -> Game:
+    """Apply an action on a copy and, if damage follows, pay it with the cheapest cover.
+
+    A play that pauses for other players' decisions (Kinfolk Flute, Azure Emblem) is
+    forecast as if they all declined; a mage peek as if the strongest eligible card were
+    added."""
+    g = copy.deepcopy(game)
+    apply_action(g, action)
+    _settle_decisions(g)
+    _pay_cheapest(g, game.active)
     return g
+
+
+def _mage_pick_key(game: Game, act: dict) -> tuple:
+    """Rank a mage pick by its one-ply outcome: an exact kill first, then any kill, then
+    the damage dealt, then the material evaluation, then the card's own strength."""
+    g = copy.deepcopy(game)
+    apply_action(g, act)
+    _settle_decisions(g)
+    # The resolution ends in the last decision applied, whose events are still in place.
+    exact = any(ev["t"] == "defeat" and ev.get("exact") for ev in g.last_events)
+    damage = max([int(ev["amount"]) for ev in g.last_events if ev["t"] == "damage"] or [0])
+    defeated = g.enemies_defeated > game.enemies_defeated
+    _pay_cheapest(g, game.active)
+    return (1 if exact else 0, 1 if defeated else 0, damage, evaluate(g), game.cards[act["card"]].value)
 
 
 def greedy_policy(game: Game, rng=None) -> dict:
@@ -180,17 +201,22 @@ def greedy_policy(game: Game, rng=None) -> dict:
 
 
 def decision_policy(game: Game) -> dict:
-    """Kinfolk Flute and similar: join the attack only when that finishes the enemy.
+    """Kinfolk Flute and the Azure Emblem's placing: give cards to the attack only when
+    that finishes the enemy.
 
     Among the additions that defeat the enemy, prefer an exact kill (the enemy joins the
-    tavern deck), then the fewest cards; otherwise keep the cards and pass. A mage's pick
-    is mandatory: take the revealed card whose one-ply outcome evaluates best (ties go to
-    the strongest card)."""
+    tavern deck), then the fewest / cheapest cards; otherwise keep the cards and pass. A
+    mage's pick is mandatory: take the revealed card whose one-ply outcome ranks best
+    (``_mage_pick_key``); with nothing eligible the only option is to add nothing. The
+    Emblem's solo keep takes whichever option (a kept card or none) evaluates best."""
     acts = game.legal_actions()
     skip = [a for a in acts if a.get("skip")]
+    kind = (game.decision or {}).get("kind")
     picks = [a for a in acts if a["type"] == "mage_pick"]
     if picks:
-        return max(picks, key=lambda a: (evaluate(_simulate_turn(game, a)), game.cards[a["card"]].value))
+        return max(picks, key=lambda a: _mage_pick_key(game, a))
+    if kind == "emblem_keep":
+        return max(acts, key=lambda a: (evaluate(_simulate_turn(game, a)), 1 if a.get("skip") else 0))
     best: Optional[dict] = None
     best_key = None
     for act in acts:
@@ -203,7 +229,8 @@ def decision_policy(game: Game) -> dict:
         if not defeated:
             continue
         exact = any(ev["t"] == "defeat" and ev.get("exact") for ev in g.last_events)
-        key = (0 if exact else 1, len(act.get("card_ids") or []))
+        given = game.cards[act["card"]].value if act.get("card") else 0
+        key = (0 if exact else 1, len(act.get("card_ids") or []), given)
         if best_key is None or key < best_key:
             best_key = key
             best = act

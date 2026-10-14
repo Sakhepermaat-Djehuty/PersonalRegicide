@@ -23,6 +23,13 @@ from .widgets import (CardStrip, EnemyPanel, HandGrid, make_button, make_label, 
 
 VERSION = "alpha 3"
 
+# Relic ids (campaign saves, ``game.extra["relics"]``) -> the names printed on the cards.
+RELIC_NAMES: Dict[str, str] = {"flute": "Kinfolk Flute", "whistle": "Scarlet Whistle", "emblem": "Azure Emblem"}
+
+
+def relic_name(relic_id: str) -> str:
+    return RELIC_NAMES.get(relic_id, relic_id)
+
 
 def suit_name(game: Game, s: str) -> str:
     if game.config.rules_id.startswith("legacy"):
@@ -507,11 +514,26 @@ class GameScreen(Screen):
         if g.phase == PHASE_CHOOSE_NEXT:
             self._show_overlay(ChooseNextOverlay(self))
             return
-        if g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") != "flute_add":
-            # a decision of the current player's own (e.g. which mission zone card to rescue)
+        kind = (g.decision or {}).get("kind") if g.phase == PHASE_DECIDE else None
+        if kind is not None and kind not in ("flute_add", "emblem_place", "mage_peek", "emblem_keep"):
+            # a decision of the current player's own with a short list of options (which
+            # mission zone card to rescue, and whatever later missions add)
             self._show_overlay(PickOverlay(self))
             return
-        # The seat whose hand is shown: the attacker, or whoever must decide (Kinfolk Flute).
+        if kind in ("mage_peek", "emblem_keep"):
+            # The attacker's secret look at the reserve. In pass-and-play another player may
+            # hold the phone (a Kinfolk Flute or Azure Emblem decision came first): hand it
+            # back before the revealed cards are shown.
+            seat = g.deciding
+            if g.n_players > 1 and self.shown_player != seat and not g.config.open_hands:
+                self.hand.set_cards([])
+                self._show_overlay(HandoverOverlay(self))
+                return
+            self.shown_player = seat
+            self._show_overlay(MagePeekOverlay(self) if kind == "mage_peek" else EmblemKeepOverlay(self))
+            return
+        # The seat whose hand is shown: the attacker, or whoever must decide (Kinfolk
+        # Flute, Azure Emblem).
         seat = g.deciding
         needs_handover = (g.n_players > 1 and self.shown_player != seat
                           and (not g.config.open_hands or g.phase == PHASE_DECIDE))
@@ -590,6 +612,30 @@ class GameScreen(Screen):
                 self.message.text += " Your hand is short: use the Jester power."
             elif feign:
                 self.message.text += " At the hand limit you may feign death: discard everything."
+        elif g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") == "emblem_place":
+            # Azure Emblem, 2+ players: the shown hand belongs to another player, who may
+            # place one card face down on top of the reserve before the attacker's mage looks.
+            if len(sel) > 1:
+                self.hand.set_selection(sel[-1:])   # re-enters here with one card selected
+                return
+            self.hand.selectable = lambda c: True
+            self.hand.refresh_dim()
+            self.left_btn.title = "Pass"
+            set_enabled(self.left_btn, True, False)
+            self.mid_btn.hidden = True
+            self.right_btn.title = "Place"
+            set_enabled(self.right_btn, len(sel) == 1)
+            d = g.decision or {}
+            play = g.plays[int(d.get("play_index", len(g.plays) - 1))]
+            attacker = g.players[play.player].name
+            attack = " + ".join(g.card(c).label() for c in play.card_ids)
+            who = g.players[g.deciding].name
+            if sel:
+                self.message.text = "%s places %s face down on top of the reserve deck: %s's mage reveals it first." % (
+                    who, g.card(sel[0]).label(), attacker)
+            else:
+                self.message.text = ("%s: place one card on the reserve deck for %s's %s attack (Azure Emblem)? "
+                                     "Select a card and tap Place, or Pass." % (who, attacker, attack))
         elif g.phase == PHASE_DECIDE:
             # Kinfolk Flute: the shown hand belongs to the deciding player; only cards that
             # keep the attack a valid kinfolk attack may be selected.
@@ -655,7 +701,10 @@ class GameScreen(Screen):
             else:
                 self.hand.set_selection(min_waste_discard(g))
         elif g.phase == PHASE_DECIDE:
-            self._act(g.flute_pass)
+            if (g.decision or {}).get("kind") == "emblem_place":
+                self._act(lambda: g.decide({"type": "emblem_pass"}))
+            else:
+                self._act(g.flute_pass)
 
     def _special(self, sender) -> None:
         self._show_overlay(SpecialOverlay(self))
@@ -682,7 +731,10 @@ class GameScreen(Screen):
         elif g.phase == PHASE_SUFFER:
             self._act(lambda: g.suffer(sel))
         elif g.phase == PHASE_DECIDE:
-            self._act(lambda: g.flute_add(sel))
+            if (g.decision or {}).get("kind") == "emblem_place":
+                self._act(lambda: g.decide({"type": "emblem_place", "card": sel[0]}))
+            else:
+                self._act(lambda: g.flute_add(sel))
 
     def choose_next(self, player: int) -> None:
         g = self.game
@@ -763,8 +815,9 @@ class HandoverOverlay(Overlay):
 
 
 class DecisionOverlay(Overlay):
-    """Kinfolk Flute: another player may add to the attack on the table. Names the
-    deciding player and the attack, then reveals that player's hand on request."""
+    """Another player must decide about the attack on the table (Kinfolk Flute: add to it;
+    Azure Emblem: place a card on the reserve before the mage looks). Names the deciding
+    player and the attack, then reveals that player's hand on request."""
 
     def build(self) -> List[ui.View]:
         g = self.screen.game
@@ -777,9 +830,14 @@ class DecisionOverlay(Overlay):
         if not g.config.open_hands:
             items.append(make_label("Pass the phone to", (0, 0, 10, 24), 15, False, T.MUTED, ui.ALIGN_CENTER))
         items.append(make_label(who, (0, 0, 10, 40), 28, True, T.ACCENT, ui.ALIGN_CENTER))
-        items.append(make_label("%s: add to %s's %s attack?" % (who, attacker, attack), (0, 0, 10, 44), 16, True, T.TEXT, ui.ALIGN_CENTER, 2))
-        items.append(make_label("Kinfolk Flute: you may add %ss from your hand as long as the whole attack stays "
-                                "at 10 or less, or pass." % d.get("strength"), (0, 0, 10, 60), 13, False, T.TEXT, ui.ALIGN_CENTER, 3))
+        if d.get("kind") == "emblem_place":
+            items.append(make_label("%s: place a card for %s's %s attack?" % (who, attacker, attack), (0, 0, 10, 44), 16, True, T.TEXT, ui.ALIGN_CENTER, 2))
+            items.append(make_label("Azure Emblem: before the mage looks at the reserve deck you may place one card "
+                                    "from your hand face down on top of it, or pass.", (0, 0, 10, 60), 13, False, T.TEXT, ui.ALIGN_CENTER, 3))
+        else:
+            items.append(make_label("%s: add to %s's %s attack?" % (who, attacker, attack), (0, 0, 10, 44), 16, True, T.TEXT, ui.ALIGN_CENTER, 2))
+            items.append(make_label("Kinfolk Flute: you may add %ss from your hand as long as the whole attack stays "
+                                    "at 10 or less, or pass." % d.get("strength"), (0, 0, 10, 60), 13, False, T.TEXT, ui.ALIGN_CENTER, 3))
         items.append(make_button("Show my hand", lambda s: self.screen.reveal_hand(), (0, 0, 10, 50)))
         return items
 
@@ -805,6 +863,111 @@ class PickOverlay(Overlay):
             items.append(make_button(a.get("label", a["type"]),
                                      (lambda act: lambda s: self.screen.decide(act))(a), (0, 0, 10, 46)))
         return items
+
+
+class MagePeekOverlay(Overlay):
+    """The Mage's secret look: the cards taken from the top of the reserve in a row (Jesters
+    and corrupted cards dimmed, they are discarded), one button per card that may join the
+    attack, or a single "Nothing to add" when none may."""
+
+    def heading(self, g: Game, d: dict) -> tuple:
+        revealed = list(d.get("revealed", []))
+        n = len(revealed)
+        if n == 0:
+            return ("Mage: the reserve deck is empty", "There was nothing to look at. The attack goes on resolving as it is.")
+        title = "Mage: %d card%s revealed" % (n, "" if n == 1 else "s")
+        strength = int(d.get("strength", n))
+        text = "You looked at the top %d card%s of the reserve deck%s. Jesters and corrupted cards are discarded. " \
+               "Choose one of the rest to add to the attack; the others go to the discard pile." % (
+                   n, "" if n == 1 else "s", "" if n == strength else " (the mage's strength is %d, the deck was short)" % strength)
+        if not d.get("eligible"):
+            text = "You looked at the top %d card%s of the reserve deck, but none of them may join the attack: " \
+                   "Jesters and corrupted cards are discarded." % (n, "" if n == 1 else "s")
+        return (title, text)
+
+    def dimmed_ids(self, g: Game, d: dict) -> List[str]:
+        eligible = set(str(c) for c in d.get("eligible", []))
+        return [str(c) for c in d.get("revealed", []) if str(c) not in eligible]
+
+    MANY = 4   # more card options than this go in two columns with short titles
+
+    def build_parts(self) -> tuple:
+        """(heading views, one button per card option, trailing views)."""
+        g = self.screen.game
+        d = g.decision or {}
+        title, text = self.heading(g, d)
+        head: List[ui.View] = [
+            make_label(title, (0, 0, 10, 36), 20, True, T.ACCENT, ui.ALIGN_CENTER),
+            make_label(text, (0, 0, 10, 76), 13, False, T.TEXT, ui.ALIGN_CENTER, 4),
+        ]
+        revealed = [g.card(str(c)) for c in d.get("revealed", [])]
+        if revealed:
+            strip = CardStrip(frame=(0, 0, 10, 84))
+            strip.set_cards(revealed, "Revealed from the reserve deck (top first)", self.dimmed_ids(g, d))
+            head.append(strip)
+        acts = g.legal_actions()
+        cards = [a for a in acts if a.get("card")]
+        options: List[ui.View] = []
+        for a in cards:
+            title = a.get("label", a["type"])
+            if len(cards) > self.MANY:
+                title = "%s %s" % ("Keep" if a["type"] == "emblem_keep" else "Add", g.card(a["card"]).label())
+            options.append(make_button(title, (lambda act: lambda s: self.screen.decide(act))(a), (0, 0, 10, 44)))
+        tail: List[ui.View] = []
+        for a in acts:
+            if not a.get("card"):
+                tail.append(make_button(a.get("label", a["type"]),
+                                        (lambda act: lambda s: self.screen.decide(act))(a), (0, 0, 10, 44), not a.get("skip")))
+        # The decision cannot be dismissed, so the game menu (undo, log, save) is offered here.
+        tail.append(make_button("Game menu", lambda s: self.screen._menu(s), (0, 0, 10, 36), False, 13))
+        return head, options, tail
+
+    def build(self) -> List[ui.View]:
+        head, options, tail = self.build_parts()
+        return head + options + tail
+
+    def layout(self) -> None:
+        if not hasattr(self, "panel") or not hasattr(self, "screen"):
+            return
+        for v in list(self.panel.subviews):
+            self.panel.remove_subview(v)
+        pw = min(340, self.width - 2 * T.MARGIN)
+        head, options, tail = self.build_parts()
+        y = 20
+        for v in head:
+            v.frame = (20, y, pw - 40, v.height)
+            self.panel.add_subview(v)
+            y += v.height + 12
+        cols = 2 if len(options) > self.MANY else 1
+        gap = 8 if cols == 2 else 12
+        bw = (pw - 40 - gap * (cols - 1)) / cols
+        bh = 40 if cols == 2 else 44
+        for i, b in enumerate(options):
+            r, c = divmod(i, cols)
+            b.frame = (20 + c * (bw + gap), y + r * (bh + gap), bw, bh)
+            self.panel.add_subview(b)
+        rows = (len(options) + cols - 1) // cols
+        if rows:
+            y += rows * (bh + gap) - gap + 12
+        for v in tail:
+            v.frame = (20, y, pw - 40, v.height)
+            self.panel.add_subview(v)
+            y += v.height + 12
+        ph = y + 8
+        self.panel.frame = ((self.width - pw) / 2, max(T.TOP_INSET, (self.height - ph) / 2), pw, ph)
+
+
+class EmblemKeepOverlay(MagePeekOverlay):
+    """Azure Emblem, solo: after the pick, one of the other revealed cards may go back on
+    top of the reserve deck before the rest is discarded."""
+
+    def heading(self, g: Game, d: dict) -> tuple:
+        picked = g.card(str(d.get("picked", ""))).label() if d.get("picked") in g.cards else "the chosen card"
+        return ("Azure Emblem", "%s joined the attack. You may put one of the other revealed cards on top of the "
+                                "reserve deck before the rest goes to the discard pile." % picked)
+
+    def dimmed_ids(self, g: Game, d: dict) -> List[str]:
+        return []
 
 
 class ChooseNextOverlay(Overlay):
@@ -1429,9 +1592,21 @@ def describe_preview(g: Game, pv: dict) -> str:
         s += " (%d left), then suffer %d" % (pv["enemy_hp_after"], pv["enemy_attack_after"])
     if parts:
         s = ", ".join(parts) + ". " + s
-    if pv.get("decision"):
-        s = "If nobody adds (Kinfolk Flute): " + s
-    return s
+    # Forecasts assume nobody adds anything: not the other players (Kinfolk Flute, Azure
+    # Emblem) and not the mage, whose revealed cards stay secret until the play is made.
+    prefix = ""
+    if pv.get("decision_kind") == "flute_add":
+        prefix = "If nobody adds (Kinfolk Flute): "
+    elif pv.get("decision_kind") == "emblem_place":
+        prefix = "Azure Emblem: the others may place cards on the reserve first. "
+    peeks = pv.get("mage_peeks") or []
+    if peeks:
+        n = int(peeks[0])
+        if n:
+            prefix += "The mage reveals %d card%s from the reserve. If nothing is added: " % (n, "" if n == 1 else "s")
+        else:
+            prefix += "The reserve deck is empty, the mage has nothing to reveal. "
+    return prefix + s
 
 
 def describe_events(g: Game) -> str:
@@ -1468,11 +1643,44 @@ def describe_events(g: Game) -> str:
             parts.append("No damage to suffer.")
         elif t == "decide" and ev.get("kind") == "flute_add":
             parts.append("Kinfolk Flute: %s may add %ss." % (g.players[int(ev["player"])].name, ev.get("strength")))
-        elif t == "add_to_play":
+        elif t == "add_to_play" and ev.get("source") != "mage":
             parts.append("%s adds %s (attack %d)." % (
                 g.players[int(ev["player"])].name, " + ".join(g.card(c).label() for c in ev["cards"]), ev["value"]))
         elif t == "flute_pass":
             parts.append("%s adds nothing." % g.players[int(ev["player"])].name)
+        elif t == "mage_peek":
+            n = int(ev.get("count", 0))
+            if n:
+                parts.append("Mage: %s looks at %d card%s from the reserve." % (
+                    g.players[int(ev["player"])].name, n, "" if n == 1 else "s"))
+            else:
+                parts.append("Mage: the reserve deck is empty.")
+        elif t == "mage_pick":
+            parts.append("%s adds %s to the attack (Mage, strength %d)." % (
+                g.players[int(ev["player"])].name, g.card(ev["card"]).label(), int(ev["value"])))
+            if ev.get("discarded"):
+                parts.append("%s to the discard pile." % " + ".join(g.card(c).label() for c in ev["discarded"]))
+        elif t == "mage_skip":
+            if ev.get("discarded"):
+                parts.append("Mage: nothing may join the attack; %s to the discard pile." % (
+                    " + ".join(g.card(c).label() for c in ev["discarded"])))
+            else:
+                parts.append("Mage: nothing to add.")
+        elif t == "decide" and ev.get("kind") == "emblem_keep":
+            parts.append("Azure Emblem: keep one of the other revealed cards on top of the reserve?")
+        elif t == "emblem_keep":
+            parts.append("Azure Emblem: %s goes back on top of the reserve." % g.card(ev["card"]).label())
+            if ev.get("discarded"):
+                parts.append("%s to the discard pile." % " + ".join(g.card(c).label() for c in ev["discarded"]))
+        elif t == "emblem_skip":
+            parts.append("Azure Emblem: nothing kept%s." % (
+                "; %s to the discard pile" % " + ".join(g.card(c).label() for c in ev["discarded"]) if ev.get("discarded") else ""))
+        elif t == "decide" and ev.get("kind") == "emblem_place":
+            parts.append("Azure Emblem: %s may place a card on the reserve." % g.players[int(ev["player"])].name)
+        elif t == "emblem_place":
+            parts.append("%s places a card on top of the reserve (Azure Emblem)." % g.players[int(ev["player"])].name)
+        elif t == "emblem_pass":
+            parts.append("%s places nothing." % g.players[int(ev["player"])].name)
         elif t == "zone_add":
             parts.append("%s goes into the mission zone." % g.card(ev["card"]).label())
         elif t == "decide" and ev.get("kind") == "zone_rescue":
@@ -1646,7 +1854,8 @@ class ProgressScreen(TextScreen):
         total_attempts = sum(camp.attempts.values())
         total_losses = sum(camp.losses.values())
         lines.append("Missions completed: %d of 12 · attempts %d · losses %d" % (len(camp.completed), total_attempts, total_losses))
-        lines.append("Party %d cards · corrupted %d · relics: %s" % (len(camp.party), len(camp.corrupted), ", ".join(camp.relics) or "none"))
+        lines.append("Party %d cards · corrupted %d · relics: %s" % (
+            len(camp.party), len(camp.corrupted), ", ".join(relic_name(r) for r in camp.relics) or "none"))
         lines.append("")
         for mi in MISSIONS:
             n = mi["number"]

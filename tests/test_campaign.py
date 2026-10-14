@@ -976,3 +976,477 @@ def test_mission6_setup_and_rewards_follow_the_cards():
     assert step["kind"] == "choice_suit" and step["options"] == ["8H", "8D", "8C"]
     c.resolve_choice("8C")
     assert P.find(c.party, "8C")["suits"] == ["C", "G"] and not c.pending
+
+
+# ---------------------------------------------------------------- Mages (rulebook p.16, p.23)
+def _mage_campaign(players=1, seed=100, relics=(), corrupted=()):
+    """A mission 1 attempt whose party also holds the Mage class deck (A to 10 of mages)."""
+    names = ["Ana", "Ben", "Cy"][:players]
+    c = CampaignState.new(players, names, seed=seed)
+    for d in M.MAGE_DECK:
+        P.add_card(c.party, dict(d))
+    for cid in corrupted:
+        P.add_flag(c.party, cid, "corrupted")
+    c.relics.extend(relics)
+    g = c.start_attempt(seed=seed)
+    return c, g
+
+
+def _powers(g):
+    return [(ev["suit"], ev) for ev in g.last_events if ev["t"] == "power"]
+
+
+def test_mage_example_ace_and_nine_adds_a_bard_strength_16_draws_16_deals_32():
+    # p.23: an ace (of warriors) with a 9 of mages peeks at 10 cards and adds a 6 of bards:
+    # strength 16, draw 16, 32 damage. Three empty hands so that all 16 can be drawn.
+    c, g = _mage_campaign(3, seed=101)
+    set_enemy(g, "K", "H")
+    set_hand(g, ["AC", "9M"], 0)
+    set_hand(g, [], 1)
+    set_hand(g, [], 2)
+    top = ["6D", "2C", "3C", "4C", "5C", "2S", "3S", "4S", "5S", "6S"]
+    set_tavern_top(g, top)
+    rest_of_reserve = g.tavern[10:]
+    g.play(["AC", "9M"])
+    # step 2 pauses on the mage: the attacker decides, the revealed cards are out of the reserve
+    assert g.phase == PHASE_DECIDE and g.active == 0 and g.deciding == 0
+    d = g.decision
+    assert d["kind"] == "mage_peek" and d["strength"] == 10 and d["revealed"] == top and d["eligible"] == top
+    assert d["play_index"] == 0 and d["resume"] == "resolve" and d["done_suits"] == ["M"] and d["damage"] == 10
+    assert g.tavern == rest_of_reserve and sorted(g.all_card_ids()) == sorted(g.cards)
+    assert g.enemy.hp == 40 and g.plays[0].card_ids == ["AC", "9M"] and g.plays[0].mage
+    assert any(ev["t"] == "mage_peek" and ev["count"] == 10 for ev in g.last_events)
+    acts = g.legal_actions()
+    assert [a["label"] for a in acts] == ["Add %s to the attack" % g.cards[x].label() for x in top]
+    assert not any(a.get("skip") for a in acts)          # the pick is mandatory
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "mage_skip"})
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "mage_pick", "card": "7D"})    # not revealed
+    g.decide({"type": "mage_pick", "card": "6D"})
+    play = g.plays[0]
+    assert play.card_ids == ["AC", "9M", "6D"] and play.value == 16 and play.mage and set(play.suits) == {"C", "M", "D"}
+    assert [s for s, _ in _powers(g)] == ["D", "C"]      # the mage is done; bards then warriors at 16
+    bards = dict(_powers(g))["D"]
+    assert bards["value"] == 16 and len(bards["drawn"]) == 16
+    assert g.enemy.hp == 40 - 32 and g.phase == PHASE_SUFFER and g.decision is None
+    assert set(top) - {"6D"} <= set(g.discard) and "6D" not in g.discard
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+
+
+def test_mage_example_mage_into_mage_strength_19_and_shield_19():
+    # p.23: ace + 8 of mages (9) peeks at 9, chooses a 7 of mages, peeks at 7, chooses a
+    # 3 of paladins: strength 19 (1 + 8 + 7 + 3), so 19 damage and a shield of 19.
+    c, g = _mage_campaign(1, seed=102)
+    set_enemy(g, "K", "H")
+    set_hand(g, ["AH", "8M", "9S", "8S", "7S"])
+    first = ["7M", "2C", "3C", "4C", "5C", "2S", "4S", "5S", "6S"]
+    second = ["3S", "2D", "3D", "4D", "5D", "6D", "7D"]
+    set_tavern_top(g, first + second)
+    g.play(["AH", "8M"])
+    assert g.decision["strength"] == 9 and g.decision["revealed"] == first
+    g.decide({"type": "mage_pick", "card": "7M"})
+    # the chosen mage looks again with its own strength; the first rest is already discarded
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "mage_peek"
+    assert g.decision["strength"] == 7 and g.decision["revealed"] == second
+    assert set(first) - {"7M"} <= set(g.discard)
+    assert g.plays[0].card_ids == ["AH", "8M", "7M"] and g.plays[0].value == 16
+    assert any(ev["t"] == "mage_pick" and ev["card"] == "7M" for ev in g.last_events)
+    g.decide({"type": "mage_pick", "card": "3S"})
+    play = g.plays[0]
+    assert play.card_ids == ["AH", "8M", "7M", "3S"] and play.value == 19
+    assert dict(_powers(g))["S"]["shield"] == 19 and "M" not in dict(_powers(g))
+    assert g.enemy.hp == 40 - 19 and g.shield == 19 and g.enemy_attack == 1
+    assert g.phase == PHASE_SUFFER and g.pending_damage == 1
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+
+
+def test_mage_example_kinfolk_with_corrupted_warrior_heals_13_deals_26_shields_13():
+    # p.23: kinfolk 3 corrupted warrior + 3 mage + 3 paladin (9) peeks at 9 and adds a
+    # 4 of clerics: heal 13, 26 damage, reduce the enemy's strength by 13.
+    from helpers import set_discard
+    c, g = _mage_campaign(1, seed=103, corrupted=("3C",))
+    set_enemy(g, "K", "D")
+    set_hand(g, ["3C", "3M", "3S", "9S", "8S"])
+    peek = ["4H", "2C", "4C", "5C", "2S", "4S", "5S", "6S", "2D"]
+    set_tavern_top(g, ["10D"] + peek)             # the corrupted warrior banishes the top card first
+    set_discard(g, ["5H", "6H", "7H", "8H", "9H", "10H", "2H", "AD", "AS", "AC", "6C", "7C", "8C", "9C", "10C"])
+    assert g.check_play(["3C", "3M", "3S"]) == (True, "set")
+    g.play(["3C", "3M", "3S"])
+    assert g.banished == ["10D"] and g.decision["strength"] == 9 and g.decision["revealed"] == peek
+    g.decide({"type": "mage_pick", "card": "4H"})
+    powers = dict(_powers(g))
+    assert powers["H"]["healed"] == 13 and powers["C"]["doubled"] and powers["S"]["shield"] == 13
+    assert g.enemy.hp == 40 - 26 and g.shield == 13 and g.enemy_attack == 20 - 13
+    assert g.plays[0].card_ids == ["3C", "3M", "3S", "4H"] and g.plays[0].value == 13 and g.plays[0].mage
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+
+
+def test_mage_revealed_jesters_and_corrupted_cards_are_discarded_and_not_pickable():
+    c, g = _mage_campaign(3, seed=104, corrupted=("7D",))
+    jester = [x for x in g.cards if g.cards[x].is_jester][0]
+    set_enemy(g, "K", "H")
+    set_hand(g, ["5M", "9S", "8S", "7S"], 0)
+    set_tavern_top(g, [jester, "7D", "5H", "4S", "3C"])
+    g.play(["5M"])
+    d = g.decision
+    assert d["revealed"] == [jester, "7D", "5H", "4S", "3C"] and d["eligible"] == ["5H", "4S", "3C"]
+    assert sorted(a["card"] for a in g.legal_actions()) == ["3C", "4S", "5H"]
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "mage_pick", "card": jester})
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "mage_pick", "card": "7D"})
+    g.decide({"type": "mage_pick", "card": "5H"})
+    assert g.plays[0].card_ids == ["5M", "5H"] and g.plays[0].value == 10
+    assert set([jester, "7D", "4S", "3C"]) <= set(g.discard)
+    assert g.banished == []                       # the corrupted card never entered play
+    assert g.enemy.hp == 30 and g.phase == PHASE_SUFFER
+
+
+def test_mage_with_a_short_or_empty_reserve():
+    c, g = _mage_campaign(1, seed=105)
+    set_enemy(g, "K", "H")
+    set_hand(g, ["9M", "9S", "8S", "7S"])
+    set_tavern_top(g, ["4C", "5D", "6S"])
+    g.discard = g.tavern[3:] + g.discard           # a short reserve: three cards left
+    g.tavern = g.tavern[:3]
+    g.play(["9M"])
+    d = g.decision
+    assert d["strength"] == 9 and d["revealed"] == ["4C", "5D", "6S"] and g.tavern == []
+    assert any(ev["t"] == "mage_peek" and ev["count"] == 3 and ev["strength"] == 9 for ev in g.last_events)
+    g.decide({"type": "mage_pick", "card": "6S"})
+    assert g.plays[0].value == 15 and g.enemy.hp == 25 and g.shield == 15
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+    # an empty reserve: nothing to look at, the only option is to add nothing and go on
+    c, g = _mage_campaign(1, seed=106)
+    set_enemy(g, "K", "H")
+    set_hand(g, ["9M", "9S", "8S", "7S"])
+    g.discard = g.tavern + g.discard
+    g.tavern = []
+    g.play(["9M"])
+    assert g.phase == PHASE_DECIDE and g.decision["revealed"] == [] and g.decision["eligible"] == []
+    acts = g.legal_actions()
+    assert len(acts) == 1 and acts[0]["type"] == "mage_skip" and acts[0]["skip"]
+    g.decide(acts[0])
+    assert g.decision is None and g.enemy.hp == 40 - 9 and g.phase == PHASE_SUFFER
+    assert any(ev["t"] == "mage_skip" for ev in g.last_events)
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+
+
+def _mission3_with_mages(players=1, seed=110, corrupted=()):
+    names = ["Solo", "Ben", "Cy"][:players]
+    c = CampaignState.new(players, names, seed=seed)
+    c.mission = 3
+    c.completed = [1, 2]
+    P.add_card(c.party, dict(M.HIGH_ARCANA))
+    for d in M.MAGE_DECK:
+        P.add_card(c.party, dict(d))
+    for cid in corrupted:
+        P.add_flag(c.party, cid, "corrupted")
+    g = c.start_attempt(seed=seed)
+    return c, g
+
+
+def test_mage_immunity_blocks_the_peek_but_the_mage_attack_is_still_banished():
+    # Mission 3: every enemy is immune to mages (p.20: the attack is banished anyway).
+    c, g = _mission3_with_mages()
+    assert g.immune("M")
+    set_hand(g, ["5H", "9M", "8S", "7S", "6S", "4D"])
+    set_tavern_top(g, ["2D", "3D", "4C", "5C"])
+    g.play(["5H"])                                   # a plain play against the same enemy
+    assert g.enemy.hp == 25 and g.phase == PHASE_SUFFER
+    g.suffer(["8S", "7S"])
+    assert g.mission_zone == ["2D"]
+    g.enemy.hp = 8
+    set_hand(g, ["9M", "6S", "4D"])
+    reserve = list(g.tavern)
+    g.play(["9M"])
+    # no peek, no decision: the reserve is untouched and the 9 damage finishes the enemy
+    assert dict(_powers(g))["M"]["immune"] and g.decision is None
+    assert g.enemies_defeated == 1 and g.phase == PHASE_PLAY
+    defeat = [ev for ev in g.last_events if ev["t"] == "defeat"][0]
+    assert defeat["mage_banished"] == ["9M"] and not defeat["exact"]
+    assert "9M" in g.banished and "9M" not in g.discard
+    assert "5H" in g.discard and "5H" not in g.banished
+    assert set(reserve) <= set(g.tavern) | set(g.players[0].hand) | set(g.mission_zone) | set(g.banished)
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+
+
+def test_mage_pick_with_exact_kill_in_mission3_triggers_the_zone_rescue():
+    c, g = _mission3_with_mages(seed=111, corrupted=("5M",))   # corrupted: its ability ignores immunity
+    set_hand(g, ["9S", "8H", "7D", "5M", "6S", "2D"])
+    set_tavern_top(g, ["4H", "2C", "3S", "4S", "6D", "7H", "8D"])
+    g.play(["9S"])
+    g.suffer(["7D"])
+    assert g.mission_zone == ["4H"] and g.immune("H")
+    g.enemy.hp = 9
+    set_hand(g, ["5M", "6S", "2D"])
+    g.play(["5M"])
+    assert g.banished[-1] == "2C"                                # corruption banishes the top card first
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "mage_peek"
+    assert g.decision["revealed"] == ["3S", "4S", "6D", "7H", "8D"]
+    g.decide({"type": "mage_pick", "card": "4S"})               # 5 + 4 = 9: exact
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "zone_rescue" and g.deciding == 0
+    assert [a["card"] for a in g.legal_actions()] == ["4H"]
+    g.decide({"type": "zone_rescue", "card": "4H"})
+    assert g.enemies_defeated == 1 and g.phase == PHASE_PLAY and g.decision is None
+    assert "4H" in g.discard and "9S" in g.discard               # the plain paladin play is discarded
+    assert "5M" in g.banished and "4S" in g.banished             # the mage attack is banished
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+
+
+def test_flute_added_mage_makes_the_attack_peek_for_the_attacker():
+    c, g = _mage_campaign(2, seed=112, relics=["flute"])
+    set_enemy(g, "J", "H")
+    set_hand(g, ["3C", "9S", "8S"], player=0)
+    set_hand(g, ["3M", "7C"], player=1)
+    set_tavern_top(g, ["4D", "2S", "5S", "6H", "AD", "2D"])
+    g.play(["3C"])
+    assert g.decision["kind"] == "flute_add" and g.deciding == 1
+    assert not g.plays[0].mage
+    g.flute_add(["3M"])
+    # the attack now contains a mage: step 2 pauses on the attacker's peek with the total
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "mage_peek" and g.deciding == 0 and g.active == 0
+    assert g.decision["strength"] == 6 and g.decision["revealed"] == ["4D", "2S", "5S", "6H", "AD", "2D"]
+    assert g.plays[0].card_ids == ["3C", "3M"] and g.plays[0].mage
+    g.decide({"type": "mage_pick", "card": "4D"})
+    # 3 + 3 + 4 = 10, doubled by the warrior: the Justicar falls and the mage attack is banished
+    assert g.plays == [] and any(ev["t"] == "damage" and ev["amount"] == 20 for ev in g.last_events)
+    assert g.enemies_defeated == 1 and "3M" in g.banished and "3C" in g.banished and "4D" in g.banished
+    assert g.active == 0 and g.phase == PHASE_PLAY
+
+
+def test_mage_peek_survives_a_save_round_trip():
+    c, g = _mage_campaign(1, seed=113)
+    set_enemy(g, "K", "H")
+    set_hand(g, ["AH", "8M", "9S", "8S", "7S"])
+    set_tavern_top(g, ["7M", "2C", "3C", "4C", "5C", "2S", "4S", "5S", "6S", "3S", "2D", "3D", "4D", "5D", "6D", "7D"])
+    g.play(["AH", "8M"])
+    g.decide({"type": "mage_pick", "card": "7M"})
+    d = json.loads(json.dumps(g.to_dict()))
+    assert d["phase"] == PHASE_DECIDE and d["decision"]["kind"] == "mage_peek" and d["plays"][0]["mage"] is True
+    g2 = Game.from_dict(d)
+    assert g2.phase == PHASE_DECIDE and g2.decision == g.decision and g2.deciding == 0
+    assert g2.legal_actions() == g.legal_actions()
+    assert sorted(g2.all_card_ids()) == sorted(g2.cards)
+    assert g2.plays[0].mage and g2.plays[0].value == 16
+    g.decide({"type": "mage_pick", "card": "3S"})
+    g2.decide({"type": "mage_pick", "card": "3S"})
+    assert g2.phase == PHASE_SUFFER and g2.to_dict() == g.to_dict()
+
+
+def test_mage_preview_leaves_the_reserve_alone_and_assumes_nothing_is_added():
+    c, g = _mage_campaign(1, seed=114)
+    set_enemy(g, "K", "H")
+    set_hand(g, ["9M", "AC", "9S", "8S", "7S"])
+    before = list(g.tavern)
+    pv = g.preview_play(["9M"])
+    assert pv["ok"] and pv["decision"] and pv["decision_kind"] == "mage_peek" and pv["mage_peeks"] == [9]
+    assert pv["damage"] == 9 and pv["enemy_hp_after"] == 31 and pv["phase_after"] == PHASE_SUFFER
+    assert "M" not in pv["powers"]
+    pv2 = g.preview_play(["AC", "9M"])
+    assert pv2["mage_peeks"] == [10] and pv2["damage"] == 20
+    assert g.tavern == before and g.phase == PHASE_PLAY and g.decision is None and g.discard == []
+
+
+def test_greedy_bot_picks_the_exact_kill_else_the_most_damage():
+    c, g = _mage_campaign(1, seed=115)
+    set_enemy(g, "K", "H")
+    set_hand(g, ["5M", "9S", "8S", "7S", "6S"])
+    set_tavern_top(g, ["6C", "4H", "3S", "2D", "AD"])
+    g.enemy.hp = 9
+    g.play(["5M"])
+    act = greedy_policy(g)
+    assert act["type"] == "mage_pick" and act["card"] == "4H"      # 5 + 4 = 9 exactly; 6♣ would overkill
+    apply_action(g, act)
+    assert g.enemies_defeated == 1 and g.tavern[0] == "KH"
+    c, g = _mage_campaign(1, seed=116)
+    set_enemy(g, "K", "H")
+    set_hand(g, ["5M", "9S", "8S", "7S", "6S"])
+    set_tavern_top(g, ["6C", "7H", "3S", "2D", "AD"])
+    g.play(["5M"])
+    act = greedy_policy(g)
+    assert act["card"] == "6C"                                      # 22 damage beats 12 or 8
+    # and with nothing eligible the only move is to add nothing
+    c, g = _mage_campaign(1, seed=117, corrupted=("7D",))
+    set_enemy(g, "K", "H")
+    set_hand(g, ["AM", "9S", "8S", "7S"])
+    set_tavern_top(g, ["7D"])
+    g.play(["AM"])
+    assert greedy_policy(g)["type"] == "mage_skip"
+
+
+@pytest.mark.parametrize("players", [1, 2])
+def test_bots_play_out_games_with_mages_and_the_emblem(players):
+    picks = 0
+    emblem = 0
+    rng = random.Random(players)
+    for seed in range(8):
+        c = _mage_campaign(players, seed=200 + seed, relics=["emblem"])[0]
+        g = c.start_attempt(seed=300 + seed)
+        play_out(g, greedy_policy if seed % 2 == 0 else random_policy, rng)
+        assert g.is_over and g.decision is None
+        assert sorted(g.all_card_ids() + g.extra.get("flute", [])) == sorted(g.cards)
+        picks += sum(1 for line in g.log if "(Mage)" in line)
+        emblem += sum(1 for line in g.log if "Azure Emblem" in line)
+    assert picks > 0 and emblem > 0
+
+
+# ---------------------------------------------------------------- Azure Emblem
+def test_emblem_solo_keeps_one_revealed_card_on_top_of_the_reserve():
+    c, g = _mage_campaign(1, seed=120, relics=["emblem"])
+    set_enemy(g, "K", "H")
+    set_hand(g, ["5M", "9S", "8S", "7S", "6S"])
+    set_tavern_top(g, ["6C", "7H", "4C", "2S", "3S", "AD"])
+    g.play(["5M"])
+    g.decide({"type": "mage_pick", "card": "6C"})
+    # the rest is not discarded yet: one card may go back on top of the reserve
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "emblem_keep" and g.deciding == 0
+    assert g.decision["revealed"] == ["7H", "4C", "2S", "3S"] and g.decision["picked"] == "6C"
+    assert g.discard == [] and sorted(g.all_card_ids()) == sorted(g.cards)
+    acts = g.legal_actions()
+    assert [a["label"] for a in acts] == ["Keep 7♥ on top of the reserve", "Keep 4♣ on top of the reserve",
+                                          "Keep 2♠ on top of the reserve", "Keep 3♠ on top of the reserve", "Discard them all"]
+    assert acts[-1]["type"] == "emblem_skip" and acts[-1]["skip"]
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "emblem_keep", "card": "6C"})
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "emblem_keep", "card": "AD"})
+    g.decide({"type": "emblem_keep", "card": "7H"})
+    assert g.tavern[0] == "7H" and g.tavern[1] == "AD"
+    assert set(["4C", "2S", "3S"]) <= set(g.discard) and "7H" not in g.discard
+    assert any(ev["t"] == "emblem_keep" and ev["card"] == "7H" for ev in g.last_events)
+    assert g.decision is None and g.plays[0].value == 11 and g.enemy.hp == 40 - 22 and g.phase == PHASE_SUFFER
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+    # declining discards them all
+    c, g = _mage_campaign(1, seed=121, relics=["emblem"])
+    set_enemy(g, "K", "H")
+    set_hand(g, ["5M", "9S", "8S", "7S", "6S"])
+    set_tavern_top(g, ["6C", "7H", "4C", "2S", "3S", "AD"])
+    g.play(["5M"])
+    g.decide({"type": "mage_pick", "card": "6C"})
+    g.decide({"type": "emblem_skip"})
+    assert g.tavern[0] == "AD" and set(["7H", "4C", "2S", "3S"]) <= set(g.discard) and g.phase == PHASE_SUFFER
+    # without the relic the pick discards the rest at once
+    c, g = _mage_campaign(1, seed=122)
+    set_enemy(g, "K", "H")
+    set_hand(g, ["5M", "9S", "8S", "7S", "6S"])
+    set_tavern_top(g, ["6C", "7H", "4C", "2S", "3S", "AD"])
+    g.play(["5M"])
+    g.decide({"type": "mage_pick", "card": "6C"})
+    assert g.decision is None and g.phase == PHASE_SUFFER
+    # a single revealed card: nothing else to keep, no decision
+    c, g = _mage_campaign(1, seed=123, relics=["emblem"])
+    set_enemy(g, "K", "H")
+    set_hand(g, ["AM", "9S", "8S", "7S", "6S"])
+    set_tavern_top(g, ["6C"])
+    g.play(["AM"])
+    g.decide({"type": "mage_pick", "card": "6C"})
+    assert g.decision is None and g.phase == PHASE_SUFFER
+
+
+def test_emblem_solo_applies_again_after_a_chained_mage_and_the_kept_card_is_revealed_first():
+    c, g = _mage_campaign(1, seed=124, relics=["emblem"])
+    set_enemy(g, "K", "H")
+    set_hand(g, ["5M", "9S", "8S", "7S", "6S"])
+    set_tavern_top(g, ["3M", "7H", "4C", "2S", "6C", "AD", "2D", "3D"])
+    g.play(["5M"])
+    g.decide({"type": "mage_pick", "card": "3M"})
+    assert g.decision["kind"] == "emblem_keep" and g.decision["revealed"] == ["7H", "4C", "2S", "6C"]
+    g.decide({"type": "emblem_keep", "card": "7H"})
+    # the chosen mage peeks with its own strength: the kept card is on top of the reserve
+    assert g.decision["kind"] == "mage_peek" and g.decision["strength"] == 3
+    assert g.decision["revealed"] == ["7H", "AD", "2D"] and "picked" not in g.decision
+    g.decide({"type": "mage_pick", "card": "7H"})
+    assert g.decision["kind"] == "emblem_keep" and g.decision["revealed"] == ["AD", "2D"] and g.decision["picked"] == "7H"
+    g.decide({"type": "emblem_keep", "card": "2D"})
+    assert g.tavern[0] == "2D" and g.tavern[1] == "3D" and "AD" in g.discard
+    assert g.decision is None and g.plays[0].card_ids == ["5M", "3M", "7H"] and g.plays[0].value == 15
+    assert g.enemy.hp == 40 - 15 and g.phase == PHASE_SUFFER
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+    # the decision survives a save round trip
+    c, g = _mage_campaign(1, seed=125, relics=["emblem"])
+    set_enemy(g, "K", "H")
+    set_hand(g, ["5M", "9S", "8S", "7S", "6S"])
+    set_tavern_top(g, ["3M", "7H", "4C", "2S", "6C", "AD", "2D", "3D"])
+    g.play(["5M"])
+    g.decide({"type": "mage_pick", "card": "3M"})
+    g2 = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    assert g2.decision == g.decision and g2.legal_actions() == g.legal_actions()
+    assert sorted(g2.all_card_ids()) == sorted(g2.cards)
+
+
+def test_emblem_multiplayer_others_place_cards_once_per_attack_before_the_first_peek():
+    c, g = _mage_campaign(3, seed=126, relics=["emblem"])
+    set_enemy(g, "K", "H")
+    set_hand(g, ["5M", "9S"], player=0)
+    set_hand(g, ["7C", "3D"], player=1)
+    set_hand(g, ["4D", "2S"], player=2)
+    set_tavern_top(g, ["3M", "2C", "4C", "6C", "8C", "5D", "9D"])
+    g.play(["5M"])
+    # before any peek: Ben (left of Ana) first, then Cy; Ana stays the active player
+    assert g.phase == PHASE_DECIDE and g.active == 0 and g.deciding == 1
+    assert g.decision["kind"] == "emblem_place" and g.decision["queue"] == [2] and g.decision["strength"] == 5
+    assert g.decision["done_suits"] == ["M"] and "revealed" not in g.decision
+    acts = g.legal_actions()
+    assert [a["label"] for a in acts] == ["Place 7♣ on top of the reserve", "Place 3♦ on top of the reserve", "Pass"]
+    assert acts[-1]["type"] == "emblem_pass" and acts[-1]["skip"]
+    assert g.tavern[0] == "3M" and g.enemy.hp == 40
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "emblem_place", "card": "4D"})     # not Ben's card
+    g.decide({"type": "emblem_place", "card": "7C"})
+    assert g.tavern[0] == "7C" and "7C" not in g.players[1].hand
+    assert g.phase == PHASE_DECIDE and g.deciding == 2 and g.decision["queue"] == []
+    assert any(ev["t"] == "emblem_place" and ev["card"] == "7C" for ev in g.last_events)
+    g.decide({"type": "emblem_place", "card": "4D"})
+    # the last card placed is on top; now the mage peeks and reveals the placed cards first
+    assert g.phase == PHASE_DECIDE and g.deciding == 0 and g.decision["kind"] == "mage_peek"
+    assert g.decision["strength"] == 5 and g.decision["revealed"] == ["4D", "7C", "3M", "2C", "4C"]
+    assert "queue" not in g.decision
+    g.decide({"type": "mage_pick", "card": "3M"})
+    # a chained mage peeks without the Emblem happening again
+    assert g.decision["kind"] == "mage_peek" and g.decision["strength"] == 3
+    assert g.decision["revealed"] == ["6C", "8C", "5D"]
+    g.decide({"type": "mage_pick", "card": "5D"})
+    assert g.decision is None and g.plays[0].card_ids == ["5M", "3M", "5D"] and g.plays[0].value == 13
+    assert g.enemy.hp == 40 - 13 and g.phase == PHASE_SUFFER and g.active == 0
+    assert set(["4D", "7C", "2C", "4C", "6C", "8C"]) <= set(g.discard)
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
+
+
+def test_emblem_multiplayer_pass_skip_empty_hands_and_immunity():
+    c, g = _mage_campaign(2, seed=127, relics=["emblem"])
+    set_enemy(g, "K", "H")
+    set_hand(g, ["5M", "9S"], player=0)
+    set_hand(g, ["7C", "3D"], player=1)
+    set_tavern_top(g, ["3C", "2C", "4C", "6C", "8C"])
+    g.play(["5M"])
+    assert g.decision["kind"] == "emblem_place" and g.deciding == 1
+    g.decide({"type": "emblem_pass"})
+    assert any(ev["t"] == "emblem_pass" for ev in g.last_events)
+    assert g.decision["kind"] == "mage_peek" and g.decision["revealed"] == ["3C", "2C", "4C", "6C", "8C"]
+    assert g.players[1].hand == ["7C", "3D"]
+    # a player with an empty hand is not asked
+    c, g = _mage_campaign(2, seed=128, relics=["emblem"])
+    set_enemy(g, "K", "H")
+    set_hand(g, ["5M", "9S"], player=0)
+    set_hand(g, [], player=1)
+    g.play(["5M"])
+    assert g.decision["kind"] == "mage_peek"
+    # the forecast assumes nobody places and nothing is added, and leaves the reserve alone
+    c, g = _mage_campaign(2, seed=129, relics=["emblem"])
+    set_enemy(g, "K", "H")
+    set_hand(g, ["5M", "9S"], player=0)
+    set_hand(g, ["7C", "3D"], player=1)
+    before = list(g.tavern)
+    pv = g.preview_play(["5M"])
+    assert pv["ok"] and pv["decision_kind"] == "emblem_place" and pv["mage_peeks"] == [5] and pv["damage"] == 5
+    assert g.tavern == before and g.decision is None
+    # when immunity blocks the mage nothing is placed either (mission 3)
+    c, g = _mission3_with_mages(players=2, seed=130)
+    c.relics.append("emblem")
+    g = c.start_attempt(seed=131)
+    set_hand(g, ["5M", "9S", "8S"], player=0)
+    set_hand(g, ["7C", "3D"], player=1)
+    g.play(["5M"])
+    assert g.decision is None and g.phase == PHASE_SUFFER and dict(_powers(g))["M"]["immune"]
