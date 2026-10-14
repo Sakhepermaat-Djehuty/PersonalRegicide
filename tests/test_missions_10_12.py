@@ -129,12 +129,11 @@ def test_mission10_paladin_reduces_damage_by_base_strength_and_exact_is_after_th
     zone = list(g.mission_zone)
     g.play(["9H"])
     # two cards were played against this enemy and a cleric enemy feeds the zone from the
-    # top of the discard pile: the player chooses which ends on top (p.19)
-    assert g.decision["kind"] == "cleanup_top" and g.decision["options"] == ["2D", "9H"]
-    g.decide({"type": "cleanup_top", "card": "9H"})
+    # top of the discard pile: they go in the order they entered play, nothing is asked (p.19)
+    assert g.decision is None
     assert g.enemies_defeated == 1 and any(ev["t"] == "defeat" and ev["exact"] for ev in g.last_events)
     assert "2S" in g.discard and all(x in g.discard for x in zone) and not any(x in g.banished for x in zone)
-    assert g.discard[:2] == ["9H", "2D"]               # the played cards on top (p.19), the chosen one first
+    assert g.discard[:2] == ["9H", "2D"]               # the played cards on top (p.19), the last played first
     assert g.enemy.card_id == "3H" and len(g.mission_zone) == 1    # the new turn fed the zone
     _ids_everywhere(g)
 
@@ -234,9 +233,7 @@ def test_mission10_not_exact_banishes_the_zone_and_a_defeated_member_plays_from_
     g.enemy.hp = 9
     set_hand(g, ["9H", "AS"])
     g.play(["9H"])
-    assert g.decision["kind"] == "cleanup_top" and greedy_policy(g)["card"] == "2S"   # the weaker on top
-    g.decide(greedy_policy(g))
-    assert g.phase == PHASE_WON
+    assert g.decision is None and g.phase == PHASE_WON and g.discard[:2] == ["9H", "2S"]   # play order, no question
 
 
 # ---------------------------------------------------------------- Mission 11: Descent Into Darkness

@@ -585,6 +585,33 @@ def test_banes_17_to_20_pile_tops_grant_strength_and_immunity():
     assert g.rules.attack_bonus(g) == 0 and g.rules.immune_suits(g) == ("H",)
 
 
+def test_pile_tops_after_a_kill_follow_the_order_the_cards_entered_play():
+    # the Forest with banes 17 and 18: both pile tops add their strength to the enemies; the
+    # enemy and the zone are shuffled into the banished pile first, then the played cards go
+    # on top in the order they entered play (no question), the mage's addition last
+    c, g = _evergreen("C", banes=[17, 18])
+    assert g.rules.discard_top_matters(g) and g.rules.banished_top_matters(g)
+    _switch_enemy(g, "LABQH", hp=100)
+    for pile in ("mission_zone", "discard", "banished"):
+        _rig(g, pile, [])
+    set_hand(g, ["3S", "3C", "AM", "10S", "9S"])
+    g.play(["3S", "3C"])                                # 6, doubled: 12; the shield 6
+    assert g.phase == PHASE_SUFFER
+    g.suffer(["10S"])
+    g.enemy.hp = 5
+    set_tavern_top(g, ["8C"])
+    g.play(["AM"])
+    g.decide({"type": "mage_pick", "card": "8C"})       # 9, doubled: 18, a kill
+    assert g.decision is None and g.enemies_defeated == 1 and "LABQH" in g.banished
+    assert g.discard[:3] == ["3C", "3S", "10S"] and g.banished[-2:] == ["AM", "8C"]
+    kinds = [ev["t"] for ev in g.last_events]
+    assert kinds.index("banished_shuffled") < kinds.index("cleanup_order")
+    assert [(ev["pile"], ev["cards"]) for ev in g.last_events if ev["t"] == "cleanup_order"] == [
+        ("discard", ["3S", "3C"]), ("banished", ["AM", "8C"])]
+    assert g.rules.attack_bonus(g) == 3 + 8
+    _ids_everywhere(g)
+
+
 def test_bane_21_eye_level_sticks_discards_a_hand_card_after_an_attack_with_an_eight():
     c, g = _evergreen("A", banes=[21], players=2, relics=("mother_restored", "flute"))
     _switch_enemy(g, "LABQH", hp=100)

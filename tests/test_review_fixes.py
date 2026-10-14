@@ -1,5 +1,6 @@
 """Regression tests for the adversarial review's findings (one test or more per finding;
-the UI findings are in test_app.py)."""
+the UI findings are in test_app.py), and at the end the playtest change to the order cards
+go onto a pile (no clean-up question, "What order?" for the reveals)."""
 import copy
 import json
 import random
@@ -67,6 +68,35 @@ def ids_everywhere(g):
 
 def round_trip(g):
     return Game.from_dict(json.loads(json.dumps(g.to_dict())))
+
+
+# Games saved before the playtest change (the clean-up asked which played card ends on top,
+# a mage's unchosen and a reaver's revealed cards asked for the top card only) must still
+# resolve: ``old_cleanup_question`` is the clean-up question the rules asked then (patched
+# onto a game's rules to pause it the old way), ``old_save`` saves a game paused on a new
+# order question as the top-card question it replaced (the same fields) and reloads it.
+def old_cleanup_question(game, exact, plan, discard_ids, banish_ids):
+    if plan.get("played_to", "discard") != "discard":
+        return None
+    if (len(discard_ids) >= 2 and game.rules.discard_top_matters(game)
+            and game.extra.get("cleanup_choice") not in discard_ids):
+        return {"kind": "cleanup_top", "player": game.active, "options": list(discard_ids)}
+    reaching = game.rules._reach_banished(game, banish_ids)
+    if (len(reaching) >= 2 and game.rules.banished_top_matters(game)
+            and game.extra.get("banish_choice") not in reaching):
+        return {"kind": "banish_top", "player": game.active, "options": reaching, "source": "cleanup"}
+    return None
+
+
+def old_save(g):
+    data = json.loads(json.dumps(g.to_dict()))
+    d = data.get("decision") or {}
+    if d.get("kind") == "discard_order":
+        d["kind"] = "discard_top"
+    elif d.get("kind") == "reaver_order":
+        d["kind"] = "banish_top"
+        d["source"] = "reaver"
+    return Game.from_dict(data)
 
 
 # ---------------------------------------------------------------- 1 / 7: Gøran is never corrupted
@@ -161,28 +191,37 @@ def _m4_mage(seed=462):
     return c, g
 
 
-def test_finding_3_mission4_mage_player_chooses_which_unchosen_card_ends_on_top():
+def test_finding_3_mission4_mage_player_names_the_order_of_the_unchosen_cards():
     c, g = _m4_mage()
     g.play(["3M"])
     g.decide({"type": "mage_pick", "card": "4C"})
     d = g.decision
-    assert d["kind"] == "discard_top" and d["options"] == ["10H", "2D"] and d["revealed"] == ["10H", "2D"]
-    assert [a["label"] for a in g.legal_actions()] == ["Put 10♥ on top of the discard pile",
-                                                       "Put 2♦ on top of the discard pile"]
+    assert d["kind"] == "discard_order" and d["options"] == ["10H", "2D"] and d["revealed"] == ["10H", "2D"]
+    acts = g.legal_actions()
+    assert acts == [{"type": "discard_order", "player": 0, "pick_from": ["10H", "2D"], "needs": 2, "ordered": True,
+                     "label": "Discard the revealed cards in this order (the last ends on top)"}]
+    assert any(ev["t"] == "decide" and ev["kind"] == "discard_order" for ev in g.last_events)
     ids_everywhere(g)                                   # the two cards are counted while the choice waits
     g2 = round_trip(g)
     assert g2.decision == g.decision
+    for bad in (["2D"], ["2D", "2D"], ["2D", "4C"], ["2D", "10H", "4C"], []):
+        with pytest.raises(IllegalAction):
+            g.decide({"type": "discard_order", "cards": bad})
     with pytest.raises(IllegalAction):
-        g.decide({"type": "discard_top", "card": "4C"})
-    g.decide({"type": "discard_top", "card": "2D"})
+        g.decide({"type": "discard_top", "card": "2D"})     # the old question is not on offer
+    # the first tapped goes first, the last ends on top
+    g.decide({"type": "discard_order", "cards": ["10H", "2D"]})
     assert g.discard[:3] == ["2D", "10H", "2S"] and g.pending_damage == 12 and g.phase == PHASE_SUFFER
-    g2.decide({"type": "discard_top", "card": "10H"})
-    assert g2.discard[0] == "10H" and g2.phase == PHASE_LOST    # 20 damage: the hand cannot pay
-    # the bot puts the weakest on top in mission 4
+    assert [ev for ev in g.last_events if ev["t"] == "discard_order"] == [
+        {"t": "discard_order", "player": 0, "cards": ["10H", "2D"]}]
+    ids_everywhere(g)
+    g2.decide({"type": "discard_order", "player": 0, "cards": ["2D", "10H"]})
+    assert g2.discard[:3] == ["10H", "2D", "2S"] and g2.phase == PHASE_LOST    # 20 damage: the hand cannot pay
+    # the bot names the weakest last (on top) in mission 4
     c, g = _m4_mage(seed=463)
     g.play(["3M"])
     g.decide({"type": "mage_pick", "card": "4C"})
-    assert simple_decision(g)["card"] == "2D" and greedy_policy(g)["card"] == "2D"
+    assert simple_decision(g)["cards"] == ["10H", "2D"] and greedy_policy(g)["cards"] == ["10H", "2D"]
     # where the top of the discard pile does not matter, nothing is asked: reveal order
     c, g = mission(8, seed=50)
     assert not g.rules.discard_top_matters(g)
@@ -194,8 +233,8 @@ def test_finding_3_mission4_mage_player_chooses_which_unchosen_card_ends_on_top(
     assert g.decision is None and g.discard[:2] == ["2D", "10H"]
 
 
-def test_finding_3_mage_skip_and_azure_emblem_keep_then_choose_the_top():
-    # nothing eligible (a Jester and corrupted cards): all revealed go, the player picks the top
+def test_finding_3_mage_skip_and_azure_emblem_keep_then_name_the_order():
+    # nothing eligible (a Jester and corrupted cards): all revealed go, the player names the order
     c, g = mission(4, players=1, seed=464, corrupted=("4C", "2D"), relics=("emblem",))
     set_mission_enemy(g, "LABJD", hp=100)
     set_hand(g, ["3M", "9S", "8S"])
@@ -206,9 +245,9 @@ def test_finding_3_mage_skip_and_azure_emblem_keep_then_choose_the_top():
     # the Emblem (solo) comes first: keep one on the reserve, then the rest's order
     assert g.decision["kind"] == "emblem_keep"
     g.decide({"type": "emblem_skip"})
-    assert g.decision["kind"] == "discard_top" and g.decision["options"] == ["4C", "2D"]
-    g.decide({"type": "discard_top", "card": "4C"})
-    assert g.discard[0] == "4C" and g.decision is None
+    assert g.decision["kind"] == "discard_order" and g.decision["options"] == ["4C", "2D"]
+    g.decide({"type": "discard_order", "cards": ["2D", "4C"]})
+    assert g.discard[:2] == ["4C", "2D"] and g.decision is None
     ids_everywhere(g)
 
 
@@ -219,7 +258,7 @@ def _m5(seed=471, **kw):
     return c, g
 
 
-def test_finding_4_mission5_reaver_player_chooses_the_top_banished_card():
+def test_finding_4_mission5_reaver_player_names_the_banish_order():
     c, g = _m5()
     set_mission_enemy(g, "GRJH", hp=40)                 # the Sporeling cleric, 10 / 40
     g.mission_zone = []
@@ -229,13 +268,20 @@ def test_finding_4_mission5_reaver_player_chooses_the_top_banished_card():
     g.decide({"type": "reaver_count", "count": 3})
     g.decide({"type": "reaver_pick", "card": "10C"})
     d = g.decision
-    assert d["kind"] == "banish_top" and d["source"] == "reaver" and d["options"] == ["10C", "2D", "3D"]
-    assert [a["label"] for a in g.legal_actions()][0] == "Put 10♣ on top of the banished pile"
+    assert d["kind"] == "reaver_order" and d["reaver_card"] == "10C" and d["options"] == ["10C", "2D", "3D"]
+    acts = g.legal_actions()
+    assert len(acts) == 1 and acts[0]["pick_from"] == ["10C", "2D", "3D"] and acts[0]["needs"] == 3 and acts[0]["ordered"]
+    assert acts[0]["label"] == "Banish the revealed cards in this order (the last ends on top)"
     ids_everywhere(g)
     g = round_trip(g)
-    g.decide({"type": "banish_top", "card": "2D"})
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "reaver_order", "cards": ["10C", "2D"]})
+    g.decide({"type": "reaver_order", "cards": ["10C", "3D", "2D"]})
     assert g.banished[-3:] == ["10C", "3D", "2D"] and g.enemy.hp == 40 - 30   # (5 + 10) doubled
-    assert any(ev["t"] == "reaver_pick" and ev["card"] == "10C" for ev in g.last_events)
+    assert any(ev["t"] == "reaver_pick" and ev["card"] == "10C" and ev["banished"] == ["10C", "3D", "2D"]
+               for ev in g.last_events)
+    kinds = [ev["t"] for ev in g.last_events]
+    assert kinds.index("reaver_pick") < kinds.index("reaver_order")      # the pick, then the order it was banished in
     assert g.phase == PHASE_SUFFER
     g.suffer(min_waste_discard(g))
     # the end of turn moves the top banished card into the zone: 2, not 10
@@ -262,49 +308,48 @@ def test_finding_4_bot_leaves_the_weakest_card_on_top_of_the_banished_pile():
     g.play(["5R"])
     g.decide({"type": "reaver_count", "count": 3})
     g.decide({"type": "reaver_pick", "card": "10C"})
-    assert greedy_policy(g)["card"] == "2D"
+    act = greedy_policy(g)
+    assert act == {"type": "reaver_order", "player": 0, "cards": ["10C", "3D", "2D"]}   # the weakest last, on top
+    apply_action(g, act)
+    assert g.banished[-1] == "2D" and g.decision is None
 
 
 # ---------------------------------------------------------------- 5: mission 5, a mage attack's banish order
-def test_finding_5_mission5_mage_attack_is_banished_in_the_players_order():
+def test_finding_5_mission5_mage_attack_is_banished_in_the_order_it_entered_play():
     c, g = _m5(seed=473)
     set_mission_enemy(g, "GRJH", hp=40)
     set_hand(g, ["AS", "9M", "8S", "7S", "2H"])
     set_tavern_top(g, ["10C"])
     g.play(["AS", "9M"])
     g.decide({"type": "mage_pick", "card": "10C"})      # 1 + 9 + 10 = 20, doubled: 40, exact
-    d = g.decision
-    assert d["kind"] == "banish_top" and d["source"] == "cleanup" and d["options"] == ["AS", "9M", "10C"]
-    assert d["resume"] == "defeat" and d["exact"] is True and g.enemies_defeated == 0
-    assert [a["label"] for a in g.legal_actions()][0] == "Put A♠ on top of the banished pile"
-    ids_everywhere(g)
-    other = round_trip(g)
-    g.decide({"type": "banish_top", "card": "AS"})
-    assert g.enemies_defeated >= 1 and g.banished[-1] == "AS" and set(g.banished[-3:]) == {"AS", "9M", "10C"}
+    # "in the order the current player chooses": the order the cards entered play, the ace
+    # and the mage as selected, then the card the mage added, on top; nothing is asked
+    assert g.decision is None and g.enemies_defeated >= 1 and g.banished[-3:] == ["AS", "9M", "10C"]
+    assert [ev for ev in g.last_events if ev["t"] == "cleanup_order"] == [
+        {"t": "cleanup_order", "pile": "banished", "cards": ["AS", "9M", "10C"]}]
     assert "banish_choice" not in g.extra
     ids_everywhere(g)
-    other.decide({"type": "banish_top", "card": "10C"})
-    assert other.banished[-1] == "10C"
-    # the same player's next turn does not kill: the end of turn moves the ace, not the 10
+    # the same player's next turn does not kill: the end of turn moves the 10, the last to enter play
     if g.phase == PHASE_PLAY and g.enemy is not None:
         g.enemy.hp = 50
         set_hand(g, ["2H", "8S", "7S", "9S"])
         g.play(["2H"])
         if g.phase == PHASE_SUFFER:
             g.suffer(min_waste_discard(g))
-        assert g.mission_zone[-1] == "AS"
-    # the bot leaves the weakest on top
+        assert g.mission_zone[-1] == "10C"
+    # selected the other way round: the mage before the ace
     c, g = _m5(seed=474)
     set_mission_enemy(g, "GRJH", hp=40)
     set_hand(g, ["AS", "9M", "8S"])
     set_tavern_top(g, ["10C"])
-    g.play(["AS", "9M"])
+    g.play(["9M", "AS"])
     g.decide({"type": "mage_pick", "card": "10C"})
-    assert greedy_policy(g)["card"] == "AS"
+    assert g.decision is None and g.banished[-3:] == ["9M", "AS", "10C"]
+    ids_everywhere(g)
 
 
 # ---------------------------------------------------------------- 6: the clean-up order wherever the top matters
-def test_finding_6_solo_whistle_cleanup_order_is_asked_and_the_whistle_offers_the_chosen_card():
+def test_finding_6_solo_whistle_cleanup_keeps_the_play_order_and_the_whistle_offers_the_last_card():
     c, g = mission(6, seed=482, relics=("whistle",))
     set_mission_enemy(g, "GDQH", hp=10)                 # a Guardian Statue
     set_hand(g, ["2C", "3C", "4C", "5C", "8S"])
@@ -316,21 +361,18 @@ def test_finding_6_solo_whistle_cleanup_order_is_asked_and_the_whistle_offers_th
     g.decide({"type": "zone_move", "card": "2C"})
     while g.decision is not None and g.decision["kind"] == "team_discard":
         g.decide(greedy_policy(g))
-    # two played cards go to the discard pile and the solo Whistle reads its top: asked
-    assert g.decision["kind"] == "cleanup_top" and g.decision["options"] == ["AS", "9C"]
-    assert greedy_policy(g)["card"] == "9C"             # the Whistle wants the strongest on top
+    # two played cards go to the discard pile and the solo Whistle reads its top: nothing is
+    # asked, they go in the order they entered play (2♣ went to the zone), 9♣ on top
+    assert g.decision is None and g.enemies_defeated == 1 and g.discard[:2] == ["9C", "AS"]
+    assert any(ev["t"] == "cleanup_order" and ev["cards"] == ["AS", "9C"] for ev in g.last_events)
     ids_everywhere(g)
-    g = round_trip(g)
-    g.decide({"type": "cleanup_top", "card": "AS"})
-    assert g.discard[0] == "AS" and g.decision is None and g.enemies_defeated == 1
-    ids_everywhere(g)
-    # the next solitary companion's Whistle offers the chosen card
+    # the next solitary companion's Whistle offers that card
     set_hand(g, ["AH", "8S", "7S"])
     g.play(["AH"])
-    assert g.decision["kind"] == "whistle_take" and g.decision["card"] == "AS"
+    assert g.decision["kind"] == "whistle_take" and g.decision["card"] == "9C"
 
 
-def test_finding_6_mission11_two_players_choose_the_top_of_the_discard_pile():
+def test_finding_6_mission11_two_players_the_last_card_played_tops_the_discard_pile():
     c, g = mission(11, players=2, seed=1100, corrupted=("2S", "3H", "4D", "5C", "6H", "7S", "8H", "9D"))
     while g.decision is not None:                       # the first turn's beast
         g.decide(g.legal_actions()[0])
@@ -339,11 +381,11 @@ def test_finding_6_mission11_two_players_choose_the_top_of_the_discard_pile():
     set_hand(g, ["5S", "5C", "9H"], player=0)
     set_discard(g, ["7D"])
     g.enemy.hp = 20
-    g.play(["5S", "5C"])                                # 10, doubled: 20, exact
-    assert g.decision["kind"] == "cleanup_top" and g.decision["options"] == ["5S", "5C"]
+    g.play(["5C", "5S"])                                # 10, doubled: 20, exact
     assert g.rules.discard_top_feeds_enemy(g) and g.rules.banished_top_matters(g)
-    g.decide({"type": "cleanup_top", "card": "5S"})
-    assert g.discard[0] == "5S" and "S" in g.rules.immune_suits(g) and "C" not in g.rules.immune_suits(g)
+    # the selection order is the clean-up order: 5♠, selected last, ends on top
+    assert g.decision is None and g.discard[:2] == ["5S", "5C"]
+    assert "S" in g.rules.immune_suits(g) and "C" not in g.rules.immune_suits(g)
 
 
 def test_finding_6_nothing_is_asked_where_the_top_does_not_matter():
@@ -682,16 +724,9 @@ def test_finding_18_all_card_ids_counts_the_flute():
 
 
 # ---------------------------------------------------------------- part 1's defeat pause keeps the solo Jester once
-def test_cleanup_question_after_a_solo_jester_kill_sets_the_jester_aside_once():
-    c, g = mission(4, seed=465)
-    set_mission_enemy(g, "LABJD", hp=30)
-    set_hand(g, ["9S", "8S", "AS", "7H"])
-    g.play(["9S"])
-    g.suffer(min_waste_discard(g)) if g.phase == PHASE_SUFFER else None
-    g.enemy.hp = 8
-    g.use_solo_jester({"suit": "H"})
-    assert g.decision is None or g.decision["kind"] != "cleanup_top"   # the Jester is not cleaned up
-    c, g = mission(4, seed=466)
+def _solo_jester_kill(seed, patch=None):
+    """Mission 4, solo: 9♠ then 6♥ against one enemy, then a Jester attack kills it."""
+    c, g = mission(4, seed=seed)
     set_mission_enemy(g, "LABJD", hp=30)
     set_hand(g, ["9S", "8S", "AS", "7H", "6H"])
     g.play(["9S"])
@@ -699,9 +734,278 @@ def test_cleanup_question_after_a_solo_jester_kill_sets_the_jester_aside_once():
     g.play(["6H"])
     g.suffer(min_waste_discard(g)) if g.phase == PHASE_SUFFER else None
     g.enemy.hp = 8
+    if patch is not None:
+        g.rules.before_cleanup = patch
     g.use_solo_jester({"suit": "H"})
-    assert g.decision["kind"] == "cleanup_top" and sorted(g.decision["options"]) == ["6H", "9S"]
-    g = round_trip(g)
-    g.decide({"type": "cleanup_top", "card": "6H"})
-    assert g.set_aside == ["X1"] and g.discard[0] == "6H"
+    return g
+
+
+def test_cleanup_after_a_solo_jester_kill_sets_the_jester_aside_once():
+    c, g = mission(4, seed=465)
+    set_mission_enemy(g, "LABJD", hp=30)
+    set_hand(g, ["9S", "8S", "AS", "7H"])
+    g.play(["9S"])
+    g.suffer(min_waste_discard(g)) if g.phase == PHASE_SUFFER else None
+    g.enemy.hp = 8
+    g.use_solo_jester({"suit": "H"})
+    assert g.decision is None and g.set_aside == ["X1"]    # the Jester is not cleaned up
+    g = _solo_jester_kill(466)
+    assert g.decision is None and g.set_aside == ["X1"] and g.discard[:2] == ["6H", "9S"]   # play order
     ids_everywhere(g)
+    # a game saved while the clean-up still asked which card ends on top resolves the old way
+    g = old_save(_solo_jester_kill(466, patch=old_cleanup_question))
+    assert g.decision["kind"] == "cleanup_top" and sorted(g.decision["options"]) == ["6H", "9S"]
+    assert g.set_aside == [] and g.enemies_defeated == 0
+    g.decide({"type": "cleanup_top", "card": "9S"})
+    assert g.set_aside == ["X1"] and g.discard[:2] == ["9S", "6H"] and g.decision is None
+    assert "cleanup_choice" not in g.extra
+    ids_everywhere(g)
+
+
+# ---------------------------------------------------------------- playtest: the order cards go onto a pile
+# The owner's playtest: cards are numbered as they are selected, so the clean-up asks nothing
+# (the played cards go in the order they entered play, the last one on top) and the
+# questions left ask for the whole order ("What order?": the first named goes first, the
+# last ends on top), only where the top of that pile matters.
+def _m11_quiet(seed=1100, players=1):
+    """Mission 11 after the first turn's beast, with no more beasts and empty piles (so no
+    immunity nor bonus from the pile tops yet)."""
+    c, g = mission(11, players=players, seed=seed, corrupted=("2S", "3H", "4D", "5C", "6H", "7S", "8H", "9D"))
+    while g.decision is not None:
+        g.decide(g.legal_actions()[0])
+    g.extra["beasts_out"] = g.extra["beast_deck"] + g.extra["beasts_out"]
+    g.extra["beast_deck"] = []
+    g.tavern.extend(g.banished + g.discard)
+    g.banished, g.discard = [], []
+    return c, g
+
+
+def test_pile_order_mission11_cleanup_tops_both_piles_with_the_last_card_to_enter_play():
+    c, g = _m11_quiet()
+    enemy = g.enemy.card_id
+    g.enemy.hp = 25
+    set_hand(g, ["4C", "4S", "AM", "8S", "9S"])
+    g.play(["4C", "4S"])                                # 8, doubled: 16; the shield 8
+    assert g.enemy.hp == 9 and g.phase == PHASE_SUFFER and g.pending_damage == 2
+    g.suffer(["8S"])                                    # 8♠ tops the discard pile
+    assert g.rules.immune_suits(g) == ("S",) and g.rules.attack_bonus(g) == 8
+    set_tavern_top(g, ["8C"])
+    g.play(["AM"])                                      # the animal mage looks at one card
+    g.decide({"type": "mage_pick", "card": "8C"})       # 1 + 8 = 9, doubled: 18, a kill
+    # two plays against the enemy: the first one is discarded, 4♠ (selected last) on top; the
+    # mage attack is banished after the enemy, the card the mage added (last in) on top
+    assert g.decision is None and g.enemies_defeated == 1 and g.phase == PHASE_PLAY
+    assert g.discard[:3] == ["4S", "4C", "8S"] and g.banished[-3:] == [enemy, "AM", "8C"]
+    assert [(ev["pile"], ev["cards"]) for ev in g.last_events if ev["t"] == "cleanup_order"] == [
+        ("discard", ["4C", "4S"]), ("banished", ["AM", "8C"])]
+    # the next enemy reads both tops: 4♠ and 8♣
+    assert set(g.rules.immune_suits(g)) >= {"S", "C"} and g.rules.attack_bonus(g) == 4 + 8
+    ids_everywhere(g)
+
+
+def test_pile_order_kinfolk_flute_and_scarlet_whistle_additions_enter_play_last():
+    # the Kinfolk Flute (two players): the added 4♠ entered play after the attacker's 4♣
+    c, g = mission(4, players=2, seed=1401, relics=("flute",))
+    set_mission_enemy(g, "LABJD", hp=12)
+    set_discard(g, ["7D"])
+    set_hand(g, ["4C", "9S"], player=0)
+    set_hand(g, ["4S", "2H"], player=1)
+    g.play(["4C"])
+    assert g.decision["kind"] == "flute_add" and g.decision["player"] == 1
+    g.flute_add(["4S"])                                 # 8, doubled: 16, a kill
+    assert g.decision is None and g.enemies_defeated == 1 and g.discard[:3] == ["4S", "4C", "LABJD"]
+    ids_everywhere(g)
+    # the Scarlet Whistle (solo): the top discard taken into the attack goes back on top
+    c, g = mission(4, seed=1402, relics=("whistle",))
+    set_mission_enemy(g, "LABJD", hp=12)
+    set_discard(g, ["9C", "2D"])
+    set_hand(g, ["AS", "8S", "7S"])
+    g.play(["AS"])
+    assert g.decision["kind"] == "whistle_take" and g.decision["card"] == "9C"
+    g.decide({"type": "whistle_take", "card": "9C"})    # 1 + 9 = 10, doubled: 20, a kill
+    assert g.decision is None and g.enemies_defeated == 1 and g.discard[:4] == ["9C", "AS", "LABJD", "2D"]
+    ids_everywhere(g)
+
+
+def test_pile_order_discard_low_to_high_still_puts_the_lowest_on_top():
+    c, g = mission(4, seed=1403)
+    g.config.extra["discard_low_to_high"] = True
+    set_mission_enemy(g, "LABJD", hp=10)
+    set_discard(g, ["7D"])
+    set_hand(g, ["AS", "9C", "3D"])
+    g.play(["AS", "9C"])                                # play order would put 9♣ on top
+    assert g.decision is None and g.discard[:3] == ["AS", "9C", "LABJD"]
+    assert [ev["cards"] for ev in g.last_events if ev["t"] == "cleanup_order"] == [["9C", "AS"]]
+    g = round_trip(g)
+    assert g.config.extra["discard_low_to_high"]
+
+
+def test_pile_order_questions_only_when_two_or_more_cards_go_and_the_top_matters():
+    # a mage's single unchosen card: nothing to order
+    c, g = mission(4, seed=1404)
+    set_mission_enemy(g, "LABJD", hp=100)
+    set_hand(g, ["2M", "9S", "8S", "10S"])
+    set_tavern_top(g, ["4C", "10H"])
+    g.play(["2M"])
+    g.decide({"type": "mage_pick", "card": "4C"})
+    assert g.decision is None and g.discard[0] == "10H" and g.phase == PHASE_SUFFER
+    # a reaver revealing one card: nothing to order
+    c, g = mission(5, seed=1405)
+    set_mission_enemy(g, "GRJH", hp=100)
+    set_hand(g, ["5R", "9S", "8S"])
+    set_tavern_top(g, ["10C", "2D"])
+    g.play(["5R"])
+    g.decide({"type": "reaver_count", "count": 1})
+    g.decide({"type": "reaver_pick", "card": "10C"})
+    assert g.decision is None and g.banished[-1] == "10C" and g.tavern[0] == "2D"
+    # solo with the Scarlet Whistle only the Whistle reads the discard pile: asked, and the
+    # bot names the strongest last (on top) for the next solitary companion
+    c, g = mission(1, seed=1406, relics=("whistle",), extra_cards=M.MAGE_DECK)
+    set_enemy(g, "K", "H", hp=100)
+    set_hand(g, ["3M", "9S"])
+    set_tavern_top(g, ["4C", "10H", "2D"])
+    g.play(["3M"])
+    g.decide({"type": "mage_pick", "card": "4C"})
+    assert g.decision["kind"] == "discard_order" and g.decision["options"] == ["10H", "2D"]
+    assert not g.rules.discard_top_feeds_enemy(g) and simple_decision(g)["cards"] == ["2D", "10H"]
+    texts = [line for line in g.log[-3:] if "chooses the order" in line]
+    assert texts and "10♥ / 2♦" in texts[0]
+
+
+def test_pile_order_games_saved_on_the_old_top_card_questions_still_resolve():
+    # a mage's unchosen cards (``discard_top``)
+    c, g = _m4_mage()
+    g.play(["3M"])
+    g.decide({"type": "mage_pick", "card": "4C"})
+    old = old_save(g)
+    assert old.decision["kind"] == "discard_top" and [a["label"] for a in old.legal_actions()] == [
+        "Put 10♥ on top of the discard pile", "Put 2♦ on top of the discard pile"]
+    assert simple_decision(old)["card"] == "2D"         # the bots still answer it
+    old.decide({"type": "discard_top", "card": "2D"})
+    assert old.discard[:3] == ["2D", "10H", "2S"] and old.pending_damage == 12 and old.phase == PHASE_SUFFER
+    ids_everywhere(old)
+    # a reaver's reveal (``banish_top`` from the reaver)
+    c, g = _m5()
+    set_mission_enemy(g, "GRJH", hp=40)
+    g.mission_zone = []
+    set_hand(g, ["5R", "9S", "8S", "7S"])
+    set_tavern_top(g, ["10C", "2D", "3D"])
+    g.play(["5R"])
+    g.decide({"type": "reaver_count", "count": 3})
+    g.decide({"type": "reaver_pick", "card": "10C"})
+    old = old_save(g)
+    assert old.decision["kind"] == "banish_top" and old.decision["source"] == "reaver"
+    assert [a["label"] for a in old.legal_actions()][0] == "Put 10♣ on top of the banished pile"
+    assert greedy_policy(old)["card"] == "2D"
+    old.decide({"type": "banish_top", "card": "2D"})
+    assert old.banished[-3:] == ["10C", "3D", "2D"] and old.enemy.hp == 40 - 30 and old.phase == PHASE_SUFFER
+    ids_everywhere(old)
+    # a mage attack's clean-up (``banish_top`` from the clean-up), paused the old way
+    c, g = _m5(seed=473)
+    set_mission_enemy(g, "GRJH", hp=40)
+    set_hand(g, ["AS", "9M", "8S", "7S", "2H"])
+    set_tavern_top(g, ["10C"])
+    g.rules.before_cleanup = old_cleanup_question
+    g.play(["AS", "9M"])
+    g.decide({"type": "mage_pick", "card": "10C"})      # 40: exact
+    old = round_trip(g)
+    d = old.decision
+    assert d["kind"] == "banish_top" and d["source"] == "cleanup" and d["options"] == ["AS", "9M", "10C"]
+    assert d["resume"] == "defeat" and d["exact"] is True and old.enemies_defeated == 0
+    ids_everywhere(old)
+    old.decide({"type": "banish_top", "card": "AS"})
+    assert old.decision is None and old.enemies_defeated >= 1 and old.banished[-1] == "AS"
+    assert set(old.banished[-3:]) == {"AS", "9M", "10C"} and "banish_choice" not in old.extra
+    ids_everywhere(old)
+    # the played cards' clean-up (``cleanup_top``), mission 4
+    c, g = mission(4, seed=1407)
+    set_mission_enemy(g, "LABJD", hp=10)
+    set_discard(g, ["7D"])
+    set_hand(g, ["AS", "9C", "3D"])
+    g.rules.before_cleanup = old_cleanup_question
+    g.play(["AS", "9C"])
+    old = round_trip(g)
+    assert old.decision["kind"] == "cleanup_top" and old.decision["options"] == ["AS", "9C"]
+    assert greedy_policy(old)["card"] == "AS"          # the weakest on top in mission 4
+    old.decide({"type": "cleanup_top", "card": "AS"})
+    assert old.decision is None and old.discard == ["AS", "9C", "LABJD", "7D"] and "cleanup_choice" not in old.extra
+    ids_everywhere(old)
+
+
+def test_pile_order_forecasts_run_through_the_order_questions():
+    # a mage pick that leaves two cards to order: the forecast assumes the revealed order
+    c, g = _m4_mage()
+    g.play(["3M"])
+    before = copy.deepcopy(g.to_dict())
+    pv = g.preview_decision({"type": "mage_pick", "card": "4C"})
+    assert pv["ok"] and pv["decision"] and pv["decision_kind"] == "discard_order"
+    assert pv["damage"] == 14 and pv["enemy_attack_after"] == 10 + 2 and pv["phase_after"] == PHASE_SUFFER
+    assert g.to_dict() == before
+    # a reaver's three revealed cards: the forecast banishes the chosen one last
+    c, g = _m5()
+    set_mission_enemy(g, "GRJH", hp=40)
+    g.mission_zone = []
+    set_hand(g, ["5R", "9S", "8S", "7S"])
+    set_tavern_top(g, ["10C", "2D", "3D"])
+    g.play(["5R"])
+    g.decide({"type": "reaver_count", "count": 3})
+    pv = g.preview_decision({"type": "reaver_pick", "card": "10C"})
+    assert pv["ok"] and pv["decision_kind"] == "reaver_order" and pv["damage"] == 30 and pv["enemy_hp_after"] == 10
+    assert g.decision["kind"] == "reaver_pick"
+    g.decide({"type": "reaver_pick", "card": "10C"})
+    sim = copy.deepcopy(g)
+    assert sim.forecast_decision() and sim.decision is None and sim.banished[-3:] == ["2D", "3D", "10C"]
+    with pytest.raises(IllegalAction):
+        g.decide(dict(g.rules.forecast_action(g)))          # a forecast's option is not the player's
+
+
+def test_pile_order_bots_and_random_games_answer_the_order_questions_and_keep_every_card():
+    kinds = set()
+    for number in (4, 5, 11):
+        for players in (1, 2):
+            for seed in range(4):
+                c, g = mission(number, players=players, seed=900 + seed,
+                               extra_cards=M.REAVERS if number != 5 else (),
+                               corrupted=("2S", "3H", "4D", "5C", "6H", "7S", "8H", "9D") if number == 11 else (),
+                               relics=("whistle",) if seed % 2 else ())
+                rng = random.Random(seed)
+                policy = greedy_policy if seed % 2 == 0 else random_policy
+                steps = 0
+                while not g.is_over and steps < 4000:
+                    if g.decision:
+                        kinds.add(g.decision["kind"])
+                    apply_action(g, policy(g, rng))
+                    steps += 1
+                assert g.is_over and g.decision is None
+                ids_everywhere(g)
+                assert all(len(p.hand) <= g.config.max_hand for p in g.players)
+    assert {"discard_order", "reaver_order"} <= kinds, kinds
+    assert not kinds & {"cleanup_top", "banish_top", "discard_top"}
+
+
+def test_pile_order_cli_asks_for_the_whole_order(monkeypatch, capsys):
+    from regicide import cli
+    c, g = _m4_mage()
+    g.play(["3M"])
+    g.decide({"type": "mage_pick", "card": "4C"})
+    answers = iter(["2", "2 2", "1 2"])                 # a card missing, a card twice, then the order
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+    for _ in range(3):
+        assert cli.human_turn(g, None)
+    out = capsys.readouterr().out
+    assert "What order? Name every card, the first goes first and the last ends on top" in out
+    assert "1. 10♥" in out and "2. 2♦" in out and out.count("! Name every revealed card exactly once.") == 2
+    assert g.decision is None and g.discard[:3] == ["2D", "10H", "2S"]
+    # the reaver's reveal
+    c, g = _m5()
+    set_mission_enemy(g, "GRJH", hp=40)
+    g.mission_zone = []
+    set_hand(g, ["5R", "9S", "8S", "7S"])
+    set_tavern_top(g, ["10C", "2D", "3D"])
+    g.play(["5R"])
+    g.decide({"type": "reaver_count", "count": 3})
+    g.decide({"type": "reaver_pick", "card": "10C"})
+    monkeypatch.setattr("builtins.input", lambda prompt="": "1 3 2")
+    assert cli.human_turn(g, None)
+    assert "the last ends on top of the banished pile" in capsys.readouterr().out
+    assert g.banished[-3:] == ["10C", "3D", "2D"] and g.phase == PHASE_SUFFER

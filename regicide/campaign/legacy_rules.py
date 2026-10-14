@@ -152,14 +152,16 @@ class LegacyRules(BaseRules):
         return False
 
     def discard_top_matters(self, game) -> bool:
-        """The player chooses which card ends on top of the discard pile when the top card
-        counts: towards the enemy (``discard_top_feeds_enemy``) or, solo, for the Scarlet
-        Whistle, which takes the top card of the discard pile into an attack."""
+        """Does the top card of the discard pile count: towards the enemy
+        (``discard_top_feeds_enemy``) or, solo, for the Scarlet Whistle, which takes it into
+        an attack? The player then orders a mage's unchosen cards (``discard_order``); the
+        clean-up is never asked (the order the cards entered play)."""
         return self.discard_top_feeds_enemy(game) or (self._whistle(game) and game.config.players == 1)
 
     def banished_top_matters(self, game) -> bool:
         """Missions 5, 11 and 12 (and some Evergreen setups) read the top of the banished
-        pile: the player then orders the cards banished together."""
+        pile: the player then orders a reaver's revealed cards (``reaver_order``); a mage
+        attack's cards keep the order they entered play."""
         return False
 
     @staticmethod
@@ -578,6 +580,13 @@ class LegacyRules(BaseRules):
             acts = self._actions_mother_banish(game, d)
             if acts:
                 return dict(acts[0], forecast=True)
+        if d and d.get("kind") in ("discard_order", "reaver_order"):
+            # the order nothing is asked in: as revealed (a reaver's chosen card last)
+            options = [str(c) for c in d.get("options", [])]
+            chosen = str(d.get("reaver_card", ""))
+            if chosen in options:
+                options = [c for c in options if c != chosen] + [chosen]
+            return {"type": str(d["kind"]), "player": int(d["player"]), "cards": options, "forecast": True}
         return super().forecast_action(game)
 
     # --- mission zone rescue (missions 3 and 6) -----------------------------------
@@ -840,10 +849,12 @@ class LegacyRules(BaseRules):
     # (no class powers), banish all revealed cards in any order, then double the attack
     # damage." Two decisions of the attacker: how many to reveal, then which card counts.
     # The revealed cards are banished with the chosen one last, unless the top of the
-    # banished pile matters (missions 5, 11, 12): the player then picks the card that ends
-    # on top (``banish_top``); a 2/5 adds 5 (the player
-    # chooses its value when it matters), a Jester or a beast adds 0. With an empty
-    # reserve there is nothing to reveal and the reaver only doubles.
+    # banished pile matters (missions 5, 11, 12, some Evergreen setups) and two or more of
+    # them reach the pile: the player then names their order (``reaver_order``, a template
+    # filled with the permutation: the first named is banished first, the last ends on
+    # top; games saved on the older ``banish_top`` question still resolve). A 2/5 adds 5
+    # (the player chooses its value when it matters), a Jester or a beast adds 0. With an
+    # empty reserve there is nothing to reveal and the reaver only doubles.
     def reaver_value(self, card: Card) -> int:
         return 5 if card.has("twofive") else self.strength(card)
 
@@ -897,22 +908,35 @@ class LegacyRules(BaseRules):
             from ..engine import IllegalAction
             raise IllegalAction("Card %s was not revealed." % cid)
         others = [c for c in revealed if c != cid]
-        if len(self._reach_banished(game, revealed)) >= 2 and self.banished_top_matters(game):
+        reaching = self._reach_banished(game, revealed)
+        if len(reaching) >= 2 and self.banished_top_matters(game):
             # "banish all revealed cards in any order": the top of the banished pile counts
-            # in this mission, so the player picks the card that ends on top
-            d["kind"] = "banish_top"
-            d["source"] = "reaver"
+            # in this mission, so the player names the order (the last ends on top)
+            d["kind"] = "reaver_order"
             d["reaver_card"] = cid
-            d["options"] = self._reach_banished(game, revealed)
+            d["options"] = reaching
             game._event("decide", **d)
-            game._say("Reaver: %s adds %s's strength; which revealed card ends on top of the banished pile?" % (
-                game.players[player].name, game.cards[cid].label()))
+            game._say("Reaver: %s adds %s's strength; in what order are %s banished (the last ends on top)?" % (
+                game.players[player].name, game.cards[cid].label(), " / ".join(game.cards[c].label() for c in reaching)))
             return
         self._reaver_finish(game, d, cid, others + [cid])
 
-    def _reaver_finish(self, game, d: Dict[str, Any], cid: str, order: List[str]) -> None:
+    def _actions_reaver_order(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        options = [str(c) for c in d.get("options", [])]
+        return [{"type": "reaver_order", "player": int(d["player"]), "pick_from": options, "needs": len(options),
+                 "ordered": True, "label": "Banish the revealed cards in this order (the last ends on top)"}]
+
+    def _decide_reaver_order(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        order = self._full_order(d, action, "Name every revealed card exactly once.")
+        # a restored card the mission 12 relic keeps off the pile goes first (under the reserve)
+        revealed = [str(c) for c in d.get("revealed", [])]
+        self._reaver_finish(game, d, str(d["reaver_card"]), [c for c in revealed if c not in order] + order, order)
+
+    def _reaver_finish(self, game, d: Dict[str, Any], cid: str, order: List[str],
+                       named: Optional[List[str]] = None) -> None:
         """The chosen card's strength joins the damage, the revealed cards are banished in
-        ``order`` (the last ends on top) and the damage is doubled."""
+        ``order`` (the last ends on top) and the damage is doubled. ``named``: the order
+        the player gave (``reaver_order``), announced after the pick."""
         player = int(d["player"])
         added = self.reaver_value(game.cards[cid])
         game.banish_cards(order)
@@ -927,6 +951,10 @@ class LegacyRules(BaseRules):
         game._say("Reaver: %s adds %s's strength (+%d) and doubles the damage: %d + %d = %d, doubled to %d. %s banished." % (
             game.players[player].name, game.cards[cid].label(), added, before, added, before + added, d["damage"],
             " + ".join(game.cards[c].label() for c in order)))
+        if named:
+            game._event("reaver_order", player=player, cards=list(named))
+            game._say("%s banished them in the order %s: %s ends on top of the banished pile." % (
+                game.players[player].name, ", ".join(game.cards[c].label() for c in named), game.cards[named[-1]].label()))
         game.resolve_pending_attack()
 
     # ------------------------------------------------------------------ druids
@@ -1167,10 +1195,10 @@ class LegacyRules(BaseRules):
                 return
             self._continue_mage_picked(game, d)
             return
-        if not action.get("forecast") and self._ask_discard_top(game, d, "skip"):
+        if not action.get("forecast") and self._ask_discard_order(game, d, "skip"):
             game._event("mage_skip", player=player, discarded=[])
             game._say("Mage: nothing may join the attack; the revealed cards go to the discard pile.")
-            self._show_discard_top(game, d)
+            self._show_discard_order(game, d)
             return
         rest = self._mage_discard_rest(game, d)
         game._event("mage_skip", player=player, discarded=rest)
@@ -1182,24 +1210,48 @@ class LegacyRules(BaseRules):
         game.resolve_pending_attack()
 
     # The revealed cards a mage does not choose go to the discard pile "in any order" (p.16):
-    # when the top of the pile matters and two or more go, the player picks the one that
-    # ends on top (``discard_top``); otherwise they go in the order revealed.
-    def _ask_discard_top(self, game, d: Dict[str, Any], then: str) -> bool:
+    # when the top of the pile matters and two or more go, the player names their order
+    # (``discard_order``, a template filled with the permutation: the first named goes
+    # first, the last ends on top); otherwise they go in the order revealed. Games saved
+    # while the app asked only for the top card (``discard_top``) still resolve.
+    def _ask_discard_order(self, game, d: Dict[str, Any], then: str) -> bool:
         rest = [str(c) for c in d.get("revealed", [])]
         if len(rest) < 2 or not self.discard_top_matters(game):
             return False
-        d["kind"] = "discard_top"
+        d["kind"] = "discard_order"
         d["options"] = rest
         d["then"] = then
         d.pop("eligible", None)
         return True
 
-    def _show_discard_top(self, game, d: Dict[str, Any]) -> None:
+    def _show_discard_order(self, game, d: Dict[str, Any]) -> None:
         game._event("decide", **d)
-        game._say("%s chooses which of %s ends on top of the discard pile." % (
+        game._say("%s chooses the order in which %s go to the discard pile (the last ends on top)." % (
             game.players[int(d["player"])].name, " / ".join(game.cards[c].label() for c in d["options"])))
 
+    def _actions_discard_order(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        options = [str(c) for c in d.get("options", [])]
+        return [{"type": "discard_order", "player": int(d["player"]), "pick_from": options, "needs": len(options),
+                 "ordered": True, "label": "Discard the revealed cards in this order (the last ends on top)"}]
+
+    def _decide_discard_order(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        order = self._full_order(d, action, "Name every revealed card exactly once.")
+        game._event("discard_order", player=int(d["player"]), cards=order)
+        game._say("%s go to the discard pile in that order, %s on top." % (
+            " + ".join(game.cards[c].label() for c in order), game.cards[order[-1]].label()))
+        self._mage_rest_discarded(game, d, order)
+
+    @staticmethod
+    def _full_order(d: Dict[str, Any], action: Dict[str, Any], error: str) -> List[str]:
+        """The cards of a ``*_order`` action: every option of the decision exactly once."""
+        order = [str(c) for c in action.get("cards") or []]
+        if sorted(order) != sorted(str(c) for c in d.get("options", [])):
+            from ..engine import IllegalAction
+            raise IllegalAction(error)
+        return order
+
     def _actions_discard_top(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        # a game saved before the full-order question: which card ends on top
         player = int(d["player"])
         return [{"type": "discard_top", "player": player, "card": str(cid),
                  "label": "Put %s on top of the discard pile" % game.cards[str(cid)].label()}
@@ -1209,14 +1261,19 @@ class LegacyRules(BaseRules):
         top = str(action["card"])
         rest = [str(c) for c in d.get("revealed", [])]
         order = [c for c in rest if c != top] + [top]
-        for cid in order:           # one at a time: the chosen card goes last, on top
+        game._event("discard_top", player=int(d["player"]), card=top, discarded=order)
+        game._say("%s to the discard pile, %s on top." % (" + ".join(game.cards[c].label() for c in order),
+                                                          game.cards[top].label()))
+        self._mage_rest_discarded(game, d, order)
+
+    def _mage_rest_discarded(self, game, d: Dict[str, Any], order: List[str]) -> None:
+        """The unchosen cards go to the discard pile in the player's ``order`` (one at a time,
+        the last on top), then the mage goes on: the chain after a pick, else the attack."""
+        for cid in order:
             game.discard.insert(0, cid)
         d["revealed"] = []
         then = str(d.pop("then", "skip"))
         d.pop("options", None)
-        game._event("discard_top", player=int(d["player"]), card=top, discarded=order)
-        game._say("%s to the discard pile, %s on top." % (" + ".join(game.cards[c].label() for c in order),
-                                                          game.cards[top].label()))
         if then == "picked":
             self._mage_continue(game, d, game.cards[str(d["picked"])])
             return
@@ -1240,10 +1297,10 @@ class LegacyRules(BaseRules):
             game._event("decide", **d)
             game._say("Azure Emblem: %s may put one of the other revealed cards back on top of the reserve deck." % name)
             return
-        if self._ask_discard_top(game, d, "picked"):
+        if self._ask_discard_order(game, d, "picked"):
             game._event("mage_pick", player=player, card=cid, value=play.value, discarded=[])
             game._say("%s adds %s to the attack (Mage): strength %d." % (name, card.label(), play.value))
-            self._show_discard_top(game, d)
+            self._show_discard_order(game, d)
             return
         rest = self._mage_discard_rest(game, d)
         game._event("mage_pick", player=player, card=cid, value=play.value, discarded=rest)
@@ -1338,20 +1395,20 @@ class LegacyRules(BaseRules):
             revealed.remove(cid)
             d["revealed"] = revealed
             game.to_reserve(cid)
-            if self._ask_discard_top(game, d, "picked"):
+            if self._ask_discard_order(game, d, "picked"):
                 game._event("emblem_keep", player=player, card=cid, discarded=[])
                 game._say("Azure Emblem: %s puts %s back on top of the reserve deck." % (name, game.cards[cid].label()))
-                self._show_discard_top(game, d)
+                self._show_discard_order(game, d)
                 return
             rest = self._mage_discard_rest(game, d)
             game._event("emblem_keep", player=player, card=cid, discarded=rest)
             tail = " %s to the discard pile." % " + ".join(game.cards[c].label() for c in rest) if rest else ""
             game._say("Azure Emblem: %s puts %s back on top of the reserve deck.%s" % (name, game.cards[cid].label(), tail))
         else:
-            if self._ask_discard_top(game, d, "picked"):
+            if self._ask_discard_order(game, d, "picked"):
                 game._event("emblem_skip", player=player, discarded=[])
                 game._say("Azure Emblem: nothing kept.")
-                self._show_discard_top(game, d)
+                self._show_discard_order(game, d)
                 return
             rest = self._mage_discard_rest(game, d)
             game._event("emblem_skip", player=player, discarded=rest)
@@ -1807,32 +1864,20 @@ class LegacyRules(BaseRules):
     # ------------------------------------------------------------------ cleanup
     # Rulebook p.19 step 2: "Gather all cards played against the enemy and put them on top of
     # the discard pile in any order you wish" (and mission 5: the cards of a mage attack go to
-    # the banished pile in the order the current player chooses). The player is asked which
-    # card ends on top only when the top of that pile matters (``discard_top_matters``,
-    # ``banished_top_matters``); the choice waits in ``extra["cleanup_choice"]`` /
-    # ``extra["banish_choice"]`` until the engine cleans up (``order_for_discard`` /
-    # ``order_for_banish``). Otherwise the cards go in play order, the last played on top.
-    def before_cleanup(self, game, exact: bool, plan: Dict[str, Any], discard_ids: Sequence[str],
-                       banish_ids: Sequence[str]) -> Optional[Dict[str, Any]]:
-        if plan.get("played_to", "discard") != "discard":
-            return None
-        who = game.players[game.active].name
-        if (len(discard_ids) >= 2 and self.discard_top_matters(game)
-                and game.extra.get("cleanup_choice") not in discard_ids):
-            game._say("Enemy defeated: %s chooses which played card ends on top of the discard pile." % who)
-            return {"kind": "cleanup_top", "player": game.active, "options": list(discard_ids)}
-        reaching = self._reach_banished(game, banish_ids)
-        if (len(reaching) >= 2 and self.banished_top_matters(game)
-                and game.extra.get("banish_choice") not in reaching):
-            game._say("Enemy defeated: %s chooses which card of the mage attack ends on top of the banished pile." % who)
-            return {"kind": "banish_top", "player": game.active, "options": reaching, "source": "cleanup"}
-        return None
-
+    # the banished pile in the order the current player chooses). Nothing is asked: the app
+    # takes the order the cards entered play as that order (the attacks in sequence; within
+    # an attack the order its cards were selected, then the cards added to it by a mage, the
+    # Scarlet Whistle or the Kinfolk Flute), so the last card to enter play ends on top of
+    # its pile (``Game._cleanup_played``; ``order_for_discard`` and ``order_for_banish``
+    # keep that order). Games saved while the app still asked which card ends on top
+    # (``cleanup_top``, ``banish_top`` from the clean-up) resolve as before: the choice waits
+    # in ``extra["cleanup_choice"]`` / ``extra["banish_choice"]`` until the engine cleans up.
     def _reach_banished(self, game, ids: Sequence[str]) -> List[str]:
         """The cards that would really land on the banished pile (mission 12's restored relic
         sends restored cards under the reserve instead)."""
         return [str(c) for c in ids if self.banish_redirect(game, game.cards[str(c)]) is None]
 
+    # --- questions of games saved before the clean-up stopped asking -----------------------
     def _actions_cleanup_top(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
         return [{"type": "cleanup_top", "player": int(d["player"]), "card": str(cid),
                  "label": "Put %s on top of the discard pile" % game.cards[str(cid)].label()}
@@ -1851,6 +1896,7 @@ class LegacyRules(BaseRules):
                 for cid in d.get("options", [])]
 
     def _decide_banish_top(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        # the reaver's reveal (``source`` "reaver") or a mage attack at clean-up
         cid = str(action["card"])
         player = int(d["player"])
         game._event("banish_top", player=player, card=cid, source=str(d.get("source", "cleanup")))
@@ -1864,6 +1910,9 @@ class LegacyRules(BaseRules):
         game.resume_defeat()
 
     def order_for_discard(self, game, cards: List[Card]) -> List[Card]:
+        """A batch in the order given (the clean-up: the order the cards entered play), the
+        last on top; the campaign option ``discard_low_to_high`` puts the lowest on top
+        instead, and an old save's clean-up choice (``cleanup_choice``) goes on top."""
         if game.config.extra.get("discard_low_to_high"):
             # last inserted ends on top: insert highest first so the lowest is on top
             cards = sorted(cards, key=lambda c: -c.value)
@@ -1874,6 +1923,8 @@ class LegacyRules(BaseRules):
         return cards
 
     def order_for_banish(self, game, ids: List[str]) -> List[str]:
+        """A mage attack's cards in the order they entered play, the last on top (an old
+        save's clean-up choice, ``banish_choice``, goes on top)."""
         top = game.extra.get("banish_choice")
         if top is not None and top in ids:
             game.extra.pop("banish_choice", None)
@@ -1953,8 +2004,8 @@ class Mission4Rules(LegacyRules):
     damage is suffered (a cleric's shuffle, a corrupted banish from the pile) and is
     frozen while suffering. Enemy defeated: into the discard pile, or on top of the
     reserve deck on exact damage; then the played cards go on top of the discard pile in
-    the order the player chooses (``cleanup_top``: which card ends on top, asked by
-    ``LegacyRules.before_cleanup``; a mage's unchosen cards likewise). The twelve
+    the order they entered play, the last on top (no question; a mage's unchosen cards go
+    in the order the player names, ``discard_order``). The twelve
     experiments are in corrupted sleeves, so one drawn into a hand plays as a corrupted
     card (``_lab_castle`` flags them)."""
 
@@ -1967,7 +2018,7 @@ class Mission4Rules(LegacyRules):
         return self.strength(game.cards[game.discard[0]])
 
     def discard_top_feeds_enemy(self, game) -> bool:
-        # the clean-up order decides the next bonus (``LegacyRules.before_cleanup`` asks)
+        # the clean-up order (the last card to enter play on top) decides the next bonus
         return True
 
 
@@ -1980,8 +2031,9 @@ class Mission5Rules(LegacyRules):
     enemy takes damage equal to the defeated enemy's strength (the strength shown as it
     fell: printed, plus the zone, less paladin reductions), chaining if that kills it. A
     mage attack's cards are banished in the order the current player chooses (its "Rules
-    continued"), as are a reaver's revealed cards: the top of the banished pile feeds the
-    zone (``banish_top``)."""
+    continued"): the order they entered play, the last on top; a reaver's revealed cards
+    in the order the player names (``reaver_order``): the top of the banished pile feeds
+    the zone."""
 
     id = "legacy_m5"
     mission = 5

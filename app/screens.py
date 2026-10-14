@@ -1439,11 +1439,27 @@ class ReaverPickOverlay(MagePeekOverlay):
         return "Revealed from the reserve deck (all are banished)"
 
 
+def pile_top_why(g: Game, pile: str) -> str:
+    """Why the top card of the discard or the banished pile matters in this game (the order
+    questions explain themselves with it)."""
+    number = getattr(g.rules, "mission", 0)
+    if pile == "banished":
+        return {5: "The top banished card goes into the mission zone at the end of the turn.",
+                11: "The enemy gains the top banished card's strength and classes.",
+                12: "The top banished card goes into the mission zone at the start of the next turn."}.get(
+            number, "The top banished card counts for the enemy.")
+    if getattr(g.rules, "discard_top_feeds_enemy", lambda game: False)(g):
+        return {4: "The top card's strength adds to the enemy's.",
+                10: "A cleric enemy moves the top card into the mission zone at the end of the turn.",
+                11: "The enemy gains the top card's strength and classes."}.get(number, "The top card counts for the enemy.")
+    return "The Scarlet Whistle can add the top card of the discard pile to a later attack."
+
+
 class TopChoiceOverlay(PickOverlay):
-    """Which card ends on top of a pile: the played cards at clean-up (rulebook p.19, "in any
-    order you wish"), a mage's unchosen cards (p.16) or a reaver's / a mage attack's banished
-    cards (p.17, mission 5). Asked only when the top card matters; the cards in a row, one
-    button each."""
+    """Retired: only a game saved while the app asked which card ends on top of a pile (the
+    played cards at clean-up, a mage's unchosen cards, a reaver's or a mage attack's
+    banished cards) still shows it. The clean-up now keeps the order the cards entered play
+    and the other questions ask for the whole order (``OrderOverlay``)."""
 
     def heading(self, g: Game, d: dict) -> tuple:
         kind = str(d.get("kind"))
@@ -1455,22 +1471,7 @@ class TopChoiceOverlay(PickOverlay):
             text = "Reaver: the revealed cards are banished in any order."
         else:
             text = "Enemy defeated: the cards of the mage attack are banished in the order you choose."
-        why = self.why(g, "banished" if kind == "banish_top" else "discard")
-        return ("Which card ends on top?", text + (" " + why if why else ""))
-
-    @staticmethod
-    def why(g: Game, pile: str) -> str:
-        number = getattr(g.rules, "mission", 0)
-        if pile == "banished":
-            return {5: "The top banished card goes into the mission zone at the end of the turn.",
-                    11: "The enemy gains the top banished card's strength and classes.",
-                    12: "The top banished card goes into the mission zone at the start of the next turn."}.get(
-                number, "The top banished card counts for the enemy.")
-        if getattr(g.rules, "discard_top_feeds_enemy", lambda game: False)(g):
-            return {4: "The top card's strength adds to the enemy's.",
-                    10: "A cleric enemy moves the top card into the mission zone at the end of the turn.",
-                    11: "The enemy gains the top card's strength and classes."}.get(number, "The top card counts for the enemy.")
-        return "The Scarlet Whistle can add the top card of the discard pile to a later attack."
+        return ("Which card ends on top?", text + " " + pile_top_why(g, "banished" if kind == "banish_top" else "discard"))
 
     def strip(self, g: Game, d: dict) -> Optional[CardStrip]:
         cards = [g.card(str(c)) for c in d.get("options", []) if str(c) in g.cards]
@@ -1765,25 +1766,38 @@ class PileRescueOverlay(Overlay):
 
 
 class OrderOverlay(CardGridOverlay):
-    """Mission 12's banish order and the Lake's discard order: tap the mission zone cards in
-    the order they go to the pile (the first tapped goes first, the last ends on top)."""
+    """The "What order?" question: tap the cards in the order they go to a pile, numbered
+    as tapped (the first tapped goes first, the last ends on top). The cards are the
+    decision template's ``pick_from``: the mission zone for mission 12's banish order and
+    the Lake's discard order, a mage's unchosen cards (``discard_order``), a reaver's
+    revealed cards (``reaver_order``); the last two are asked only where the top of that
+    pile matters."""
 
     def heading(self, g: Game, d: dict) -> tuple:
-        if str(d.get("kind")) == "banish_order":
+        kind = str(d.get("kind"))
+        if kind == "banish_order":
             return ("Enemy defeated", "The mission zone is banished first, then the enemy, then the whole discard "
                                       "pile. Tap the zone cards in the order they are banished: the last one ends "
                                       "on top and comes back into the zone next turn.")
+        if kind == "discard_order":
+            return ("What order?", "Mage: the revealed cards you did not choose go to the discard pile in any order. "
+                                   "Tap them in order: the first tapped goes first, the last ends on top. "
+                                   + pile_top_why(g, "discard"))
+        if kind == "reaver_order":
+            return ("What order?", "Reaver: the revealed cards are banished in any order. Tap them in order: the "
+                                   "first tapped goes first, the last ends on top. " + pile_top_why(g, "banished"))
         return ("Enemy defeated", "The Lake: the mission zone goes to the discard pile in any order. Tap the cards "
                                   "in order: the last one ends on top of the discard pile.")
 
     def card_ids(self, g: Game, d: dict) -> List[str]:
-        return list(g.mission_zone)
+        acts = [a for a in g.legal_actions() if "needs" in a]
+        return [str(c) for c in acts[0].get("pick_from", [])] if acts else []
 
     def badges(self, g: Game, d: dict) -> Dict[str, str]:
         return dict((cid, str(i + 1)) for i, cid in enumerate(self.picked))
 
     def buttons(self, g: Game, d: dict) -> List[ui.View]:
-        n, total = len(self.picked), len(g.mission_zone)
+        n, total = len(self.picked), len(self.card_ids(g, d))
         b = make_button("Confirm the order (%d of %d)" % (n, total), lambda s: self.confirm(), (0, 0, 10, 46))
         set_enabled(b, n == total and total > 0)
         return [b]
@@ -1864,7 +1878,9 @@ PICK_OVERLAYS = {"mage_peek": MagePeekOverlay, "emblem_keep": EmblemKeepOverlay,
                  "discard_banish": DiscardBanishOverlay, "discard_pick": DiscardPickOverlay,
                  "pile_to_reserve": PileToReserveOverlay,
                  "banish_order": OrderOverlay, "zone_order": OrderOverlay,
+                 "discard_order": OrderOverlay, "reaver_order": OrderOverlay,
                  "close_call": CloseCallOverlay, "restored_arrows": RestoredArrowsOverlay,
+                 # the top-card questions of games saved before the order questions
                  "cleanup_top": TopChoiceOverlay, "banish_top": TopChoiceOverlay, "discard_top": TopChoiceOverlay,
                  "declare_class": DeclareOverlay, "declare_value": DeclareOverlay}
 
@@ -3158,17 +3174,23 @@ def describe_events(g: Game) -> str:
             parts.append("Reaver: +%d from %s, damage doubled to %d; %s banished." % (
                 int(ev["added"]), g.card(ev["card"]).label(), int(ev["damage"]),
                 " + ".join(g.card(c).label() for c in ev["banished"])))
-        elif t == "decide" and ev.get("kind") == "cleanup_top":
-            parts.append("Choose which played card ends on top of the discard pile.")
+        elif t == "decide" and ev.get("kind") == "discard_order":
+            parts.append("What order? The other revealed cards go to the discard pile.")
+        elif t == "discard_order":
+            parts.append("%s to the discard pile, %s on top." % (
+                " + ".join(g.card(c).label() for c in ev["cards"]), g.card(ev["cards"][-1]).label()))
+        elif t == "decide" and ev.get("kind") == "reaver_order":
+            parts.append("What order? The revealed cards are banished.")
+        elif t == "reaver_order":
+            parts.append("%s on top of the banished pile." % g.card(ev["cards"][-1]).label())
+        elif t == "cleanup_order":
+            parts.append("%s ends on top of the %s pile." % (g.card(ev["cards"][-1]).label(), ev.get("pile", "discard")))
+        # the answers to the top-card questions of games saved before the order questions
         elif t == "cleanup_top":
             parts.append("%s on top of the discard pile." % g.card(ev["card"]).label())
-        elif t == "decide" and ev.get("kind") == "discard_top":
-            parts.append("Choose which of the other revealed cards ends on top of the discard pile.")
         elif t == "discard_top":
             parts.append("%s to the discard pile, %s on top." % (
                 " + ".join(g.card(c).label() for c in ev.get("discarded", [])), g.card(ev["card"]).label()))
-        elif t == "decide" and ev.get("kind") == "banish_top":
-            parts.append("Choose which card ends on top of the banished pile.")
         elif t == "banish_top":
             parts.append("%s on top of the banished pile." % g.card(ev["card"]).label())
         elif t == "decide" and ev.get("kind") == "declare_class":

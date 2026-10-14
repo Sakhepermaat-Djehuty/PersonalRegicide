@@ -2138,44 +2138,34 @@ def test_mission4_enemy_strength_follows_the_top_of_the_discard_pile():
     assert g.enemy_attack == 10 + 10
 
 
-def test_mission4_player_chooses_which_played_card_ends_on_top_of_the_discard_pile():
+def test_mission4_cleanup_puts_the_last_card_to_enter_play_on_top_without_a_question():
     from helpers import set_discard, set_mission_enemy
     c, g = _mission4(seed=462)
     set_mission_enemy(g, "LABJD", hp=10)
     set_hand(g, ["AS", "9C", "3D", "2H"])
     set_discard(g, ["7D"])
     g.play(["AS", "9C"])                              # 10, doubled: 20, not exact
-    assert g.phase == PHASE_DECIDE and g.deciding == 0
-    assert g.decision["kind"] == "cleanup_top" and g.decision["options"] == ["AS", "9C"] and g.decision["exact"] is False
-    acts = g.legal_actions()
-    assert [a["label"] for a in acts] == ["Put A♠ on top of the discard pile", "Put 9♣ on top of the discard pile"]
-    assert not any(a.get("skip") for a in acts) and g.enemies_defeated == 0
-    with pytest.raises(IllegalAction):
-        g.decide({"type": "cleanup_top", "card": "3D"})
-    g = Game.from_dict(json.loads(json.dumps(g.to_dict())))
-    assert g.decision["kind"] == "cleanup_top"
-    g.decide({"type": "cleanup_top", "card": "AS"})
-    # the experiment goes to the pile first, the played cards on top of it, the chosen one on top
-    assert g.discard == ["AS", "9C", "LABJD", "7D"] and "cleanup_top" not in g.extra
-    assert g.enemies_defeated == 1 and g.phase == PHASE_PLAY and g.active == 0 and g.enemy_attack == 10 + 1
-    assert any(ev["t"] == "cleanup_top" and ev["card"] == "AS" for ev in g.last_events)
-    # the other way round
+    # p.19 "in any order you wish": the order the cards entered play (as selected), so
+    # nothing is asked; the experiment goes to the pile first, the played cards on top of
+    # it, 9♣ (selected last) on top
+    assert g.decision is None and g.phase == PHASE_PLAY and g.active == 0 and g.enemies_defeated == 1
+    assert g.discard == ["9C", "AS", "LABJD", "7D"] and g.enemy_attack == 10 + 9
+    assert [ev for ev in g.last_events if ev["t"] == "cleanup_order"] == [
+        {"t": "cleanup_order", "pile": "discard", "cards": ["AS", "9C"]}]
+    assert any("A♠, 9♣ (9♣ ends on top)" in line for line in g.log[-6:])
+    # selected the other way round: the ace ends on top
     set_mission_enemy(g, "LABJS", hp=10)
     set_hand(g, ["AD", "9C", "2H"])
-    g.play(["AD", "9C"])
-    g.decide({"type": "cleanup_top", "card": "9C"})
-    assert g.discard[:3] == ["9C", "AD", "LABJS"] and g.enemy_attack == 10 + 9
-    # one played card: no decision; an exact kill puts the experiment on top of the reserve
+    g.play(["9C", "AD"])
+    assert g.decision is None and g.discard[:3] == ["AD", "9C", "LABJS"] and g.enemy_attack == 10 + 1
+    # one played card: nothing to order; an exact kill puts the experiment on top of the reserve
     set_mission_enemy(g, "LABJC", hp=9)
     set_hand(g, ["9D", "2H", "3S"])
     g.play(["9D"])
     assert g.decision is None and g.enemies_defeated == 3 and g.tavern[0] == "LABJC" and g.discard[0] == "9D"
-    # the bot keeps the weakest card on top (the smallest bonus for the next enemy)
-    set_mission_enemy(g, "LABQD", hp=12)
-    set_hand(g, ["AH", "10C", "3S"])
-    g.play(["AH", "10C"])
-    assert g.decision["kind"] == "cleanup_top" and greedy_policy(g)["card"] == "AH"
-    # a Jester in a multiplayer game may end on top: strength 0
+    assert not any(ev["t"] == "cleanup_order" for ev in g.last_events)
+    # two plays against one enemy (a multiplayer Jester, then the claimer's attack): the
+    # second play's card entered play last and ends on top
     c, g = _mission4(players=3, seed=463)
     jester = [x for x in g.cards if g.cards[x].is_jester][0]
     set_mission_enemy(g, "LABJD", hp=9)
@@ -2184,9 +2174,8 @@ def test_mission4_player_chooses_which_played_card_ends_on_top_of_the_discard_pi
     g.play([jester])
     g.choose_next(1)
     g.play(["9S"])
-    assert g.decision["kind"] == "cleanup_top" and sorted(g.decision["options"]) == sorted([jester, "9S"])
-    g.decide({"type": "cleanup_top", "card": jester})
-    assert g.discard[0] == jester and g.enemy_attack == 10
+    assert g.decision is None and g.discard[:2] == ["9S", jester] and g.enemy_attack == 10 + 9
+    assert sorted(g.all_card_ids()) == sorted(g.cards)
 
 
 def test_mission4_defeated_experiment_plays_from_hand_as_a_corrupted_card():
@@ -2273,9 +2262,8 @@ def test_mission5_defeat_shuffles_enemy_and_zone_into_the_banished_pile_and_exac
     g.banished.remove("MYLA7")
     assert g.enemy_attack == 17
     g.play(["AC", "5D"])                              # 6 doubled: 12, exact
-    # solo with the Scarlet Whistle: the player chooses which played card ends on top (p.19)
-    assert g.decision["kind"] == "cleanup_top" and g.decision["options"] == ["AC", "5D"]
-    g.decide({"type": "cleanup_top", "card": "5D"})
+    # solo with the Scarlet Whistle the top of the discard pile counts, yet nothing is asked:
+    # the played cards go in the order they entered play, 5♦ (selected last) on top (p.19)
     assert g.enemies_defeated == 1 and g.decision is None and g.discard[0] == "5D"
     assert set(g.banished) == {"MYLA7", "2C", "3C", "GRJH"} and len(g.banished) == 4   # shuffled in, without looking
     assert g.mission_zone == [] and set(g.discard[:2]) == {"AC", "5D"}
@@ -2301,9 +2289,8 @@ def test_mission5_defeat_shuffles_enemy_and_zone_into_the_banished_pile_and_exac
     set_hand(g, ["10C", "2D"])
     g.enemy.hp = 20
     g.play(["10C"])                                   # 20: exact
-    assert g.decision["kind"] == "cleanup_top" and greedy_policy(g)["card"] == "10C"   # the Whistle wants the strongest
-    g.decide(greedy_policy(g))
-    assert g.enemies_defeated == 1
+    # two plays against this enemy: the second one's card entered play last, it ends on top
+    assert g.decision is None and g.enemies_defeated == 1 and g.discard[:2] == ["10C", "9S"]
     assert [ev["amount"] for ev in g.last_events if ev["t"] == "carry_damage"] == [8]
     # a chain: the carry-over kills the next enemy exactly, whose own strength carries on
     c, g = _mission5(seed=473)
@@ -2402,11 +2389,13 @@ def test_mission6_not_exact_no_rescue_zone_grows_mage_rest_is_banished_and_the_b
     g.play(["5M"])
     g.decide({"type": "mage_pick", "card": "4C"})                     # 9, doubled: 18, not exact
     # solo with the Scarlet Whistle: the unchosen cards go to the discard pile in the order
-    # the player chooses (p.16 "in any order"), the chosen one on top
-    assert g.decision["kind"] == "discard_top" and g.decision["options"] == ["2D", "3D", "2S", "3S"]
-    g.decide({"type": "discard_top", "card": "3S"})
+    # the player names (p.16 "in any order"): the first named goes first, the last on top
+    assert g.decision["kind"] == "discard_order" and g.decision["options"] == ["2D", "3D", "2S", "3S"]
+    t = g.legal_actions()
+    assert len(t) == 1 and t[0]["pick_from"] == ["2D", "3D", "2S", "3S"] and t[0]["needs"] == 4 and t[0]["ordered"]
+    g.decide({"type": "discard_order", "cards": ["3D", "2D", "2S", "3S"]})
     assert g.decision["kind"] == "zone_move" and g.decision["options"] == ["5M", "4C"] and g.decision["exact"] is False
-    assert g.discard[:4] == ["3S", "2S", "3D", "2D"]
+    assert g.discard[:4] == ["3S", "2S", "2D", "3D"]
     g.decide({"type": "zone_move", "card": "5M"})
     # no rescue; team damage is 7 + 5 = 12 and the bot covers it with the least waste
     assert g.decision["kind"] == "team_discard" and g.decision["damage"] == 12 and g.mission_zone == ["MYLA7", "5M"]
@@ -2489,8 +2478,8 @@ def test_forecast_reports_a_kill_that_pauses_on_the_missions_defeat_choice():
     set_mission_enemy(g, "LABJD", hp=10)
     set_hand(g, ["AS", "9C", "3D", "2H"])
     set_discard(g, ["7D"])
-    pv = g.preview_play(["AS", "9C"])
-    assert pv["ok"] and pv["defeats"] and not pv["exact"] and pv["decision_kind"] == "cleanup_top"
+    pv = g.preview_play(["AS", "9C"])                 # the clean-up asks nothing any more
+    assert pv["ok"] and pv["defeats"] and not pv["exact"] and pv["decision_kind"] is None and not pv["decision"]
     assert pv["damage"] == 20 and pv["enemy_hp_after"] == 0 and g.phase == PHASE_PLAY and g.enemies_defeated == 0
     c, g = _mission6(seed=491)
     set_mission_enemy(g, "GDQH", hp=9)

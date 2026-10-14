@@ -17,6 +17,9 @@ from .engine import PHASE_CHOOSE_NEXT, PHASE_DECIDE, PHASE_PLAY, PHASE_SUFFER, G
 from .rules import GameConfig
 
 DEFAULT_SAVE = os.path.join("saves", "cli.json")
+# Decisions answered with a list of cards (templates): the Chanter's and mission 8's picks,
+# and the orders in which cards go to a pile (the first named goes first, the last on top).
+ORDER_TEMPLATES = ("chanter_discard", "discard_banish", "banish_order", "zone_order", "discard_order", "reaver_order")
 
 
 def save_game(game: Game, path: str) -> None:
@@ -216,11 +219,11 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
         except IllegalAction as e:
             print("!", e)
         return True
-    if game.phase == PHASE_DECIDE and (game.decision or {}).get("kind") in ("chanter_discard", "discard_banish",
-                                                                             "banish_order", "zone_order"):
+    if game.phase == PHASE_DECIDE and (game.decision or {}).get("kind") in ORDER_TEMPLATES:
         # Templates filled in with a list of cards: the Chanter's discard down to the limit,
         # mission 8's banish from the discard pile (any number, enter for none), the order in
-        # which a mission zone is banished (mission 12) or discarded (Evergreen's Lake).
+        # which a mission zone is banished (mission 12) or discarded (Evergreen's Lake), a
+        # mage's unchosen cards are discarded or a reaver's revealed cards banished.
         d = game.decision or {}
         kind = str(d.get("kind"))
         acts = game.legal_actions()
@@ -232,6 +235,12 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
         elif kind in ("banish_order", "zone_order"):
             print("Enemy defeated: name every mission zone card in the order it goes to the %s pile (the last ends on top):" % (
                 "banished" if kind == "banish_order" else "discard"))
+        elif kind == "discard_order":
+            print("Mage: the cards not chosen go to the discard pile. What order? Name every card, the first goes "
+                  "first and the last ends on top:")
+        elif kind == "reaver_order":
+            print("Reaver: the revealed cards are banished. What order? Name every card, the first goes first and "
+                  "the last ends on top of the banished pile:")
         else:
             print("Mission zone filled: banish any cards from the discard pile (the rest heals under the reserve):")
         for i, c in enumerate(pool, 1):
@@ -255,7 +264,8 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
         # A choice offered as a short list: which mission zone card to rescue, the Azure
         # Emblem's keep (solo) or place (another player's card goes on the reserve), the
         # Scarlet Whistle's take, the Reaver's count and pick, which card ends on top of a
-        # pile, a declaration, the card moved to the mission zone, Myla's team damage.
+        # pile (older saved games), a declaration, the card moved to the mission zone, Myla's
+        # team damage.
         d = game.decision or {}
         if d.get("kind") == "emblem_keep":
             print("Azure Emblem: %s may put one of the other revealed cards back on top of the reserve deck." % (
@@ -290,7 +300,7 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
             print("A %s beast was revealed: %s must %s a card from hand." % (
                 "cleric" if d.get("kind") == "beast_discard" else "bard", game.players[game.deciding].name,
                 "discard" if d.get("kind") == "beast_discard" else "banish"))
-        elif d.get("kind") == "cleanup_top":
+        elif d.get("kind") == "cleanup_top":       # the top-card questions of older saved games
             print("Enemy defeated: which played card ends on top of the discard pile?")
         elif d.get("kind") == "discard_top":
             print("Mage: the cards not chosen go to the discard pile. Which ends on top?")
@@ -383,7 +393,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print("bot adds %s to the attack (Scarlet Whistle)" % game.card(act["card"]).label())
             elif act["type"] == "druid_assign":
                 print("bot sorts the dealt cards (Druid)")
-            elif act["type"] in ("chanter_discard", "discard_banish", "banish_order", "zone_order"):
+            elif act["type"] in ORDER_TEMPLATES:
                 print("bot picks %s" % (" + ".join(game.card(c).label() for c in act.get("cards", [])) or "nothing"))
             else:
                 print("bot:", act.get("label", act["type"]))

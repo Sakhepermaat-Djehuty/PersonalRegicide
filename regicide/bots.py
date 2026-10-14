@@ -149,9 +149,11 @@ def simple_decision(g: Game) -> Optional[dict]:
     """A cheap, lookahead-free choice for the pending decision (used inside simulations
     and as the fallback of ``decision_policy``): decline when a "do nothing" option exists
     (Kinfolk Flute, Scarlet Whistle, Azure Emblem); a mage's mandatory pick and a reaver's
-    pick take the strongest card; a reaver reveals one card; the card that ends on top of a
-    pile is the one that weakens the enemy most where the top feeds it, the strongest where
-    only the solo Scarlet Whistle reads it (``top_card_choice``); the card moved to the zone
+    pick take the strongest card; a reaver reveals one card; the order a mage's unchosen or
+    a reaver's revealed cards go to their pile ends with the card that weakens the enemy
+    most where the top feeds it, the strongest where only the solo Scarlet Whistle reads it
+    (``pile_order_choice``; ``top_card_choice`` for the top-card questions of older saved
+    games); the card moved to the zone
     (mission 6) is the weakest, the rescued zone card the strongest; a Wild Animal and a 2/5
     declare as ``declare_class_choice`` / ``declare_value_choice`` say; Myla's team damage
     is paid with the cheapest cover over every hand. The Druid keeps the strongest dealt
@@ -177,6 +179,8 @@ def simple_decision(g: Game) -> Optional[dict]:
         return max(acts, key=value)
     if kind == "reaver_count":
         return min(acts, key=lambda a: int(a.get("count", 1)))
+    if kind in ("discard_order", "reaver_order"):
+        return pile_order_choice(g, acts)
     if kind in ("cleanup_top", "banish_top", "discard_top"):
         return top_card_choice(g, acts)
     if kind == "zone_move":
@@ -188,22 +192,47 @@ def simple_decision(g: Game) -> Optional[dict]:
     return acts[0]
 
 
+def _top_feeds_enemy(g: Game, kind: Optional[str]) -> bool:
+    """Does the top of the pile this decision fills feed the enemy (the banished pile
+    wherever it is asked; the discard pile in missions 4, 10, 11 and Evergreen banes), as
+    opposed to only the solo Scarlet Whistle reading it?"""
+    return (kind in ("banish_top", "reaver_order")
+            or bool(getattr(g.rules, "discard_top_feeds_enemy", lambda game: False)(g)))
+
+
+def _top_key(g: Game, kind: Optional[str]) -> Callable[[str], tuple]:
+    """Rank card ids for the top of a pile, the best last: where the top feeds the enemy
+    the one that weakens it least goes first (strong class cards) and a Jester, a
+    classless or the weakest card last; where only the solo Whistle reads it, the
+    strongest last."""
+    strength = getattr(g.rules, "strength", lambda c: c.value)
+    if _top_feeds_enemy(g, kind):
+        return lambda c: (-strength(g.cards[c]), 0 if g.cards[c].suits else 1)
+    return lambda c: (strength(g.cards[c]), g.cards[c].value)
+
+
+def pile_order_choice(g: Game, acts: List[dict]) -> dict:
+    """The full order of a mage's unchosen cards (``discard_order``) or a reaver's revealed
+    cards (``reaver_order``): the card ``top_card_choice`` would put on top is named last,
+    the others before it in the same ranking (``_top_key``)."""
+    kind = (g.decision or {}).get("kind")
+    t = [a for a in acts if "needs" in a]
+    if not t:
+        return acts[0]
+    pool = sorted((str(c) for c in t[0]["pick_from"]), key=_top_key(g, kind))
+    return {"type": t[0]["type"], "player": t[0]["player"], "cards": pool}
+
+
 def top_card_choice(g: Game, acts: List[dict]) -> dict:
-    """Which card ends on top of a pile (clean-up, a mage's unchosen cards, a reaver's or a
-    mage attack's banish): where the top card feeds the enemy (missions 4, 5, 10 to 12,
-    Evergreen banes and locations) the one that weakens it most, a Jester, a classless or
-    the weakest card; where only the solo Scarlet Whistle reads it, the strongest."""
-    rules = g.rules
+    """Which card ends on top of a pile, for decisions of games saved while the app asked
+    only for the top card (clean-up, a mage's unchosen cards, a reaver's or a mage attack's
+    banish): the best card by ``_top_key``."""
     kind = (g.decision or {}).get("kind")
     cards = [a for a in acts if a.get("card")]
     if not cards:
         return acts[0]
-    strength = getattr(rules, "strength", lambda c: c.value)
-    feeds = (kind == "banish_top"
-             or bool(getattr(rules, "discard_top_feeds_enemy", lambda game: False)(g)))
-    if feeds:
-        return min(cards, key=lambda a: (strength(g.cards[a["card"]]), 1 if g.cards[a["card"]].suits else 0))
-    return max(cards, key=lambda a: (strength(g.cards[a["card"]]), g.cards[a["card"]].value))
+    key = _top_key(g, kind)
+    return max(cards, key=lambda a: key(a["card"]))
 
 
 def declare_class_choice(g: Game, acts: List[dict]) -> dict:
@@ -538,8 +567,8 @@ def decision_policy(game: Game) -> dict:
     mage's pick is mandatory: take the revealed card whose one-ply outcome ranks best
     (``_mage_pick_key``); with nothing eligible the only option is to add nothing. The
     Emblem's solo keep takes whichever option (a kept card or none) evaluates best. The
-    reaver reveals one card and adds the strongest; the mission choices (clean-up top,
-    zone move, zone rescue, team damage) follow ``simple_decision``."""
+    reaver reveals one card and adds the strongest; the pile orders and the mission
+    choices (zone move, zone rescue, team damage) follow ``simple_decision``."""
     acts = game.legal_actions()
     skip = [a for a in acts if a.get("skip")]
     kind = (game.decision or {}).get("kind")
@@ -548,8 +577,8 @@ def decision_policy(game: Game) -> dict:
         return max(picks, key=lambda a: _mage_pick_key(game, a))
     if kind == "emblem_keep":
         return max(acts, key=lambda a: (evaluate(_simulate_turn(game, a)), 1 if a.get("skip") else 0))
-    if kind in ("reaver_count", "reaver_pick", "cleanup_top", "banish_top", "discard_top", "zone_move", "zone_rescue",
-                "team_discard") or kind in NEW_KINDS:
+    if kind in ("reaver_count", "reaver_pick", "discard_order", "reaver_order", "cleanup_top", "banish_top",
+                "discard_top", "zone_move", "zone_rescue", "team_discard") or kind in NEW_KINDS:
         act = simple_decision(game)
         if act is not None:
             return act
