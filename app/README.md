@@ -18,8 +18,10 @@ modules are used.
 
 Main menu: Continue (last game), Load game (save slots), New game, Quick play (base
 Regicide solo or pass-and-play), Lore (across all games), Settings, Rules, Quit.
-Game menu: Next mission / Retry mission / Continue attempt, Mercenary camp, Deck list,
-Map, Progress, Lore (this game).
+Game menu: Next mission / Retry mission / Continue attempt, Mercenary camp, Mission rules,
+Deck list (relics with what they do, hired mercenaries, the attempt's beast, the party),
+Map, Progress, Lore (this game). A mission's rules card pops up the first time it loads
+(Settings can turn that off) and is in the in-game Menu too.
 
 ## What the client offers
 

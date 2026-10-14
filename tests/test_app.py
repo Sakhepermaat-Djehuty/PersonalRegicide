@@ -25,6 +25,7 @@ def app(tmp_path, monkeypatch):
     from app.screens import App, MenuScreen
     ui.set_screen_size(390, 844)
     a = App()
+    a.settings["rules_card"] = False    # the rules card has its own tests (tests/test_playtest_ui.py)
     a.show(MenuScreen(a))
     return a
 

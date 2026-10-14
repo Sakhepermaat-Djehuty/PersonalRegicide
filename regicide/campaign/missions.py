@@ -319,6 +319,25 @@ MISSIONS: List[Dict[str, Any]] = [
      "rewards_text": "The High Arcana is dead. Open pack E: the campaign is complete and Eternal mode begins."},
 ]
 
+# One line of flavour for the game menu (written for this app; the mission's rules are on
+# the rules card the app shows when a mission first loads, and from the in-game menu).
+_FLAVOUR: Dict[int, str] = {
+    1: "Ostrana's royals have succumbed to a maddening corruption. The party is called to arms.",
+    2: "Something with many heads waits in the dark of Umbra Cavern.",
+    3: "The Magic Academy's teachers have lost their minds. Class is in session.",
+    4: "Something stirs in the vats of the Biology Laboratory.",
+    5: "Spores drift over the Crimson Grove, and the trail leads to Myla.",
+    6: "In the Garden of Remembrance, the statues are waking.",
+    7: "Pilgrims gather at the Well of Tears, and the pondkin rise to meet them.",
+    8: "Trolls hold the way to Heaven's Edge, and wyverns circle above.",
+    9: "Twinseed Temple holds the captured. Get them out.",
+    10: "In the temple's ruins, your corrupted friends stand against you.",
+    11: "Deep in the Caverns of Decay, the hunt begins.",
+    12: "The Throne of Corruption. End it.",
+}
+for _m in MISSIONS:
+    _m["flavour"] = _FLAVOUR.get(int(_m["number"]), "")
+
 
 def mission(number: int) -> Dict[str, Any]:
     return MISSIONS[number - 1]
@@ -819,7 +838,8 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
     if kind == "relic":
         if step["relic"] not in camp.relics:
             camp.relics.append(step["relic"])
-        return "Gained relic: %s." % step["relic"]
+        from .relics import relic_name, relic_text
+        return "Gained relic: %s. %s" % (relic_name(step["relic"]), relic_text(step["relic"], camp.players))
     if kind == "add_card":
         if P.find(camp.party, str(step["card"]["id"])) is None:
             P.add_card(camp.party, step["card"])

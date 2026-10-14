@@ -24,13 +24,8 @@ from .widgets import (CardStrip, CardView, EnemyPanel, HandGrid, fit_label, fit_
 
 VERSION = "alpha 5.1"
 
-# Relic ids (campaign saves, ``game.extra["relics"]``) -> the names printed on the cards.
-RELIC_NAMES: Dict[str, str] = {"flute": "Kinfolk Flute", "whistle": "Scarlet Whistle", "emblem": "Azure Emblem",
-                               "mother": "Evergreen Mother", "mother_restored": "Evergreen Mother (restored)"}
-
-
-def relic_name(relic_id: str) -> str:
-    return RELIC_NAMES.get(relic_id, relic_id)
+# Relic ids (campaign saves, ``game.extra["relics"]``) -> names and card texts.
+from regicide.campaign.relics import relic_name, relic_text  # noqa: E402
 
 
 def suit_name(game: Game, s: str) -> str:
@@ -219,9 +214,16 @@ class App(ui.View):
         self.in_campaign = True
         self.game = self.campaign.start_attempt(open_hands=self.open_hands())
         self.undo_stack = []
+        # the rules card pops up the first time a mission loads (the game menu has it too)
+        seen = self.campaign.flags.setdefault("rules_seen", [])
+        first = self.campaign.mission not in seen and bool(self.settings.get("rules_card", True))
+        if first:
+            seen.append(self.campaign.mission)
         self.save_campaign()
         self.autosave()
-        self.show(GameScreen(self))
+        screen = GameScreen(self)
+        screen.rules_pending = first
+        self.show(screen)
 
     def start_evergreen_attempt(self) -> None:
         """Pack E: play the drawn Evergreen setup with the finished campaign's party."""
@@ -527,6 +529,7 @@ class GameScreen(Screen):
         self.team_seat: Optional[int] = None   # mission 6 team damage: whose hand is shown
         self.pile_choice: Optional[int] = None  # mission 9 end of turn: the captured pile to rescue from
         self.overlay: Optional[ui.View] = None
+        self.rules_pending = False   # show the mission's rules card before play starts
         self.message_text = ""
         self.status = make_label("", (0, 0, 10, 10), 13, False, T.MUTED)
         self.menu_btn = make_button("Menu", self._menu, (0, 0, 70, 30), False, 14)
@@ -615,6 +618,9 @@ class GameScreen(Screen):
             return
         if g.phase == PHASE_CHOOSE_NEXT:
             self._show_overlay(ChooseNextOverlay(self))
+            return
+        if self.rules_pending:
+            self._show_overlay(RulesOverlay(self))
             return
         kind = (g.decision or {}).get("kind") if g.phase == PHASE_DECIDE else None
         if kind == "team_discard":
@@ -1934,6 +1940,9 @@ class GameMenuOverlay(Overlay):
         ]
         if app.undo_stack:
             items.append(make_button("Undo last action", self._undo, (0, 0, 10, 46), False))
+        if app.in_campaign:
+            items.append(make_button("Mission rules", lambda s: self.screen._show_overlay(RulesOverlay(self.screen)),
+                                     (0, 0, 10, 46), False))
         items.append(make_button("Game log", lambda s: self.screen._show_overlay(LogOverlay(self.screen)), (0, 0, 10, 46), False))
         items.append(make_button("Save and go to menu", lambda s: (app.autosave(), app.show(MenuScreen(app))), (0, 0, 10, 46), False))
         if app.in_campaign:
@@ -1965,6 +1974,92 @@ class GameMenuOverlay(Overlay):
         if console.alert("Abandon this attempt?", "It counts as a lost attempt.", "Abandon", "Cancel") == 1:
             g = self.screen.game
             self.screen._act(g.abandon)
+
+
+def mission_rules_text(camp, game: Optional[Game] = None) -> str:
+    """The rules card: the mission's rules (or the drawn Evergreen setup), then what each
+    relic the party holds does, with the side for this number of players."""
+    parts: List[str] = []
+    evergreen = game is not None and str(getattr(game.config, "rules_id", "")) == "evergreen"
+    if evergreen:
+        setup = camp.evergreen_setup() if camp is not None else None
+        if setup:
+            loc = setup["location"]
+            parts.append("Evergreen mission: the %s" % loc["name"])
+            parts.append(EvergreenScreen._location_text(loc))
+            for b in setup.get("banes", []):
+                parts.append("Bane %d, %s: %s" % (b["n"], b["name"], b["text"]))
+            for b in setup.get("boons", []):
+                parts.append("Boon %d, %s: %s" % (b["n"], b["name"], b["text"]))
+    elif camp is not None:
+        info = mission_info(camp.mission)
+        parts.append("Mission %d · %s" % (camp.mission, info["title"]))
+        parts.append(info["location"])
+        parts.append(info["summary"])
+    players = game.n_players if game is not None else (camp.players if camp is not None else 1)
+    relics = list(game.extra.get("relics", [])) if game is not None else list(camp.relics if camp is not None else [])
+    if relics:
+        parts.append("Your relics (%s side):" % ("solo" if players == 1 else "two or more players"))
+        for r in relics:
+            parts.append("%s: %s" % (relic_name(r), relic_text(r, players)))
+    return "\n\n".join(x for x in parts if x)
+
+
+class RulesOverlay(Overlay):
+    """The mission's rules card, shown when a mission first loads and from the game menu;
+    it scrolls when the text is longer than the screen."""
+
+    def layout(self) -> None:
+        if not hasattr(self, "panel") or not hasattr(self, "screen"):
+            return
+        for v in list(self.panel.subviews):
+            self.panel.remove_subview(v)
+        app = self.screen.app
+        pw = min(340, self.width - 2 * T.MARGIN)
+        tw = pw - 40
+        text = mission_rules_text(app.campaign, self.screen.game)
+        title = make_label("Mission rules", (20, 18, tw, 28), 20, True, T.TEXT, ui.ALIGN_CENTER)
+        self.panel.add_subview(title)
+        _, th = text_size(text, tw - 4, 13)
+        room = max(120.0, self.height - T.TOP_INSET - T.BOTTOM_INSET - 40 - 56 - 70)
+        sh = min(th + 12, room)
+        sv = ui.ScrollView(frame=(20, 54, tw, sh))
+        sv.add_subview(make_label(text, (0, 0, tw, th + 8), 13, False, T.TEXT, ui.ALIGN_LEFT, 0))
+        sv.content_size = (tw, th + 12)
+        self.panel.add_subview(sv)
+        ok = make_button("Got it", self._close, (20, 54 + sh + 12, tw, 46))
+        fit_title(ok)
+        self.panel.add_subview(ok)
+        ph = 54 + sh + 12 + 46 + 18
+        self.panel.frame = ((self.width - pw) / 2, max(T.TOP_INSET, (self.height - ph) / 2), pw, ph)
+
+    def _close(self, sender) -> None:
+        self.screen.rules_pending = False
+        self.screen.refresh(after_action=False)
+
+
+class MissionRulesScreen(Screen):
+    """The rules card from the game menu (no attempt running)."""
+
+    def layout(self) -> None:
+        if not hasattr(self, "app"):
+            return
+        for v in list(self.subviews):
+            self.remove_subview(v)
+        app = self.app
+        w, h = self.width, self.height
+        m = T.MARGIN
+        y = T.TOP_INSET
+        self.add_subview(make_button("‹ Back", lambda s: app.show(CampaignScreen(app)), (m, y, 80, 36), False, 14))
+        self.add_subview(make_label("Mission rules", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
+        y += 48
+        text = mission_rules_text(app.campaign)
+        tw = w - 2 * m - 8
+        _, th = text_size(text, tw, 14)
+        sv = ui.ScrollView(frame=(m, y, w - 2 * m, h - y - T.BOTTOM_INSET))
+        sv.add_subview(make_label(text, (4, 0, tw, th + 20), 14, False, T.TEXT, ui.ALIGN_LEFT, 0))
+        sv.content_size = (w - 2 * m, th + 40)
+        self.add_subview(sv)
 
 
 class LogOverlay(Overlay):
@@ -2091,8 +2186,10 @@ class CampaignScreen(Screen):
             y += 28
             self.add_subview(make_label(info["location"], (m, y, w - 2 * m, 20), 13, False, T.MUTED))
             y += 24
-            self.add_subview(make_label(info["summary"], (m, y, w - 2 * m, 84), 13, False, T.TEXT, lines=5))
-            y += 88
+            flavour = fit_label(info.get("flavour") or info["summary"], w - 2 * m, 14, False, T.TEXT, ui.ALIGN_LEFT)
+            flavour.frame = (m, y, w - 2 * m, min(flavour.height, 60))
+            self.add_subview(flavour)
+            y += flavour.height + 6
             stats = "Attempts %d · Losses %d" % (camp.attempts_on(camp.mission), camp.losses_on(camp.mission))
             if camp.m_box_opened:
                 stats += " · Coins %d" % camp.coins
@@ -2142,7 +2239,8 @@ class CampaignScreen(Screen):
                 y += 52
         y += 6
         row_h, gap = 44, 10
-        buttons = [
+        buttons = [] if camp.finished else [("Mission rules", lambda s: app.show(MissionRulesScreen(app)))]
+        buttons += [
             ("Deck list", lambda s: app.show(PartyScreen(app))),
             ("Map", lambda s: app.show(MapScreen(app))),
             ("Progress", lambda s: app.show(ProgressScreen(app))),
@@ -2675,22 +2773,61 @@ class PartyScreen(Screen):
         y += 48
         if camp is None:
             return
-        from .widgets import CardView
+        from .widgets import CardView, RelicCard
+        from regicide.campaign.mercenaries import by_id as merc_by_id
+        from regicide.campaign import missions as M
         sv = ui.ScrollView(frame=(m, y, w - 2 * m, h - y - T.BOTTOM_INSET))
+        tw = w - 2 * m
         cols = 5
         gap = 6
-        cw = (w - 2 * m - gap * (cols - 1)) / cols
+        cw = (tw - gap * (cols - 1)) / cols
         ch = cw * 1.42
+        yy = 0.0
+
+        def heading(text: str, yy: float) -> float:
+            sv.add_subview(make_label(text, (0, yy, tw, 22), 15, True, T.ACCENT))
+            return yy + 26
+
+        def card_row(cards, yy: float) -> float:
+            for i, c in enumerate(cards):
+                r, col = divmod(i, cols)
+                v = CardView(c)
+                v.small = True
+                v.touch_enabled = False
+                v.frame = (col * (cw + gap), yy + r * (ch + gap), cw, ch)
+                sv.add_subview(v)
+            rows = (len(cards) + cols - 1) // cols
+            return yy + rows * (ch + gap) + 8
+
+        # relics: a small card each, with what it does for this number of players
+        relics = [r for r in camp.relics if relic_text(r, camp.players)]
+        if relics:
+            yy = heading("Relics", yy)
+            for r in relics:
+                tile = RelicCard(r, frame=(0, yy, cw, ch))
+                sv.add_subview(tile)
+                x0 = cw + 10
+                sv.add_subview(make_label(relic_name(r), (x0, yy, tw - x0, 20), 14, True, T.TEXT))
+                body = fit_label(relic_text(r, camp.players), tw - x0, 12, False, T.MUTED, ui.ALIGN_LEFT)
+                body.frame = (x0, yy + 20, tw - x0, body.height)
+                sv.add_subview(body)
+                yy += max(ch, 20 + body.height) + 10
+        # mercenaries hired for this mission (they leave when it is won)
+        mercs = list((camp.evergreen or {}).get("mercenaries", []) if camp.finished else camp.mercenaries)
+        if mercs:
+            when = "the Evergreen mission" if camp.finished else "mission %d" % camp.mission
+            yy = heading("Mercenaries · until %s is won" % when, yy)
+            yy = card_row([P.to_card(merc_by_id(mid)["card"]) for mid in mercs], yy)
+        # Gøran's beast chosen for the next attempt
+        if camp.beast and camp.flags.get("beasts") and not camp.finished:
+            beast = M.beast_by_id(camp.beast)
+            if beast is not None:
+                yy = heading("Gøran's beast · this attempt", yy)
+                yy = card_row([P.to_card(beast)], yy)
         cards = sorted(camp.party_cards(), key=lambda c: (c.suits[0] if c.suits else "Z", c.value))
-        for i, c in enumerate(cards):
-            r, col = divmod(i, cols)
-            v = CardView(c)
-            v.small = True
-            v.touch_enabled = False
-            v.frame = (col * (cw + gap), r * (ch + gap), cw, ch)
-            sv.add_subview(v)
-        rows = (len(cards) + cols - 1) // cols
-        sv.content_size = (w - 2 * m, rows * (ch + gap) + 20)
+        yy = heading("Party · %d cards" % len(cards), yy)
+        yy = card_row(cards, yy)
+        sv.content_size = (tw, yy + 20)
         self.add_subview(sv)
 
 
@@ -3142,14 +3279,15 @@ class SettingsScreen(Screen):
         self.add_subview(make_label("Settings", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
         y += 56
         rows = [
-            ("show_hints", "Hint button in multiplayer games"),
-            ("jester_may_choose_self", "Jester's player may choose themselves"),
-            ("open_hands", "Open hands by default (pass and play)"),
+            ("show_hints", "Hint button in multiplayer games", False),
+            ("jester_may_choose_self", "Jester's player may choose themselves", False),
+            ("open_hands", "Open hands by default (pass and play)", False),
+            ("rules_card", "Show a mission's rules card when it first loads", True),
         ]
-        for key, label in rows:
+        for key, label, default in rows:
             self.add_subview(make_label(label, (m, y, w - 2 * m - 60, 44), 15, False, T.TEXT, lines=2))
             sw = ui.Switch(frame=(w - m - 51, y + 6, 51, 31))
-            sw.value = bool(self.app.settings.get(key, False))
+            sw.value = bool(self.app.settings.get(key, default))
             sw.action = (lambda k: lambda s: self._toggle(k, s.value))(key)
             self.add_subview(sw)
             y += 56

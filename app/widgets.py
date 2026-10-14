@@ -28,15 +28,16 @@ def make_button(title: str, action: Callable, frame=(0, 0, 100, 44), primary: bo
     return b
 
 
-def fit_title(b: ui.Button, max_size: float = 0, min_size: float = 11) -> None:
+def fit_title(b: ui.Button, max_size: float = 0, min_size: float = 11, bold: bool = True) -> None:
     """Shrink a button's title font until the title fits its width (UIButton would cut it
-    in the middle otherwise)."""
-    name, size = b.font if b.font else (T.FONT_BOLD, 16)
-    size = float(max_size or size)
+    in the middle otherwise). The font is always set by the app's own names: on iOS,
+    reading ``b.font`` back gives the system font's internal name (".SFUI-…"), which
+    can't be set again and falls back to a serif font."""
+    size = float(max_size or (b.font[1] if b.font else 16))
     room = b.width - 10
-    while size > min_size and text_size(b.title or "", 0, size, True)[0] > room:
+    while size > min_size and text_size(b.title or "", 0, size, bold)[0] > room:
         size -= 1
-    b.font = (name, size)
+    b.font = (T.FONT_BOLD if bold else T.FONT, size)
 
 
 def set_enabled(b: ui.Button, on: bool, primary: bool = True) -> None:
@@ -141,7 +142,7 @@ def draw_tree(x: float, y: float, w: float, h: float, color: str) -> None:
 
 def card_caption(card: Card) -> str:
     """The small word under a card's pips: a story character's name, "pilgrim" on a
-    pilgrim, "any class" on a Wild Animal; nothing on a plain card. An enemy card (a royal)
+    pilgrim; nothing on a plain card (a Wild Animal shows a class icon in each corner). An enemy card (a royal)
     shows its value there instead: its name is on the enemy panel."""
     if card.is_royal:
         return ""
@@ -149,8 +150,6 @@ def card_caption(card: Card) -> str:
         return card.name
     if card.has("pilgrim") or card.has("evergreen_puppy"):
         return "pilgrim"
-    if card.has("choosable"):
-        return "any class"
     return ""
 
 
@@ -210,6 +209,9 @@ class CardView(ui.View):
         suits = list(c.suits)
         pips = face_pips(c)
         caption = card_caption(c)
+        if c.has("choosable") and not suits:
+            self._draw_wild(c, ox, oy, w, h, rank)
+            return
         if self.small:
             # a tag (an order number, a Druid's slot) takes a band along the bottom and the
             # rank and pips move up above it
@@ -257,6 +259,30 @@ class CardView(ui.View):
             ui.draw_string(badge, (ox + 3, oy + h - 3 - band, w - 6, band), (T.FONT_BOLD, max(8, h * 0.09)), T.BG,
                            ui.ALIGN_CENTER)
 
+    def _draw_wild(self, c: Card, ox: float, oy: float, w: float, h: float, rank: str) -> None:
+        """A Wild Animal (any one class, declared when it enters play): one class icon in
+        each corner, each in its own colour, set apart from a multi-class card's row of
+        icons; the rank sits large in the middle."""
+        band = (max(9.0, h * 0.24) if self.small else max(12.0, h * 0.13)) if self.badge else 0.0
+        size = h * (0.2 if self.small else 0.16)
+        pad = 2.0 if self.small else 5.0
+        top, low = oy + pad * 0.5, oy + h - band - pad * 0.5 - size * 1.25
+        corners = (("H", top, ui.ALIGN_LEFT), ("D", top, ui.ALIGN_RIGHT),
+                   ("C", low, ui.ALIGN_LEFT), ("S", low, ui.ALIGN_RIGHT))
+        for suit, y, align in corners:
+            ui.draw_string(SUIT_SYMBOL[suit], (ox + pad, y, w - 2 * pad, size * 1.3), (T.FONT_BOLD, size),
+                           T.SUIT_COLOR[suit], align)
+        big = (h - band) * (0.36 if self.small else 0.3)
+        ui.draw_string(rank, (ox, oy + (h - band - big * 1.2) / 2.0, w, big * 1.3), (T.FONT_BOLD, big),
+                       card_color(c), ui.ALIGN_CENTER)
+        if self.badge:
+            text = str(self.badge)
+            fs = max(7.0, min(band * 0.62, (w - 2) / (0.62 * max(1, len(text)))))
+            ui.set_color(T.ACCENT)
+            ui.Path.rounded_rect(ox + 1, oy + h - band - 1, w - 2, band, 3).fill()
+            ui.draw_string(text, (ox + 1, oy + h - band - 1 + (band - fs * 1.2) / 2.0, w - 2, fs * 1.3),
+                           (T.FONT_BOLD, fs), T.BG, ui.ALIGN_CENTER)
+
     @staticmethod
     def _pips(pips, x: float, y: float, width: float, size: float, align) -> None:
         """Class symbols in a row, each in its own colour, shrunk to fit ``width``; the
@@ -278,6 +304,30 @@ class CardView(ui.View):
         x, y = touch.location
         if 0 <= x <= self.width and 0 <= y <= self.height and self.on_tap:
             self.on_tap(self)
+
+
+class RelicCard(ui.View):
+    """A relic as a small card: its symbol in its colour on a card face, "relic" below."""
+
+    def __init__(self, relic_id: str, **kw) -> None:
+        super().__init__(**kw)
+        self.relic_id = relic_id
+        self.background_color = None
+
+    def draw(self) -> None:
+        from regicide.campaign.relics import RELICS
+        r = RELICS.get(self.relic_id, {})
+        w, h = self.width, self.height
+        col = str(r.get("color", T.ACCENT))
+        ui.set_color(T.CARD_FACE)
+        ui.Path.rounded_rect(1, 1, w - 2, h - 2, max(5.0, min(w, h) * 0.12)).fill()
+        edge = ui.Path.rounded_rect(2, 2, w - 4, h - 4, max(5.0, min(w, h) * 0.12))
+        edge.line_width = 2.5
+        ui.set_color(col)
+        edge.stroke()
+        size = h * 0.42
+        ui.draw_string(str(r.get("symbol", "?")), (0, h * 0.14, w, size * 1.3), (T.FONT_BOLD, size), col, ui.ALIGN_CENTER)
+        ui.draw_string("relic", (0, h * 0.7, w, h * 0.2), (T.FONT, max(8.0, h * 0.14)), "#555555", ui.ALIGN_CENTER)
 
 
 class EnemyPanel(ui.View):
@@ -313,9 +363,9 @@ class EnemyPanel(ui.View):
             ui.Path.rounded_rect(cx, cy, cw, ch, 8).fill()
             ui.set_color(T.CARD_BORDER)
             ui.Path.rounded_rect(cx + 0.5, cy + 0.5, cw - 1, ch - 1, 8).stroke()
-        sym = "".join(SUIT_SYMBOL.get(s, s) for s in card.suits)
         ui.draw_string(card.rank, (cx + 4 + sw, cy + 2 + sw, cw, 26), (T.FONT_BOLD, 22), col)
-        ui.draw_string(sym, (cx, cy + ch * 0.32, cw, ch * 0.5), (T.FONT_BOLD, ch * 0.4), col, ui.ALIGN_CENTER)
+        # each class in its own colour (a Hydra Head's two classes, the Evergreen tree)
+        CardView._pips(face_pips(card), cx + sw + 2, cy + ch * 0.34, cw - 2 * sw - 4, ch * 0.4, ui.ALIGN_CENTER)
         # text block
         tx = cx + cw + 12
         tw = w - tx - 10

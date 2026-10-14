@@ -136,7 +136,7 @@ def test_card_faces_show_rank_and_class_and_names_only_the_story_characters():
     # none on a restored or corrupted card; corner + centre on Esme
     assert len(trees) == 2 and all(t[-1] == T.EVERGREEN for t in trees)
     assert card_caption(P.to_card(M.BEASTS[0])) == "" and card_caption(P.to_card(M.PUPPY)) == "pilgrim"
-    assert card_caption(P.to_card([m["card"] for m in MERCENARIES if m["id"] == "merc_ace_1"][0])) == "any class"
+    assert card_caption(P.to_card([m["card"] for m in MERCENARIES if m["id"] == "merc_ace_1"][0])) == ""   # corners say it
 
 
 def test_saves_from_before_lose_the_flavour_names(tmp_path, monkeypatch):
