@@ -293,6 +293,31 @@ unspent coins on success, which the sticker does not say (unverified).
   players: one other player, asked clockwise, adds any card but a Jester) and Azure
   Emblem.
 * **Done:** the Mage decision (peek, mandatory pick, chained mages, banished at clean-up even when immunity blocked the ability) and both sides of the Azure Emblem (solo keep after each pick; 2+ players place on the reserve once per attack, before the first peek).
+* **Done:** the Druid (the shuffled discard pile is dealt out clockwise from the druid's
+  player; each player with cards fills four destinations, or as many as they were dealt,
+  one card each: banished, hand ignoring the limit, top and bottom of the reserve; the
+  rest is shuffled back; immunity blocks it all; an empty pile does nothing; the dealt
+  cards stay counted while out, across a save) and the Chanter (the attacker declares 0
+  to the size of the reserve; everyone draws that many clockwise from the attacker,
+  ignoring the limit; each player over the limit then discards down to it, in the same
+  order; locked cards never count as discardable).
+* **Done:** cards that may never leave a hand (mission 7's pilgrims): a rules hook
+  (`hand_locked`) that the plays, the damage paid, feign death (the whole hand is
+  needed), the hand limit (they count), team damage and every "take a card from a hand"
+  effect (Flute, Whistle, Emblem, Mother, Chanter, mission 9's rescue) respect.
+* **Done:** the Evergreen Mother (corrupt relic), both sides, as a decision queued when a
+  corrupted card enters play and settled before the relics look at the attack (so the
+  Scarlet Whistle sees the discard pile after the banish) and inside the Flute, Whistle
+  and Mage flows when their additions are corrupted; the engine restores the interrupted
+  decision afterwards. Solo: discard top or reserve top (reserve only when the pile is
+  empty, no choice; discard only when the reserve is empty). 2+ players: the first other
+  player clockwise from the corrupted card's owner with a card banishes one from hand,
+  no pass; empty hands banish nothing.
+* **Done:** an end-of-turn decision (`on_turn_end` may return one; mission 9) and a
+  decision after the clean-up, before the next enemy is revealed (`after_cleanup`;
+  mission 8's exact-kill pick), plus enemies whose immunity nothing can ignore
+  (`fixed_immunity`: Myla in mission 9, for corrupted and restored cards, Evergreens and
+  claimed-Jester attacks alike; such a paladin gives no shield).
 
 ## Mission 1, Call to Arms (confirmed, transcribed from the owner's photos)
 
@@ -670,9 +695,21 @@ Heaven's Edge); texts in the private lore overlay only.
 4. "Choose either Glamelyn (4 bard), Herbod (4 warrior) or Dhonatir (4 paladin), then
    put a Druid sticker on them." Player's choice.
 
-**Engine status:** data, setup steps and rewards are in; the mission rules (pilgrim
-deck, matching banishes, pilgrims stuck in hands, the reserve discard at defeat) and the
-Druid ability are to be built.
+**Engine status:** mission 7 is playable (`Mission7Rules`). The pilgrims form a face-down
+deck (`extra["pilgrim_deck"]`); at the start of every turn, the first included and the
+turn after a kill too, the top one is turned face up into the zone. Every card entering
+play (the attack's cards, and cards the Flute, Whistle or a Mage add) offers to banish
+one zone pilgrim of the same strength (`pilgrim_banish`, skippable, once per card: two
+3s may banish two 3-pilgrims, one 6 banishes at most one of two 6s; a beast counts as its
+partner's strength, p.14). Pilgrims in hand are locked: not playable, never discarded for
+damage (they pay nothing), no feign death, no Flute / Whistle / Emblem / Chanter / team
+damage; they still fill the hand limit, so a hand of pilgrims that cannot yield loses the
+mission (p.14). Enemy defeated: on exact damage one zone card may first be banished
+(`zone_banish`, optional); then cards equal to the zone's total strength go from the top
+of the reserve to the discard pile (fewer if it runs out), the zone is discarded, the
+enemy banished, the played cards go on top. Decisions: whether the pondkin sit in
+corrupted sleeves is still open, so they are plain enemies; the pilgrim match is decided
+by the active player also for cards other players add through the Flute.
 
 ## Mission 8, Winds of Chaos (confirmed, transcribed from the owner's photos)
 
@@ -732,10 +769,20 @@ Gøran's stolen memory of the Twinseed Temple); texts in the private lore overla
 mission (back into pack P, presumably, since mission 9's fan transcription shuffles them
 into the reserve again). The app keeps them in the pack.
 
-**Engine status:** data, setup steps and rewards are in; the mission rules (puppy in the
-zone, pilgrims in the reserve as playable classless cards, the ascending move-to-zone
-choice, the 10 bonus with its banish-any-discards choice, the exact-kill discard pick)
-and the Chanter ability are to be built.
+**Engine status:** mission 8 is playable (`Mission8Rules`). The puppy starts in the zone
+and the 24 pilgrims are shuffled into the reserve as ordinary classless cards (playable
+alone or as kinfolk, pairable with the puppy, discardable); only non-pilgrim zone cards
+add their strength to the enemy. Enemy defeated: the enemy is banished; then
+`zone_build` offers the cards in play whose strength is exactly one above the zone's
+highest (the puppy is 1), one at a time, with Stop; a 10 fills the zone: the whole zone
+goes to the discard pile, `discard_banish` lets the player banish any subset of the
+pile, the rest is shuffled under the reserve, and `extra["zone_filled"]` ends the moves
+for the mission. The remaining played cards are discarded as usual. Exact damage: once
+the clean-up is done (the played cards are in the pile by then) `discard_pick` lets the
+player put any one discard pile card on top of the reserve, or skip. Decision taken: the
+card lists the exact-kill pick before the clean-up (step 1 of 4b), which would keep the
+just-played cards out of reach; the app asks after the clean-up so the whole pile is
+available, as requested, and notes the difference here.
 
 ## Mission 9, Hope From Ashes (confirmed, transcribed from the owner's photos)
 
@@ -797,10 +844,20 @@ sticker; pack C showed corruption is a sleeve, so a corrupted card may be chosen
 outcome card says the pilgrims depart; no reward card returns pack P, so the app keeps
 the pilgrims in the pack (mission 8's puppy and Evergreen boons use it again).
 
-**Engine status:** data, setup description and rewards are in; the mission rules (the
-three captured piles, the end-of-turn banish-to-rescue or rotate choice, the exact-kill
-pile pick, Myla's unignorable immunity), beasts and the Evergreen Mother on both sides
-are to be built.
+**Engine status:** mission 9 is playable (`Mission9Rules`). Setup: Gøran, the chosen
+beast (and Ash), the Jesters and the mercenaries are set aside; the rest of the reserve is
+shuffled and dealt round-robin into three captured piles of ten (`extra["captured"]`,
+index 0 face up; fewer if the party is short); the pilgrims and the set-aside cards are
+shuffled into the remaining reserve. End of turn (skipped on a kill): `pile_rescue`
+offers, for every non-empty pile and every unlocked hand card, to banish that card and
+move the pile's top card to the discard pile, or `pile_rotate` (every pile's top card to
+its bottom); with an empty hand only the rotation remains, with no piles left no
+question. Enemy defeated: banish the enemy; on exact damage `pile_to_reserve` may move
+one pile's top card to the top of the reserve, or skip. Myla carries `fixed_immunity`:
+her bard and paladin immunity holds against corrupted and restored cards, the Evergreens
+and claimed-Jester attacks, and paladins played against her never shield. The Evergreen
+Mother reward is implemented on both sides (see the relics bullet). The app's zone strip
+shows the three pile tops with their sizes.
 
 ## Mission 10, Pride to Fall (confirmed, transcribed from the owner's photos)
 

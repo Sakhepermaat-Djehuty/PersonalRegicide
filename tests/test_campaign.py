@@ -1,4 +1,4 @@
-"""Regicide Legacy campaign: missions 1-6, rewards, losses, mercenaries, relics, rules."""
+"""Regicide Legacy campaign: missions 1-9, rewards, losses, mercenaries, relics, rules."""
 import json
 import random
 
@@ -2491,3 +2491,933 @@ def test_mission3_yield_still_runs_end_of_turn_effects():
     if g.phase == "suffer":
         g.suffer(sorted(g.active_player.hand, key=lambda x: -g.cards[x].value)[:3])
     assert g.mission_zone == ["4H"] and g.active == 1
+
+
+# ================================================================ Druids, Chanters, the Evergreen Mother, missions 7 to 9
+from helpers import set_discard, set_mission_enemy  # noqa: E402
+from regicide.cards import Card  # noqa: E402
+
+
+def _class_campaign(players=1, seed=700, cards=(), relics=(), corrupted=(), number=1):
+    """A mission ``number`` attempt whose party also holds ``cards`` (e.g. the Druids)."""
+    names = ["Ana", "Ben", "Cy"][:players]
+    c = CampaignState.new(players, names, seed=seed)
+    c.mission = number
+    c.completed = list(range(1, number))
+    for d in cards:
+        if P.find(c.party, str(d["id"])) is None:
+            P.add_card(c.party, dict(d))
+    for cid in corrupted:
+        P.add_flag(c.party, cid, "corrupted")
+    c.relics.extend(relics)
+    g = c.start_attempt(seed=seed)
+    return c, g
+
+
+def _mission(number, players=1, seed=800, relics=(), beast=None, corrupted=(), extra_cards=()):
+    names = ["Ana", "Ben", "Cy"][:players]
+    c = CampaignState.new(players, names, seed=seed)
+    c.mission = number
+    c.completed = list(range(1, number))
+    c.relics.extend(relics)
+    P.add_card(c.party, dict(M.GORAN))
+    c.flags["beasts"] = True
+    c.set_beast(beast)
+    for d in list(M.MAGE_DECK) + list(extra_cards):
+        if P.find(c.party, str(d["id"])) is None:
+            P.add_card(c.party, dict(d))
+    for cid in corrupted:
+        P.add_flag(c.party, cid, "corrupted")
+    g = c.start_attempt(seed=seed)
+    return c, g
+
+
+def _ids_everywhere(g):
+    ids = g.all_card_ids() + g.extra.get("flute", [])
+    assert len(ids) == len(set(ids)) == len(g.cards), (len(ids), len(set(ids)), len(g.cards))
+
+
+def _fresh_enemy(g, rank, suit):
+    """A new royal enemy for the next check; the cards in play go to the discard pile first
+    (``set_enemy`` simply forgets them, which breaks the card-conservation checks)."""
+    for play in g.plays:
+        g.discard.extend(play.card_ids)
+    set_enemy(g, rank, suit)
+
+
+def _rig_pilgrims(g, zone, deck_top=()):
+    """Mission 7: put ``zone`` face up in the mission zone and ``deck_top`` on top of the
+    pilgrim deck (pulled from wherever they are); the other pilgrims stay in the deck."""
+    from helpers import _pull
+    for x in list(zone) + list(deck_top):
+        _pull(g, x)
+    rest = [x for x in g.mission_zone + g.extra["pilgrim_deck"] if x not in zone and x not in deck_top]
+    g.mission_zone = list(zone)
+    g.extra["pilgrim_deck"] = list(deck_top) + rest
+
+
+# ---------------------------------------------------------------- Druids
+def test_druid_deals_the_discard_pile_and_each_player_assigns_four_destinations():
+    c, g = _class_campaign(players=2, cards=M.DRUIDS)
+    set_enemy(g, "J", "H")
+    set_hand(g, ["5U", "9S"], player=0)
+    set_hand(g, ["4C", "3D"], player=1)
+    pile = ["2H", "3H", "4H", "5H", "6H", "7H", "8H", "AC", "7C"]
+    set_discard(g, pile)
+    reserve_before = list(g.tavern)
+    g.play(["5U"])
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "druid_assign" and g.deciding == 0
+    dealt = g.decision["dealt"]
+    assert len(dealt[0]) == 5 and len(dealt[1]) == 4 and sorted(dealt[0] + dealt[1]) == sorted(pile)
+    assert g.discard == [] and g.tavern == reserve_before
+    assert any(ev["t"] == "druid_deal" for ev in g.last_events)
+    acts = g.legal_actions()
+    assert len(acts) == 1 and acts[0]["type"] == "druid_assign" and acts[0]["needs"] == 4
+    assert acts[0]["pick_from"] == dealt[0] and acts[0]["player"] == 0 and acts[0]["slots"] == ["banish", "hand", "top", "bottom"]
+    assert g.rules.druid_options(g) == dealt[0]
+    a, b, c_, d_, e = dealt[0]
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "druid_assign", "player": 0, "banish": a, "hand": a, "top": b, "bottom": c_})   # a card twice
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "druid_assign", "player": 0, "banish": a, "hand": b, "top": c_})               # three only
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "druid_assign", "player": 0, "banish": dealt[1][0], "hand": b, "top": c_, "bottom": d_})  # not mine
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "druid_assign", "player": 1, "banish": a, "hand": b, "top": c_, "bottom": d_})   # not my turn
+    # the dealt cards are still counted while the pile is out, across a save
+    _ids_everywhere(g)
+    g = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    assert g.decision["kind"] == "druid_assign" and g.decision["dealt"] == dealt
+    _ids_everywhere(g)
+    g.decide({"type": "druid_assign", "player": 0, "banish": a, "hand": b, "top": c_, "bottom": d_})
+    assert g.banished[-1] == a and b in g.players[0].hand and g.tavern[0] == c_ and g.tavern[-1] == d_
+    assert g.decision["kind"] == "druid_assign" and g.deciding == 1 and g.decision["dealt"][0] == [e]
+    assert any(ev["t"] == "druid_assign" and ev["hand"] == b for ev in g.last_events)
+    # the second player has exactly four
+    f, h, i, j = dealt[1]
+    g.decide({"type": "druid_assign", "player": 1, "banish": f, "hand": h, "top": i, "bottom": j})
+    # the rest went back to the discard pile (shuffled), then the attack resolved (5 damage)
+    assert g.decision is None and g.discard == [e] and g.phase == PHASE_SUFFER
+    assert g.tavern[0] == i and g.tavern[-1] == j and g.tavern[1] == c_ and g.tavern[-2] == d_
+    assert h in g.players[1].hand and g.banished[-2:] == [a, f]
+    assert g.enemy.hp == 20 - 5 and any(ev["t"] == "druid_done" and ev["returned"] == 1 for ev in g.last_events)
+    _ids_everywhere(g)
+
+
+def test_druid_short_deals_empty_pile_immunity_and_the_strength_is_not_used():
+    c, g = _class_campaign(players=2, seed=701, cards=M.DRUIDS)
+    set_enemy(g, "J", "H")
+    set_hand(g, ["9U", "9S"], player=0)
+    set_hand(g, ["4C"], player=1)
+    set_discard(g, ["2H"])
+    g.play(["9U"])
+    # one card dealt to the druid's player, none to the other: one slot to fill, any of the four
+    assert g.decision["kind"] == "druid_assign" and g.deciding == 0 and g.decision["dealt"] == [["2H"], []]
+    assert g.legal_actions()[0]["needs"] == 1
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "druid_assign", "player": 0})
+    g.decide({"type": "druid_assign", "player": 0, "bottom": "2H"})
+    assert g.decision is None and g.tavern[-1] == "2H" and g.discard == [] and g.enemy.hp == 20 - 9
+    # three cards: two to the druid's player (two destinations of their choice), one to the other
+    _fresh_enemy(g, "J", "H")
+    set_hand(g, ["3U", "9S"], player=0)
+    g.tavern.extend(g.discard)                         # exactly three cards in the pile
+    g.discard = []
+    set_discard(g, ["2H", "3H", "4H"])
+    g.play(["3U"])
+    mine, other = g.decision["dealt"]
+    assert len(mine) == 2 and len(other) == 1 and g.legal_actions()[0]["needs"] == 2
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "druid_assign", "player": 0, "hand": mine[0]})      # two are needed
+    g.decide({"type": "druid_assign", "player": 0, "hand": mine[0], "banish": mine[1]})
+    assert g.deciding == 1 and g.decision["dealt"] == [[], other]
+    g.decide({"type": "druid_assign", "player": 1, "top": other[0]})
+    assert g.decision is None and g.tavern[0] == other[0] and mine[0] in g.players[0].hand and mine[1] in g.banished
+    assert g.discard == [] and g.enemy.hp == 20 - 3
+    # an empty discard pile: nothing happens, no decision
+    _fresh_enemy(g, "J", "H")
+    set_hand(g, ["5U", "9S", "2C"], player=0)
+    g.tavern.extend(g.discard)
+    g.discard = []
+    g.play(["5U"])
+    assert g.decision is None and g.phase == PHASE_SUFFER and any("nothing to sort" in line for line in g.log)
+    # immunity to druids blocks the whole ability
+    _fresh_enemy(g, "J", "H")
+    g.enemy.suits = ("U",)
+    set_hand(g, ["7U", "9S"], player=0)
+    g.tavern.extend(g.discard)
+    g.discard = []
+    set_discard(g, ["2H", "3H"])
+    g.play(["7U"])
+    assert g.decision is None and g.discard == ["2H", "3H"] and dict(_powers(g))["U"]["immune"]
+    _ids_everywhere(g)
+
+
+def test_druid_forecast_hides_the_deal_and_bots_sort_sensibly():
+    c, g = _class_campaign(players=2, seed=702, cards=M.DRUIDS, corrupted=("7H",))
+    set_enemy(g, "J", "S")
+    set_hand(g, ["5U", "9S"], player=0)
+    set_hand(g, ["4C"], player=1)
+    set_discard(g, ["2H", "3H", "4H", "7H", "6H", "8H", "AC", "7C", "5C", "9C"])
+    pv = g.preview_play(["5U"])
+    assert pv["ok"] and pv["damage"] == 5 and pv["decision_kind"] == "druid_assign" and g.discard[0] == "2H"
+    assert len(g.discard) == 10 and g.phase == PHASE_PLAY
+    g.play(["5U"])
+    mine = g.decision["dealt"][0]
+    act = greedy_policy(g)
+    assert act["type"] == "druid_assign" and act["player"] == 0
+    chosen = [act[k] for k in ("banish", "hand", "top", "bottom")]
+    assert len(set(chosen)) == 4 and all(x in mine for x in chosen)
+    by_value = sorted(mine, key=lambda x: -g.cards[x].value)
+    if "7H" in mine:
+        assert act["banish"] == "7H"                                   # the corrupted card goes first
+        good = [x for x in by_value if x != "7H"]
+        assert [act["hand"], act["top"], act["bottom"]] == good[:3]
+    else:
+        assert [act["hand"], act["top"], act["bottom"], act["banish"]] == by_value[:4]
+    # the random policy fills the template at random but legally
+    rnd = random_policy(g, random.Random(3))
+    assert rnd["type"] == "druid_assign" and len(set(rnd[k] for k in ("banish", "hand", "top", "bottom"))) == 4
+    apply_action(g, act)
+    apply_action(g, greedy_policy(g))
+    assert g.decision is None and g.phase == PHASE_SUFFER
+    _ids_everywhere(g)
+
+
+# ---------------------------------------------------------------- Chanters
+def test_chanter_declares_everyone_draws_then_discards_down_in_order():
+    c, g = _class_campaign(players=2, seed=710, cards=M.CHANTERS)
+    set_enemy(g, "J", "H")
+    set_hand(g, ["3T", "9S"], player=0)
+    set_hand(g, ["2C", "3C", "4C", "5C", "6C", "7C"], player=1)
+    set_tavern_top(g, ["AH", "2H", "3H", "4H", "5H", "6H", "7H", "8H"])
+    g.play(["3T"])
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "chanter_declare" and g.deciding == 0
+    acts = g.legal_actions()
+    assert [a["count"] for a in acts] == list(range(0, len(g.tavern) + 1)) and acts[0]["label"] == "Nobody draws"
+    assert not any(a.get("skip") for a in acts)
+    g = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    g.decide({"type": "chanter_declare", "count": 3})
+    # Ana (1 card) drew to 4, Ben (6) drew to 9 and must discard 2 (limit 7)
+    assert g.players[0].hand == ["9S", "AH", "2H", "3H"] and g.players[1].hand[-3:] == ["4H", "5H", "6H"]
+    assert any(ev["t"] == "chanter_declare" and ev["count"] == 3 for ev in g.last_events)
+    assert g.decision["kind"] == "chanter_discard" and g.deciding == 1
+    acts = g.legal_actions()
+    assert len(acts) == 1 and acts[0]["needs"] == 2 and acts[0]["pick_from"] == g.players[1].hand
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "chanter_discard", "player": 1, "cards": ["2C"]})
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "chanter_discard", "player": 1, "cards": ["2C", "9S"]})
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "chanter_discard", "player": 0, "cards": ["2C", "3C"]})
+    _ids_everywhere(g)
+    g.decide({"type": "chanter_discard", "player": 1, "cards": ["2C", "3C"]})
+    assert g.decision is None and set(g.discard[:2]) == {"2C", "3C"} and len(g.players[1].hand) == 7
+    assert g.enemy.hp == 20 - 3 and g.phase == PHASE_SUFFER
+    _ids_everywhere(g)
+
+
+def test_chanter_zero_immunity_short_reserve_locked_pilgrims_and_bots():
+    c, g = _class_campaign(players=2, seed=711, cards=M.CHANTERS)
+    set_enemy(g, "J", "H")
+    set_hand(g, ["3T", "9S", "2C"], player=0)
+    set_hand(g, ["4C"], player=1)
+    g.play(["3T"])
+    g.decide({"type": "chanter_declare", "count": 0})
+    assert g.decision is None and g.players[0].hand == ["9S", "2C"] and g.players[1].hand == ["4C"] and g.phase == PHASE_SUFFER
+    # a short reserve: as many as there are, and the count list stops at the reserve size
+    _fresh_enemy(g, "J", "H")
+    set_hand(g, ["5T", "9S"], player=0)
+    g.discard.extend(g.tavern[3:])
+    g.tavern = g.tavern[:3]
+    g.play(["5T"])
+    assert [a["count"] for a in g.legal_actions()] == [0, 1, 2, 3]
+    g.decide({"type": "chanter_declare", "count": 3})
+    assert len(g.players[0].hand) == 4 and len(g.players[1].hand) == 1 and g.tavern == [] and g.decision is None
+    _ids_everywhere(g)
+    # immunity to chanters blocks the ability
+    _fresh_enemy(g, "J", "H")
+    g.enemy.suits = ("T",)
+    set_hand(g, ["7T", "9S"], player=0)
+    set_tavern_top(g, ["AH", "2H"])
+    g.play(["7T"])
+    assert g.decision is None and dict(_powers(g))["T"]["immune"] and g.tavern[:2] == ["AH", "2H"]
+    # the bot declares what fills the attacker's hand and discards the lowest cards
+    c, g = _class_campaign(players=2, seed=712, cards=M.CHANTERS)
+    set_enemy(g, "J", "H")
+    set_hand(g, ["3T", "9S", "8S"], player=0)                           # 2 left after the play: room for 5
+    set_hand(g, ["2C", "3C", "4C", "5C", "6C", "7C", "8C"], player=1)
+    g.play(["3T"])
+    act = greedy_policy(g)
+    assert act["type"] == "chanter_declare" and act["count"] == 5
+    apply_action(g, act)
+    assert g.decision["kind"] == "chanter_discard" and g.deciding == 1
+    act = greedy_policy(g)
+    low = sorted(g.players[1].hand, key=lambda x: (g.cards[x].defence_value, g.cards[x].value))[:5]
+    assert act["type"] == "chanter_discard" and sorted(act["cards"]) == sorted(low)
+    rnd = random_policy(g, random.Random(2))
+    assert rnd["type"] == "chanter_discard" and len(rnd["cards"]) == 5 and set(rnd["cards"]) <= set(g.players[1].hand)
+    apply_action(g, act)
+    assert len(g.players[1].hand) == 7 and g.decision is None
+    _ids_everywhere(g)
+    # mission 7: pilgrims never leave a hand, so they are not discarded down (and the hand may stay over the limit)
+    c, g = _mission(7, players=1, seed=713, extra_cards=M.CHANTERS)
+    set_mission_enemy(g, "WLJH")
+    _rig_pilgrims(g, zone=["PIL7_1"])
+    set_hand(g, ["3T", "PIL2_1", "PIL2_2", "PIL2_3", "PIL2_4", "PIL3_1", "PIL3_2", "PIL3_3"])
+    set_tavern_top(g, ["2H", "3H", "4H"])
+    g.play(["3T"])
+    g.decide({"type": "chanter_declare", "count": 3})
+    # 7 pilgrims + 3 drawn = 10 > 8: only the 3 drawn may go, needs = min(2 over, 3 unlocked) = 2
+    assert g.decision["kind"] == "chanter_discard" and g.legal_actions()[0]["needs"] == 2
+    assert sorted(g.legal_actions()[0]["pick_from"]) == ["2H", "3H", "4H"]
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "chanter_discard", "player": 0, "cards": ["PIL2_1", "2H"]})
+    g.decide({"type": "chanter_discard", "player": 0, "cards": ["2H", "3H"]})
+    assert g.decision is None and len(g.players[0].hand) == 8
+    _ids_everywhere(g)
+
+
+# ---------------------------------------------------------------- the Evergreen Mother
+def test_evergreen_mother_solo_banishes_from_the_discard_pile_or_the_reserve_by_choice():
+    c, g = _class_campaign(players=1, seed=720, relics=("mother",), corrupted=("7D",))
+    set_enemy(g, "J", "H")
+    set_hand(g, ["7D", "9S", "8S"])
+    top = g.tavern[0]
+    g.play(["7D"])                                     # an empty discard pile: the reserve as usual, no decision
+    assert g.decision is None and g.banished == [top] and g.phase == PHASE_SUFFER
+    _fresh_enemy(g, "J", "H")
+    set_hand(g, ["7D", "9S", "8S"])
+    set_discard(g, ["4C", "2C"])
+    top = g.tavern[0]
+    g.play(["7D"])
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "mother_choice" and g.deciding == 0 and g.enemy.hp == 20
+    acts = g.legal_actions()
+    assert [a["option"] for a in acts] == ["discard", "reserve"] and not any(a.get("skip") for a in acts)
+    assert acts[0]["label"] == "Banish 4♣, top of the discard pile"
+    pv = g.preview_decision({"type": "mother_choice", "option": "discard"})
+    assert pv["ok"] and pv["damage"] == 7
+    g = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    g.decide({"type": "mother_choice", "option": "discard"})
+    assert g.banished[-1] == "4C" and g.discard == ["2C"] and top not in g.banished
+    assert any(ev["t"] == "corrupt_banish" and ev["banished"] == "4C" and ev["source"] == "discard pile" for ev in g.last_events)
+    assert g.decision is None and g.enemy.hp == 20 - 7 and len([ev for ev in g.last_events if ev["t"] == "power"]) == 1
+    # the reserve as the other choice
+    _fresh_enemy(g, "J", "H")
+    set_hand(g, ["7D", "9S", "8S"])
+    set_discard(g, ["4C", "2C"])
+    top = g.tavern[0]
+    g.play(["7D"])
+    g.decide({"type": "mother_choice", "option": "reserve"})
+    assert g.banished[-1] == top and g.discard == ["4C", "2C"]
+    # an empty reserve with a discard pile: the discard option only (and the bot takes it)
+    _fresh_enemy(g, "J", "H")
+    set_hand(g, ["7D", "9S", "8S"])
+    g.discard.extend(g.tavern)
+    g.tavern = []
+    g.play(["7D"])
+    assert [a["option"] for a in g.legal_actions()] == ["discard"]
+    assert greedy_policy(g)["option"] == "discard"
+    g.decide(greedy_policy(g))
+    assert g.decision is None
+    _ids_everywhere(g)
+
+
+def test_evergreen_mother_multiplayer_another_player_banishes_from_hand_or_nothing():
+    c, g = _class_campaign(players=3, seed=721, relics=("mother",), corrupted=("7D",))
+    set_enemy(g, "J", "H")
+    set_hand(g, ["7D", "9S"], player=0)
+    set_hand(g, [], player=1)
+    set_hand(g, ["3C", "4C"], player=2)
+    top = g.tavern[0]
+    g.play(["7D"])
+    # Ben's hand is empty, so Cy (next clockwise) must banish; no pass
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "mother_banish" and g.deciding == 2
+    acts = g.legal_actions()
+    assert sorted(a["card"] for a in acts) == ["3C", "4C"] and not any(a.get("skip") for a in acts)
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "mother_banish", "card": "9S"})
+    assert g.tavern[0] == top and g.enemy.hp == 20
+    g.decide({"type": "mother_banish", "card": "3C"})
+    assert g.banished == ["3C"] and "3C" not in g.players[2].hand and "4C" in g.players[2].hand and top not in g.banished
+    assert g.decision is None and g.enemy.hp == 13 and g.phase == PHASE_SUFFER and g.active == 0   # the bard drew 7
+    _ids_everywhere(g)
+    # every other hand empty: nothing is banished, no decision
+    _fresh_enemy(g, "J", "H")
+    set_hand(g, ["7D", "9S"], player=0)
+    set_hand(g, [], player=1)
+    set_hand(g, [], player=2)
+    g.play(["7D"])
+    assert g.decision is None and g.banished == ["3C"] and g.enemy.hp == 13
+    assert any(ev["t"] == "corrupt_banish_none" for ev in g.last_events)
+    _ids_everywhere(g)
+    # the bot banishes its lowest card
+    c, g = _class_campaign(players=2, seed=722, relics=("mother",), corrupted=("7D",))
+    set_enemy(g, "J", "H")
+    set_hand(g, ["7D", "9S"], player=0)
+    set_hand(g, ["5C", "2C", "8C"], player=1)
+    g.play(["7D"])
+    assert g.deciding == 1 and greedy_policy(g) == {"type": "mother_banish", "player": 1, "card": "2C",
+                                                     "label": "Banish 2♣ from hand"}
+
+
+def test_evergreen_mother_is_queued_behind_a_flute_addition_and_before_the_whistle():
+    c, g = _class_campaign(players=2, seed=723, relics=("flute", "mother"), corrupted=("3H",))
+    set_enemy(g, "J", "C")
+    set_hand(g, ["3S", "9S", "2D"], player=0)
+    set_hand(g, ["3H", "4C"], player=1)
+    g.play(["3S"])
+    assert g.decision["kind"] == "flute_add" and g.deciding == 1
+    g.flute_add(["3H"])
+    # Ben's corrupted 3 joined: Ana (clockwise from Ben) must banish from hand before the attack resolves
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "mother_banish" and g.deciding == 0
+    assert g.decision["resume_step"] == "flute" and g.decision["resume_decision"]["kind"] == "flute_add"
+    assert g.plays[0].card_ids == ["3S", "3H"] and g.enemy.hp == 20
+    assert sorted(a["card"] for a in g.legal_actions()) == ["2D", "9S"]
+    g = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    g.decide({"type": "mother_banish", "card": "2D"})
+    # nobody else to ask: the kinfolk attack resolves at 6 (heal 6, shield 6)
+    assert g.banished == ["2D"] and g.decision is None and g.enemy.hp == 20 - 6 and g.shield == 6
+    assert g.phase == PHASE_SUFFER and g.active == 0
+    _ids_everywhere(g)
+    # solo: the Mother's choice comes before the Scarlet Whistle offers the (new) top discard
+    c, g = _class_campaign(players=1, seed=724, relics=("whistle", "mother"), corrupted=("AC",))
+    set_enemy(g, "J", "H")
+    set_hand(g, ["AC", "9S", "8S"])
+    set_discard(g, ["6D", "5C"])
+    g.play(["AC"])
+    assert g.decision["kind"] == "mother_choice" and g.decision["resume_step"] == "after_attack"
+    g.decide({"type": "mother_choice", "option": "discard"})
+    assert g.banished == ["6D"] and g.decision["kind"] == "whistle_take" and g.decision["card"] == "5C"
+    g.decide({"type": "whistle_take", "card": "5C"})
+    assert g.plays[0].card_ids == ["AC", "5C"] and g.enemy.hp == 20 - 12 and g.decision is None
+    _ids_everywhere(g)
+
+
+# ---------------------------------------------------------------- Mission 7: Tales of Rebirth
+def test_mission7_pilgrim_deck_flips_at_every_start_of_turn_and_pilgrims_never_leave_hands():
+    c, g = _mission(7, players=2, seed=800)
+    assert g.config.rules_id == "legacy_m7" and MISSIONS[6]["playable"] and g.rules.uses_mission_zone
+    assert all(x in g.cards for x in ("3U", "5U", "7U", "9U", "GOR8"))
+    # 25 pilgrims: one flipped before the first turn, 24 left face down
+    assert len(g.extra["pilgrim_deck"]) == 24 and len(g.mission_zone) == 1 and g.cards[g.mission_zone[0]].has("pilgrim")
+    assert not any(g.cards[x].has("pilgrim") for x in g.tavern)
+    _ids_everywhere(g)
+    set_mission_enemy(g, "WLJH")
+    _rig_pilgrims(g, zone=[], deck_top=["PIL3_1", "PIL6_1", "PIL3_2", "PIL2_1"])
+    set_hand(g, ["9S", "PIL4_1", "PIL5_1", "2D"], player=0)
+    set_hand(g, ["8S", "3C"], player=1)
+    set_tavern_top(g, ["5C", "6C"])
+    # pilgrims in hand: not playable, not discardable, no feign death, and they count in the limit
+    assert g.check_play(["PIL4_1"]) == (False, "Servant (4) may never leave your hand.")
+    assert all("PIL" not in x for p in g.legal_plays() for x in p)
+    assert g.hand_defence_value() == 9 + 2 and g.hand_locked("PIL4_1") and not g.hand_locked("9S")
+    g.play(["2D"])                                     # bard: Ana and Ben draw one each
+    assert g.players[0].hand == ["9S", "PIL4_1", "PIL5_1", "5C"] and g.players[1].hand == ["8S", "3C", "6C"]
+    assert g.phase == PHASE_SUFFER and g.pending_damage == 10
+    with pytest.raises(IllegalAction):
+        g.suffer(["PIL4_1", "PIL5_1", "9S"])
+    assert not g.feign_death_available()
+    g.suffer(["9S", "5C"])
+    assert g.players[0].hand == ["PIL4_1", "PIL5_1"]
+    # Ben's turn started: the next pilgrim was flipped
+    assert g.active == 1 and g.mission_zone == ["PIL3_1"] and g.extra["pilgrim_deck"][0] == "PIL6_1"
+    assert any(ev["t"] == "zone_add" and ev.get("source") == "pilgrims" for ev in g.last_events)
+    # a hand full of pilgrims cannot act: if yielding is barred too, the mission is lost (p.14)
+    set_hand(g, ["PIL2_2", "PIL2_3", "PIL2_4", "PIL3_3", "PIL3_4", "PIL4_2", "PIL4_3"], player=1)
+    assert g.legal_plays() == [] and g.can_yield()
+    g.last_action = ["yielded", None]
+    g._check_can_act()
+    assert g.phase == PHASE_LOST
+    _ids_everywhere(g)
+    # feign death needs the whole hand: fine without a pilgrim, impossible with one (the hand cannot pay: lost)
+    c, g = _mission(7, players=1, seed=801)
+    set_mission_enemy(g, "WLQH")                       # a Deep Pondkin: 15 strength
+    _rig_pilgrims(g, zone=["PIL7_1"])
+    set_hand(g, ["AD", "AS", "AC", "AH", "2S", "2C", "2H", "AM"])
+    set_tavern_top(g, ["3H"])
+    g.play(["AD"])                                     # the bard draws the hand back to 8
+    assert g.phase == PHASE_SUFFER and g.pending_damage == 15 and g.hand_defence_value() == 13
+    assert g.feign_death_available() and any(a.get("feign") for a in g.legal_actions())
+    c, g = _mission(7, players=1, seed=801)
+    set_mission_enemy(g, "WLQH")
+    _rig_pilgrims(g, zone=["PIL7_1"])
+    set_hand(g, ["AD", "AS", "AC", "AH", "2S", "2C", "2H", "PIL2_1"])
+    set_tavern_top(g, ["3H"])
+    g.play(["AD"])
+    assert g.phase == PHASE_LOST and "cannot suffer" in g.loss_reason
+    _ids_everywhere(g)
+
+
+def test_mission7_a_card_entering_play_may_banish_one_matching_pilgrim_once_per_card():
+    c, g = _mission(7, players=1, seed=802, relics=("whistle",))
+    set_mission_enemy(g, "WLJH", hp=100)
+    _rig_pilgrims(g, zone=["PIL3_1", "PIL3_2", "PIL6_1"])
+    set_hand(g, ["3H", "3C", "9S", "6D", "AS"])
+    g.play(["3H", "3C"])                               # kinfolk 6: each 3 may banish one 3-pilgrim
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "pilgrim_banish" and g.decision["entering"] == "3H"
+    assert sorted(g.decision["options"]) == ["PIL3_1", "PIL3_2"] and g.enemy.hp == 100
+    acts = g.legal_actions()
+    assert [a.get("card") for a in acts] == ["PIL3_1", "PIL3_2", None] and acts[-1]["skip"]
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "pilgrim_banish", "card": "PIL6_1"})
+    g = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    g.decide({"type": "pilgrim_banish", "card": "PIL3_2"})
+    assert g.banished[-1] == "PIL3_2" and g.mission_zone == ["PIL3_1", "PIL6_1"]
+    # the second 3 may banish the other 3
+    assert g.decision["kind"] == "pilgrim_banish" and g.decision["entering"] == "3C" and g.decision["options"] == ["PIL3_1"]
+    g.decide({"type": "pilgrim_skip"})                 # keep it
+    assert g.decision is None and g.mission_zone == ["PIL3_1", "PIL6_1"]
+    assert g.enemy.hp == 100 - 12 and g.phase == PHASE_SUFFER        # 6 doubled by the warrior
+    assert g.rules.zone_strength(g) == 9
+    g.suffer(["9S", "6D"])
+    # a lone 6 banishes one pilgrim only, even if two 6s sit in the zone
+    _rig_pilgrims(g, zone=["PIL3_1", "PIL6_1", "PIL6_2"])
+    set_hand(g, ["6D", "AS", "2C"])
+    set_tavern_top(g, ["9H", "8H", "7H", "6H", "5H", "4H"])
+    g.play(["6D"])
+    assert g.decision["kind"] == "pilgrim_banish" and sorted(g.decision["options"]) == ["PIL6_1", "PIL6_2"]
+    assert greedy_policy(g)["type"] == "pilgrim_banish"
+    g.decide({"type": "pilgrim_banish", "card": "PIL6_1"})
+    assert g.decision is None and g.mission_zone == ["PIL3_1", "PIL6_2"] and g.phase == PHASE_SUFFER
+    g.suffer(min_waste_discard(g))
+    # no match: no decision at all; a card the Scarlet Whistle adds (solo) is checked too
+    _rig_pilgrims(g, zone=["PIL3_1", "PIL2_1"])
+    set_hand(g, ["AS", "2C", "9C"])
+    set_discard(g, ["2H"] + [x for x in g.discard if x != "2H"])
+    g.play(["AS"])                                     # the ace matches nothing; the whistle offers the 2♥
+    assert g.decision["kind"] == "whistle_take"
+    g.decide({"type": "whistle_take", "card": "2H"})
+    assert g.decision["kind"] == "pilgrim_banish" and g.decision["entering"] == "2H" and g.decision["options"] == ["PIL2_1"]
+    assert g.decision["resume_step"] == "resolve"
+    g.decide({"type": "pilgrim_banish", "card": "PIL2_1"})
+    assert g.decision is None and g.mission_zone == ["PIL3_1"] and g.plays[-1].value == 3 and g.phase == PHASE_SUFFER
+    _ids_everywhere(g)
+
+
+def test_mission7_mage_and_flute_additions_check_the_pilgrims_too():
+    c, g = _mission(7, players=2, seed=803, relics=("flute",))
+    set_mission_enemy(g, "WLJH", hp=100)
+    _rig_pilgrims(g, zone=["PIL3_1", "PIL4_1"])
+    set_hand(g, ["3M", "9S", "8S"], player=0)
+    set_hand(g, ["3C", "2D"], player=1)
+    set_tavern_top(g, ["4H", "2S", "5S"])
+    g.play(["3M"])
+    # the 3 of mages matches a 3-pilgrim first; then the flute asks Ben; then the mage looks
+    assert g.decision["kind"] == "pilgrim_banish" and g.decision["entering"] == "3M"
+    g.decide({"type": "pilgrim_banish", "card": "PIL3_1"})
+    assert g.decision["kind"] == "flute_add" and g.deciding == 1
+    g.flute_add(["3C"])
+    assert g.decision["kind"] == "mage_peek" and g.deciding == 0
+    assert g.decision["revealed"][:3] == ["4H", "2S", "5S"] and len(g.decision["revealed"]) == 6
+    g.decide({"type": "mage_pick", "card": "4H"})
+    # the 4 of clerics joined: it matches the 4-pilgrim; the mage flow resumes afterwards
+    assert g.decision["kind"] == "pilgrim_banish" and g.decision["entering"] == "4H" and g.decision["resume_step"] == "mage_picked"
+    assert g.decision["resume_decision"]["kind"] == "mage_peek" and g.plays[0].card_ids == ["3M", "3C", "4H"]
+    _ids_everywhere(g)                                 # the revealed cards parked in the nested decision count
+    g = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    g.decide({"type": "pilgrim_banish", "card": "PIL4_1"})
+    assert g.mission_zone == [] and g.decision is None
+    # strength 10: the cleric heals, the warrior doubles: 20
+    assert g.plays[0].value == 10 and g.enemy.hp == 100 - 20 and g.phase == PHASE_SUFFER
+    _ids_everywhere(g)
+
+
+def test_mission7_defeat_discards_reserve_cards_equal_to_the_zone_then_the_zone_and_banishes_the_enemy():
+    c, g = _mission(7, players=1, seed=804)
+    set_mission_enemy(g, "WLJS", hp=9)                 # a Shoal paladin
+    _rig_pilgrims(g, zone=["PIL3_1", "PIL6_1"])
+    set_hand(g, ["9H", "2C", "AS"])
+    reserve = list(g.tavern)
+    g.play(["9H"])                                     # 9: exact
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "zone_banish" and g.decision["exact"] is True
+    acts = g.legal_actions()
+    assert [a.get("card") for a in acts] == ["PIL3_1", "PIL6_1", None] and acts[-1]["skip"]
+    assert greedy_policy(g)["card"] == "PIL6_1"       # the bot banishes the strongest
+    g = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    g.decide({"type": "zone_banish", "card": "PIL6_1"})
+    # the zone is now 3: three reserve cards to the discard pile, then the zone, then the played card on top
+    assert g.enemies_defeated == 1 and g.decision is None
+    assert g.discard == ["9H", "PIL3_1", reserve[2], reserve[1], reserve[0]] and g.tavern == reserve[3:]
+    assert "PIL6_1" in g.banished and "WLJS" in g.banished
+    assert len(g.mission_zone) == 1 and g.cards[g.mission_zone[0]].has("pilgrim")   # the new turn flipped one
+    assert any(ev["t"] == "reserve_discard" and len(ev["cards"]) == 3 for ev in g.last_events)
+    assert any(ev["t"] == "zone_cleared" and ev["to"] == "discard" for ev in g.last_events)
+    assert g.phase == PHASE_PLAY and g.active == 0
+    _ids_everywhere(g)
+    # not exact: no choice; the whole zone counts, and a short reserve gives what it has
+    set_mission_enemy(g, "WLJH", hp=5)
+    _rig_pilgrims(g, zone=["PIL6_1", "PIL7_1"])
+    set_hand(g, ["9C", "2C"])
+    g.discard.extend(g.tavern[5:])
+    g.tavern = g.tavern[:5]
+    before = len(g.discard)
+    g.play(["9C"])
+    assert g.enemies_defeated == 2 and g.decision is None
+    assert g.tavern == [] and len(g.discard) == before + 5 + 2 + 1
+    assert any(ev["t"] == "reserve_discard" and len(ev["cards"]) == 5 for ev in g.last_events)
+    _ids_everywhere(g)
+    # the mission is won when the last pondkin falls
+    g.castle = []
+    set_hand(g, ["9S", "2C"])
+    g.enemy.hp = 5
+    g.play(["9S"])
+    assert g.phase == PHASE_WON and g.result == "gold"    # solo: a medal, no Jester attack used
+
+
+# ---------------------------------------------------------------- Mission 8: Winds of Chaos
+def test_mission8_puppy_in_the_zone_pilgrims_in_the_reserve_and_the_bonus_skips_pilgrims():
+    from helpers import _pull
+    c, g = _mission(8, players=1, seed=810)
+    assert g.config.rules_id == "legacy_m8" and MISSIONS[7]["playable"] and g.rules.uses_mission_zone
+    assert g.mission_zone == ["PILA"] and g.cards["PILA"].value == 1 and "pilgrim_deck" not in g.extra
+    everywhere = g.tavern + [x for p in g.players for x in p.hand]
+    assert sum(1 for x in everywhere if g.cards[x].has("pilgrim")) == 24
+    assert all(x in g.cards for x in ("3T", "5T", "7T", "9T"))
+    _ids_everywhere(g)
+    set_mission_enemy(g, "HEJ1")                       # a Troll: cleric and bard
+    assert g.rules.immune_suits(g) == ("H", "D") and g.enemy_attack == 10 and g.rules.attack_bonus(g) == 0
+    # pilgrims are ordinary classless cards here: playable, pairable with the puppy, discardable
+    set_hand(g, ["PIL3_1", "PIL3_2", "9S", "8S", "PILA"])
+    assert g.mission_zone == []
+    assert g.check_play(["PIL3_1"]) == (True, "single") and g.check_play(["PIL3_1", "PIL3_2"]) == (True, "set")
+    assert g.check_play(["PILA", "PIL3_1"]) == (True, "companion") and not g.hand_locked("PIL3_1")
+    _pull(g, "PILA")
+    g.mission_zone = ["PILA"]
+    g.play(["PIL3_1", "PIL3_2"])
+    assert g.enemy.hp == 20 - 6 and g.plays[0].suits == () and g.phase == PHASE_SUFFER
+    assert not any(ev["t"] == "power" for ev in g.last_events)
+    g.suffer(["9S", "8S"])
+    _ids_everywhere(g)
+    # the zone's non-pilgrim cards add to the enemy, pilgrims add nothing
+    for x in ("PIL2_1", "3H"):
+        _pull(g, x)
+    g.mission_zone = ["PILA", "PIL2_1", "3H"]
+    assert g.rules.attack_bonus(g) == 3 and g.enemy_attack == 13
+    _ids_everywhere(g)
+
+
+def test_mission8_defeat_moves_cards_to_the_zone_in_ascending_order_and_a_ten_fills_it():
+    from helpers import _pull
+    c, g = _mission(8, players=1, seed=811)
+    set_mission_enemy(g, "HEJ6", hp=4)                 # a warrior / paladin troll
+    set_hand(g, ["2H", "3H", "4D", "AS", "9S"])
+    g.play(["2H"])
+    assert g.enemy.hp == 2 and g.phase == PHASE_SUFFER
+    g.suffer(["9S", "AS"])
+    set_hand(g, ["3H", "4D", "AS", "7C"])
+    g.play(["3H"])                                     # a kill, not exact; 2♥ and 3♥ are in play
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "zone_build" and g.decision["options"] == ["2H"]
+    acts = g.legal_actions()
+    assert [a.get("card") for a in acts] == ["2H", None] and acts[-1]["label"] == "Stop"
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "zone_build", "card": "3H"})
+    g = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    g.decide({"type": "zone_build", "card": "2H"})
+    assert g.mission_zone == ["PILA", "2H"] and g.decision["kind"] == "zone_build" and g.decision["options"] == ["3H"]
+    g.decide({"type": "zone_build", "card": "3H"})
+    # nothing in play is a 4: the kill completes; enemy banished, nothing left to discard
+    assert g.decision is None and g.enemies_defeated == 1 and g.banished == ["HEJ6"] and g.mission_zone == ["PILA", "2H", "3H"]
+    assert g.rules.attack_bonus(g) == 5 and g.enemy_attack == g.enemy.attack + 5
+    assert g.discard == [] and "9S" in g.tavern          # the 3 of clerics healed the two discards first
+    assert g.phase == PHASE_PLAY and g.active == 0
+    _ids_everywhere(g)
+    # Stop keeps the rest in play for the clean-up
+    set_mission_enemy(g, "HEJ1", hp=3)
+    set_hand(g, ["4D", "PIL4_1", "AS"])
+    g.play(["4D"])                                     # immune to bards: 4, not exact
+    assert g.decision["kind"] == "zone_build" and g.decision["options"] == ["4D"]
+    assert greedy_policy(g)["card"] == "4D"
+    g.decide({"type": "zone_build_stop"})
+    assert g.decision is None and g.discard[0] == "4D" and g.mission_zone == ["PILA", "2H", "3H"] and g.enemies_defeated == 2
+    # a 10 fills the zone: the zone is discarded, any discards banished, the rest healed under the reserve
+    zone = ["PILA", "2H", "3H", "4D", "PIL5_1", "6C", "7C", "8C", "9C"]
+    for x in zone:
+        _pull(g, x)
+    g.mission_zone = list(zone)
+    assert g.rules.attack_bonus(g) == 2 + 3 + 4 + 6 + 7 + 8 + 9
+    set_mission_enemy(g, "HEJ4", hp=10)               # bard / warrior troll: the 10 of bards is a plain 10
+    set_hand(g, ["10D", "AS"])
+    set_discard(g, ["2S", "3S"] + [x for x in g.discard if x not in ("2S", "3S")])
+    pile_before = list(g.discard)
+    reserve_before = list(g.tavern)
+    g.play(["10D"])
+    assert g.decision["kind"] == "zone_build" and g.decision["options"] == ["10D"] and g.decision["exact"] is True
+    g.decide({"type": "zone_build", "card": "10D"})
+    assert g.mission_zone == [] and g.extra.get("zone_filled") is True
+    assert g.decision["kind"] == "discard_banish" and sorted(g.discard) == sorted(pile_before + zone + ["10D"])
+    acts = g.legal_actions()
+    template = [a for a in acts if "needs" in a][0]
+    assert template["needs"] is None and sorted(template["pick_from"]) == sorted(g.discard) and acts[-1]["skip"]
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "discard_banish", "cards": ["AS"]})
+    bot = greedy_policy(g)
+    assert bot["type"] == "discard_banish" and "PILA" in bot["cards"] and "PIL5_1" in bot["cards"] and len(bot["cards"]) == 5
+    rnd = random_policy(g, random.Random(5))
+    assert rnd["type"] in ("discard_banish", "discard_banish_skip")
+    _ids_everywhere(g)
+    g = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    g.decide({"type": "discard_banish", "cards": ["PILA", "2S", "10D"]})
+    healed = sorted(set(pile_before + zone + ["10D"]) - {"PILA", "2S", "10D"})
+    assert {"PILA", "2S", "10D"} <= set(g.banished) and g.discard == []
+    assert g.tavern[:len(reserve_before)] == reserve_before and sorted(g.tavern[len(reserve_before):]) == healed
+    assert any(ev["t"] == "zone_filled" and ev["banished"] == ["PILA", "2S", "10D"] and ev["healed"] == len(healed) for ev in g.last_events)
+    # the exact kill's pick from the discard pile: nothing was left in play, the pile is empty, no pick
+    assert g.decision is None and g.enemies_defeated == 3 and g.phase == PHASE_PLAY
+    _ids_everywhere(g)
+    # no more moves for the rest of the mission
+    set_mission_enemy(g, "HEJ3", hp=2)
+    set_hand(g, ["2C", "AS"])
+    g.play(["2C"])                                     # 4: a kill, not exact; a 2 would otherwise be movable
+    assert g.decision is None and g.enemies_defeated == 4 and g.mission_zone == [] and g.rules.attack_bonus(g) == 0
+    _ids_everywhere(g)
+
+
+def test_mission8_exact_kill_lets_the_player_put_a_discard_card_on_top_of_the_reserve():
+    c, g = _mission(8, players=1, seed=812)
+    set_mission_enemy(g, "HEJ1", hp=9)
+    set_hand(g, ["9S", "AS", "2C"])
+    set_discard(g, ["5H", "6H"])
+    g.play(["9S"])                                     # exact; nothing can move (a 2 is needed)
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "discard_pick" and g.decision["resume"] == "defeat_tail"
+    # the enemy is already banished and the played card is on the discard pile when the pick is offered
+    assert g.banished == ["HEJ1"] and g.discard == ["9S", "5H", "6H"] and g.enemy is None
+    acts = g.legal_actions()
+    assert [a.get("card") for a in acts] == ["9S", "5H", "6H", None] and acts[-1]["skip"]
+    assert greedy_policy(g)["card"] == "9S"
+    _ids_everywhere(g)
+    g = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    g.decide({"type": "discard_pick", "card": "6H"})
+    assert g.tavern[0] == "6H" and g.discard == ["9S", "5H"] and g.decision is None
+    assert g.enemies_defeated == 1 and g.enemy is not None and g.phase == PHASE_PLAY and g.active == 0
+    _ids_everywhere(g)
+    # skipping leaves the pile alone; the forecast reports the kill
+    set_mission_enemy(g, "HEJ2", hp=9)
+    set_hand(g, ["9S", "AS", "2C"])
+    pv = g.preview_play(["9S"])
+    assert pv["ok"] and pv["defeats"] and pv["exact"] and pv["decision_kind"] == "discard_pick"
+    g.play(["9S"])
+    g.decide({"type": "discard_pick_skip"})
+    assert g.discard[0] == "9S" and g.enemies_defeated == 2 and g.decision is None
+    # moves to the zone come first, the pick after the clean-up (the played cards are in the pile by then)
+    set_mission_enemy(g, "HEJ3", hp=4)                 # cleric / paladin troll
+    set_hand(g, ["2D", "AS", "9C", "8C"])
+    g.mission_zone = ["PILA"]
+    g.play(["2D"])
+    assert g.enemy.hp == 2 and g.phase == PHASE_SUFFER
+    g.suffer(min_waste_discard(g))
+    set_hand(g, ["2S", "AS"])
+    g.play(["2S"])                                     # immune to paladins: 2, exact
+    assert g.decision["kind"] == "zone_build" and sorted(g.decision["options"]) == ["2D", "2S"]
+    g.decide({"type": "zone_build", "card": "2S"})
+    assert g.decision["kind"] == "discard_pick" and g.mission_zone == ["PILA", "2S"] and g.discard[0] == "2D"
+    g.decide({"type": "discard_pick", "card": "2D"})
+    assert g.tavern[0] == "2D" and g.decision is None and g.enemies_defeated == 3
+    _ids_everywhere(g)
+
+
+# ---------------------------------------------------------------- Mission 9: Hope From Ashes
+def _mission9(players=1, seed=820, relics=(), beast="B_H", merc=True):
+    names = ["Ana", "Ben", "Cy"][:players]
+    c = CampaignState.new(players, names, seed=seed)
+    c.mission = 9
+    c.completed = list(range(1, 9))
+    c.relics.extend(relics)
+    P.add_card(c.party, dict(M.GORAN))
+    for s in ("C", "S", "H", "D"):
+        P.add_suit(c.party, "GOR8", s)
+    c.flags["beasts"] = True
+    c.set_beast(beast)
+    for d in M.MAGE_DECK:
+        P.add_card(c.party, dict(d))
+    if merc:
+        c.m_box_opened = True
+        c.coins = 5
+        c.hire("merc_12H")
+    g = c.start_attempt(seed=seed)
+    return c, g
+
+
+def test_mission9_setup_deals_three_captured_piles_and_shuffles_the_rest_back_with_the_pilgrims():
+    c, g = _mission9(players=3)
+    assert g.config.rules_id == "legacy_m9" and MISSIONS[8]["playable"] and g.rules.uses_mission_zone
+    piles = g.extra["captured"]
+    assert len(piles) == 3 and all(len(p) == 10 for p in piles) and g.mission_zone == []
+    captured = [x for p in piles for x in p]
+    assert len(set(captured)) == 30
+    # Gøran, the beast, the mercenary, the Jester and the pilgrims are never captured
+    assert not any(x in captured for x in ("GOR8", "B_H", "M12H")) and not any(g.cards[x].is_jester for x in captured)
+    assert not any(g.cards[x].has("pilgrim") for x in captured)
+    loose = g.tavern + [x for p in g.players for x in p.hand]
+    assert all(x in loose for x in ("GOR8", "B_H", "M12H")) and sum(1 for x in loose if g.cards[x].is_jester) == 1
+    assert sum(1 for x in loose if g.cards[x].has("pilgrim")) == 24
+    _ids_everywhere(g)
+    enemies = [g.cards[x] for x in [g.enemy.card_id] + g.castle]
+    assert [e.name for e in enemies] == ["Loreguard"] * 4 + ["Lorekeeper"] * 4 + ["Myla"]
+    assert g.rules.pile_tops(g) == [p[0] for p in piles]
+    # the save keeps the piles
+    g2 = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    assert g2.extra["captured"] == piles and sorted(g2.all_card_ids()) == sorted(g2.cards)
+
+
+def test_mission9_end_of_turn_rescues_a_captured_card_for_a_hand_card_or_rotates_the_piles():
+    c, g = _mission9(players=2, seed=821)
+    set_mission_enemy(g, "TTQH")
+    set_hand(g, ["9S", "4C", "3C", "5D", "6D"], player=0)
+    set_hand(g, ["8S", "4D"], player=1)
+    piles = [list(p) for p in g.extra["captured"]]     # after the hands were rigged (that pulls from the piles)
+    tops = [p[0] for p in piles]
+    g.play(["9S"])                                     # shield 9: suffer 6
+    assert g.phase == PHASE_SUFFER and g.pending_damage == 6
+    g.suffer(["4C", "3C"])
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "pile_rescue" and g.decision["resume"] == "end_turn"
+    assert g.deciding == 0 and g.active == 0 and g.turn == 1
+    acts = g.legal_actions()
+    assert sorted((a["pile"], a["card"]) for a in acts if a["type"] == "pile_rescue") == sorted(
+        (k, cid) for k in range(3) for cid in ("5D", "6D"))
+    assert acts[-1] == {"type": "pile_rotate", "player": 0, "skip": True, "label": "Rotate the piles"}
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "pile_rescue", "pile": 0, "card": "8S"})
+    _ids_everywhere(g)
+    g = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    g.decide({"type": "pile_rescue", "pile": 1, "card": "5D"})
+    assert g.banished[-1] == "5D" and g.discard[0] == tops[1] and g.extra["captured"][1] == piles[1][1:]
+    assert g.extra["captured"][0] == piles[0] and g.extra["captured"][2] == piles[2]
+    assert g.decision is None and g.active == 1 and g.turn == 2 and g.phase == PHASE_PLAY
+    assert any(ev["t"] == "pile_rescue" and ev["pile"] == 1 for ev in g.last_events)
+    _ids_everywhere(g)
+    # rotating: every top card goes to the bottom of its pile (no damage: Ben's shield covers it)
+    before = [list(p) for p in g.extra["captured"]]
+    g.play(["8S"])
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "pile_rescue" and g.deciding == 1
+    g.decide({"type": "pile_rotate"})
+    assert g.extra["captured"] == [p[1:] + p[:1] for p in before] and g.active == 0 and g.decision is None
+    # an empty hand: only the rotation is offered; a kill skips the end of turn entirely
+    set_hand(g, ["9S"], player=0)
+    g.enemy.hp = 30
+    g.play(["9S"])
+    assert g.decision["kind"] == "pile_rescue" and [a["type"] for a in g.legal_actions()] == ["pile_rotate"]
+    g.decide(greedy_policy(g))
+    assert g.active == 1
+    set_hand(g, ["9C", "2C"], player=1)
+    g.enemy.hp = 9
+    g.play(["9C"])                                     # 18 damage: a kill, not exact
+    assert g.enemies_defeated == 1 and g.decision is None and g.phase == PHASE_PLAY and g.active == 1
+    assert g.banished[-1] == "TTQH"
+    _ids_everywhere(g)
+
+
+def test_mission9_exact_kill_may_move_a_captured_top_card_onto_the_reserve():
+    c, g = _mission9(players=1, seed=822)
+    set_mission_enemy(g, "TTQH", hp=9)
+    set_hand(g, ["9S", "2C"])
+    tops = [p[0] for p in g.extra["captured"]]
+    g.play(["9S"])
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "pile_to_reserve" and g.decision["exact"] is True
+    acts = g.legal_actions()
+    assert [a.get("pile") for a in acts] == [0, 1, 2, None] and acts[-1]["skip"]
+    assert greedy_policy(g)["pile"] == max(range(3), key=lambda k: g.cards[tops[k]].value)
+    g = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    g.decide({"type": "pile_to_reserve", "pile": 2})
+    assert g.tavern[0] == tops[2] and len(g.extra["captured"][2]) == 9 and g.enemies_defeated == 1
+    assert g.banished[-1] == "TTQH" and g.decision is None and g.phase == PHASE_PLAY
+    _ids_everywhere(g)
+    # an emptied pile is skipped in the offers
+    g.banished.extend(g.extra["captured"][0])
+    g.extra["captured"][0] = []
+    set_mission_enemy(g, "TTQD", hp=9)
+    set_hand(g, ["9S", "2C"])
+    g.play(["9S"])
+    assert [a.get("pile") for a in g.legal_actions()] == [1, 2, None]
+    g.decide({"type": "pile_to_reserve_skip"})
+    assert g.enemies_defeated == 2
+    # no piles left: no end-of-turn choice either
+    for k in (1, 2):
+        g.banished.extend(g.extra["captured"][k])
+        g.extra["captured"][k] = []
+    set_mission_enemy(g, "TTQC", hp=30)
+    set_hand(g, ["9S", "7C"])
+    g.play(["9S"])
+    g.suffer(["7C"])
+    assert g.decision is None and g.active == 0 and g.phase == PHASE_PLAY and g.turn > 1
+    _ids_everywhere(g)
+
+
+def test_mission9_mylas_immunity_to_bards_and_paladins_can_never_be_ignored():
+    c, g = _mission9(players=3, seed=823)
+    g.cards["9S"] = g.cards["9S"].with_changes(flags=("corrupted",))
+    set_mission_enemy(g, "MYLA_BOSS")
+    assert g.enemy.name == "Myla" and (g.enemy.attack, g.enemy.max_hp) == (20, 80) and g.rules.immune_suits(g) == ("D", "S")
+    assert g.rules.fixed_immunity(g, "S") and g.rules.fixed_immunity(g, "D") and not g.rules.fixed_immunity(g, "H")
+    assert g.immune("S", [g.cards["9S"]]) and g.immune("D", [g.cards["5D"]]) and not g.immune("H", [g.cards["5H"]])
+    # a corrupted paladin: still banishes a reserve card, deals its damage, gives no shield
+    set_hand(g, ["9S", "2C"], player=0)
+    top = g.tavern[0]
+    g.play(["9S"])
+    assert g.banished[-1] == top and g.enemy.hp == 80 - 9 and g.shield == 0 and g.enemy_attack == 20
+    assert dict(_powers(g))["S"]["immune"]
+    # the renewed Gøran ignores immunity anywhere else, not against Myla
+    c, g = _mission9(players=3, seed=824)
+    set_mission_enemy(g, "MYLA_BOSS")
+    g.cards["GOR8E"] = Card.from_dict(dict(M.GORAN_RENEWED))
+    g.tavern.append("GOR8E")
+    set_hand(g, ["GOR8E", "2C"], player=0)
+    g.play(["GOR8E"])
+    powers = dict(_powers(g))
+    assert powers["D"]["immune"] and powers["S"]["immune"] and not powers["H"].get("immune") and not powers["C"].get("immune")
+    assert g.enemy.hp == 80 - 16 and g.shield == 0
+    # a claimed Jester's attack ignores nothing against her: the paladin gives no shield, the bard draws nothing
+    c, g = _mission9(players=3, seed=825)
+    set_mission_enemy(g, "MYLA_BOSS")
+    jester = [x for x in g.cards if g.cards[x].is_jester][0]
+    set_hand(g, [jester, "2C"], player=0)
+    set_hand(g, ["AD", "9S", "3H"], player=1)
+    g.play([jester])
+    g.choose_next(1)
+    assert g.extra.get("jester_attack")
+    hands_before = sum(len(p.hand) for p in g.players)
+    g.play(["AD", "9S"])
+    powers = dict(_powers(g))
+    assert powers["D"]["immune"] and powers["S"]["immune"] and g.plays[-1].jester
+    assert g.shield == 0 and g.enemy_attack == 20 and g.enemy.hp == 80 - 10
+    assert sum(len(p.hand) for p in g.players) == hands_before - 2
+    # against a Loreguard the usual rules hold: a corrupted paladin keeps its shield
+    c, g = _mission9(players=3, seed=826)
+    g.cards["9S"] = g.cards["9S"].with_changes(flags=("corrupted",))
+    set_mission_enemy(g, "TTQS")
+    set_hand(g, ["9S", "2C"], player=0)
+    g.play(["9S"])
+    assert g.shield == 9 and not g.rules.fixed_immunity(g, "S")
+
+
+# ---------------------------------------------------------------- bot play-outs
+@pytest.mark.parametrize("number,players", [(7, 1), (7, 2), (8, 1), (8, 2), (9, 1), (9, 2)])
+def test_bots_play_out_missions_7_to_9(number, players):
+    rng = random.Random(number * 10 + players)
+    seen = set()
+    expected = {7: {"Druid:", "pilgrim deck", "from the top of the reserve deck go"},
+                8: {"Chanter:"} | ({"mission zone"} if players == 2 else set()),
+                9: {"captured pile"}}[number]
+    for seed in range(10):
+        if seed >= 4 and expected <= seen:
+            break
+        kw = {"players": players, "seed": 900 + number * 10 + seed, "beast": ("B_H", "B_C", "B_D", "B_S")[seed % 4],
+              "relics": ("flute", "whistle", "emblem", "mother"), "corrupted": ("7D", "5S")}
+        if number == 9:
+            c, g = _mission9(players=players, seed=kw["seed"], relics=kw["relics"], beast=kw["beast"])
+            for cid in kw["corrupted"]:
+                g.cards[cid] = g.cards[cid].with_changes(flags=("corrupted",))
+        else:
+            c, g = _mission(number, **kw)
+        policy = greedy_policy if seed % 2 == 0 else random_policy
+        play_out(g, policy, rng, max_steps=4000)
+        assert g.is_over and g.decision is None
+        _ids_everywhere(g)
+        if number != 7:                                # a druid may leave a hand over the limit
+            assert all(len(p.hand) <= g.config.max_hand for p in g.players)
+        for line in g.log:
+            for key in ("Druid:", "Chanter:", "Evergreen Mother", "pilgrim deck", "matches", "mission zone", "captured pile",
+                        "from the top of the reserve deck go"):
+                if key in line:
+                    seen.add(key)
+    assert expected <= seen, seen

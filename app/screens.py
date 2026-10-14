@@ -7,7 +7,7 @@ from typing import Callable, Dict, List, Optional
 
 import ui
 
-from regicide.bots import greedy_policy, min_waste_discard, team_discard_choice
+from regicide.bots import greedy_policy, min_waste_discard, simple_decision, team_discard_choice
 from regicide.campaign import CampaignState
 from regicide.campaign import lore as L
 from regicide.campaign import party as P
@@ -19,12 +19,13 @@ from regicide.rules import GameConfig
 
 from . import store
 from . import theme as T
-from .widgets import (CardStrip, EnemyPanel, HandGrid, make_button, make_label, set_enabled)
+from .widgets import (CardStrip, CardView, EnemyPanel, HandGrid, make_button, make_label, set_enabled)
 
-VERSION = "alpha 3"
+VERSION = "alpha 4"
 
 # Relic ids (campaign saves, ``game.extra["relics"]``) -> the names printed on the cards.
-RELIC_NAMES: Dict[str, str] = {"flute": "Kinfolk Flute", "whistle": "Scarlet Whistle", "emblem": "Azure Emblem"}
+RELIC_NAMES: Dict[str, str] = {"flute": "Kinfolk Flute", "whistle": "Scarlet Whistle", "emblem": "Azure Emblem",
+                               "mother": "Evergreen Mother", "mother_restored": "Evergreen Mother (restored)"}
 
 
 def relic_name(relic_id: str) -> str:
@@ -414,6 +415,7 @@ class GameScreen(Screen):
         self.game: Game = app.game  # type: ignore[assignment]
         self.shown_player: Optional[int] = None
         self.team_seat: Optional[int] = None   # mission 6 team damage: whose hand is shown
+        self.pile_choice: Optional[int] = None  # mission 9 end of turn: the captured pile to rescue from
         self.overlay: Optional[ui.View] = None
         self.message_text = ""
         self.status = make_label("", (0, 0, 10, 10), 13, False, T.MUTED)
@@ -498,12 +500,24 @@ class GameScreen(Screen):
             zone_cards = [g.card(c) for c in g.mission_zone]
             imm = [s for s in g.rules.immune_suits(g) if g.enemy is not None and s not in g.enemy.suits]
             title = "Mission zone"
-            bonus = g.rules.attack_bonus(g) if zone_cards and getattr(g.rules, "mission", 0) in (5, 10, 12) else 0
-            if imm:
+            number = getattr(g.rules, "mission", 0)
+            bonus = g.rules.attack_bonus(g) if zone_cards and number in (5, 8, 10, 12) else 0
+            if number == 9:
+                # Mission 9: the zone holds the captured piles; the strip shows their top cards.
+                piles = g.extra.get("captured", [])
+                zone_cards = [g.card(p[0]) for p in piles if p]
+                title = "Captured piles · " + " / ".join(str(len(p)) for p in piles) if piles else "Captured piles (none)"
+            elif number == 7:
+                pilgrims = [c for c in zone_cards if c.has("pilgrim")]
+                title += " · %d pilgrim%s, total %d" % (len(pilgrims), "" if len(pilgrims) == 1 else "s",
+                                                        g.rules.zone_strength(g))
+                deck = g.extra.get("pilgrim_deck", [])
+                title += " · %d in the pilgrim deck" % len(deck)
+            elif imm:
                 title += " · immune to " + " / ".join(CLASS_NAME.get(s, s) + "s" for s in imm)
-            elif bonus:
+            elif bonus or (number == 8 and zone_cards):
                 title += " · enemy strength +%d" % bonus
-            elif getattr(g.rules, "mission", 0) == 6 and zone_cards:
+            elif number == 6 and zone_cards:
                 title += " · Myla's team damage %d" % sum(g.rules.strength(g.card(c)) for c in g.mission_zone)
             elif not zone_cards:
                 title += " (empty)"
@@ -523,6 +537,19 @@ class GameScreen(Screen):
         kind = (g.decision or {}).get("kind") if g.phase == PHASE_DECIDE else None
         if kind == "team_discard":
             self._refresh_team_damage()
+            return
+        if kind != "pile_rescue":
+            self.pile_choice = None
+        if kind == "pile_rescue" and self.pile_choice is None:
+            # Mission 9's end of turn: pick the pile (or rotate) first, then a hand card.
+            seat = g.deciding
+            if g.n_players > 1 and self.shown_player != seat and not g.config.open_hands:
+                self.hand.set_cards([])
+                self._show_overlay(HandoverOverlay(self))
+                return
+            self.shown_player = seat
+            self.hand.set_cards([])
+            self._show_overlay(PileRescueOverlay(self))
             return
         if kind is not None and kind not in HAND_DECISIONS:
             # A decision of the current player's own with a short list of options: the
@@ -549,12 +576,14 @@ class GameScreen(Screen):
             return
         self._hide_overlay()
         self.shown_player = seat
+        locked = dict((c.id, "stuck") for c in g.hand(seat) if g.hand_locked(c.id))
         if g.phase == PHASE_DECIDE:
-            self.hand.badges = {}
+            self.hand.badges = locked
             self.hand.set_cards(g.hand(seat), keep_selection=False)
         else:
             flute = list(g.extra.get("flute", []))
             self.hand.badges = dict((cid, "flute") for cid in flute)
+            self.hand.badges.update(locked)
             self.hand.set_cards(g.hand() + [g.card(c) for c in flute], keep_selection=False)
         specials = g.rules.special_actions(g)
         self.special_btn.hidden = not specials
@@ -588,12 +617,18 @@ class GameScreen(Screen):
         self.team_seat = seat
         self.refresh(after_action=False)
 
+    def pick_pile(self, pile: Optional[int]) -> None:
+        """Mission 9: the captured pile to rescue from (None: back to the pile choice)."""
+        self.pile_choice = pile
+        self.refresh(after_action=False)
+
     def _update_controls(self) -> None:
         g = self.game
         sel = list(self.hand.selected)
         name = g.active_player.name
         if g.phase == PHASE_PLAY:
-            self.hand.selectable = lambda c: True
+            self.hand.selectable = lambda c: not g.hand_locked(c.id) if c.id in g.active_player.hand else True
+            self.hand.refresh_dim()
             self.left_btn.title = "Yield"
             set_enabled(self.left_btn, g.can_yield(), False)
             if g.n_players == 1:
@@ -623,7 +658,8 @@ class GameScreen(Screen):
                 set_enabled(self.right_btn, False)
         elif g.phase == PHASE_SUFFER:
             need = g.pending_damage
-            self.hand.selectable = lambda c: True
+            self.hand.selectable = lambda c: not g.hand_locked(c.id)
+            self.hand.refresh_dim()
             total = sum(g.card(c).defence_value for c in sel)
             feign = g.feign_death_available()
             self.left_btn.title = "Feign death" if feign else "Suggest"
@@ -640,6 +676,66 @@ class GameScreen(Screen):
                 self.message.text += " Your hand is short: use the Jester power."
             elif feign:
                 self.message.text += " At the hand limit you may feign death: discard everything."
+            elif any(g.hand_locked(c) for c in g.active_player.hand):
+                self.message.text += " Pilgrims never leave your hand."
+        elif g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") == "chanter_discard":
+            # Chanter: the shown hand belongs to a player over the limit, who discards down to it.
+            d = g.decision or {}
+            acts = [a for a in g.legal_actions() if a["type"] == "chanter_discard"]
+            needs = int(acts[0]["needs"]) if acts else 0
+            allowed = set(acts[0]["pick_from"]) if acts else set()
+            self.hand.selectable = lambda c: c.id in allowed
+            self.hand.refresh_dim()
+            self.left_btn.title = "Suggest"
+            set_enabled(self.left_btn, True, False)
+            self.mid_btn.hidden = True
+            self.right_btn.title = "Discard %d" % needs
+            set_enabled(self.right_btn, len(sel) == needs and needs > 0)
+            who = g.players[g.deciding].name
+            self.message.text = "Chanter: %s drew to %d cards and must discard down to %d. Select %d card%s and tap Discard (%d selected)." % (
+                who, len(g.players[g.deciding].hand), g.config.max_hand, needs, "" if needs == 1 else "s", len(sel))
+        elif g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") == "mother_banish":
+            # Evergreen Mother, 2+ players: another player must banish one card from hand.
+            if len(sel) > 1:
+                self.hand.set_selection(sel[-1:])
+                return
+            allowed = set(a["card"] for a in g.legal_actions() if a["type"] == "mother_banish")
+            self.hand.selectable = lambda c: c.id in allowed
+            self.hand.refresh_dim()
+            self.left_btn.title = "No pass"
+            set_enabled(self.left_btn, False, False)
+            self.mid_btn.hidden = True
+            self.right_btn.title = "Banish"
+            set_enabled(self.right_btn, len(sel) == 1 and sel[0] in allowed)
+            d = g.decision or {}
+            who = g.players[g.deciding].name
+            corrupt = g.card(str(d.get("card"))).label() if d.get("card") in g.cards else "a corrupted card"
+            if sel:
+                self.message.text = "%s banishes %s from hand (Evergreen Mother, for %s)." % (who, g.card(sel[0]).label(), corrupt)
+            else:
+                self.message.text = ("Evergreen Mother: %s entered play, so %s must banish one card from hand instead of "
+                                     "the reserve. Select it and tap Banish." % (corrupt, who))
+        elif g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") == "pile_rescue":
+            # Mission 9: the pile is chosen; now the hand card to banish for the rescue.
+            if len(sel) > 1:
+                self.hand.set_selection(sel[-1:])
+                return
+            k = int(self.pile_choice or 0)
+            allowed = set(a["card"] for a in g.legal_actions() if a["type"] == "pile_rescue" and int(a["pile"]) == k)
+            self.hand.selectable = lambda c: c.id in allowed
+            self.hand.refresh_dim()
+            self.left_btn.title = "Back"
+            set_enabled(self.left_btn, True, False)
+            self.mid_btn.hidden = True
+            self.right_btn.title = "Banish"
+            set_enabled(self.right_btn, len(sel) == 1 and sel[0] in allowed)
+            piles = g.extra.get("captured", [])
+            top = g.card(piles[k][0]).label() if k < len(piles) and piles[k] else "?"
+            if sel:
+                self.message.text = "%s banishes %s: %s is rescued from pile %d to the discard pile." % (
+                    name, g.card(sel[0]).label(), top, k + 1)
+            else:
+                self.message.text = "Rescue %s from captured pile %d: select the card to banish from hand and tap Banish." % (top, k + 1)
         elif g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") == "team_discard":
             # Mission 6: the shown hand belongs to whoever discards next for Myla's team damage.
             if len(sel) > 1:
@@ -788,6 +884,14 @@ class GameScreen(Screen):
                 else:
                     act = team_discard_choice(g, g.legal_actions())
                     self.hand.set_selection([act["card"]])
+            elif kind == "chanter_discard":
+                act = simple_decision(g)
+                if act is not None:
+                    self.hand.set_selection(list(act.get("cards", [])))
+            elif kind == "pile_rescue":
+                self.pick_pile(None)
+            elif kind == "mother_banish":
+                pass
             else:
                 self._act(g.flute_pass)
 
@@ -825,6 +929,14 @@ class GameScreen(Screen):
                 seat = 0 if g.n_players == 1 else self.team_seat
                 self.team_seat = None   # the next card may come from any player
                 self._act(lambda: g.decide({"type": "team_discard", "player": seat, "card": sel[0]}))
+            elif kind == "chanter_discard":
+                self._act(lambda: g.decide({"type": "chanter_discard", "player": g.deciding, "cards": sel}))
+            elif kind == "mother_banish":
+                self._act(lambda: g.decide({"type": "mother_banish", "card": sel[0]}))
+            elif kind == "pile_rescue":
+                k = self.pile_choice
+                self.pile_choice = None
+                self._act(lambda: g.decide({"type": "pile_rescue", "pile": k, "card": sel[0]}))
             else:
                 self._act(lambda: g.flute_add(sel))
 
@@ -915,14 +1027,24 @@ class DecisionOverlay(Overlay):
         g = self.screen.game
         d = g.decision or {}
         who = g.players[g.deciding].name
-        play = g.plays[int(d.get("play_index", len(g.plays) - 1))]
-        attacker = g.players[play.player].name
-        attack = " + ".join(g.card(c).label() for c in play.card_ids)
+        play = g.plays[int(d.get("play_index", len(g.plays) - 1))] if g.plays else None
+        attacker = g.players[play.player].name if play else g.active_player.name
+        attack = " + ".join(g.card(c).label() for c in play.card_ids) if play else ""
         items: List[ui.View] = []
         if not g.config.open_hands:
             items.append(make_label("Pass the phone to", (0, 0, 10, 24), 15, False, T.MUTED, ui.ALIGN_CENTER))
         items.append(make_label(who, (0, 0, 10, 40), 28, True, T.ACCENT, ui.ALIGN_CENTER))
-        if d.get("kind") == "emblem_place":
+        if d.get("kind") == "chanter_discard":
+            needs = int(((g.rules.decision_actions(g) or [{}])[0]).get("needs", 0))
+            items.append(make_label("%s: discard down to %d cards" % (who, g.config.max_hand), (0, 0, 10, 44), 16, True, T.TEXT, ui.ALIGN_CENTER, 2))
+            items.append(make_label("Chanter: everyone drew cards ignoring the hand limit. You hold %d and must discard %d." % (
+                len(g.players[g.deciding].hand), needs), (0, 0, 10, 60), 13, False, T.TEXT, ui.ALIGN_CENTER, 3))
+        elif d.get("kind") == "mother_banish":
+            corrupt = g.card(str(d.get("card"))).label() if d.get("card") in g.cards else "a corrupted card"
+            items.append(make_label("%s: banish a card from hand" % who, (0, 0, 10, 44), 16, True, T.TEXT, ui.ALIGN_CENTER, 2))
+            items.append(make_label("Evergreen Mother: %s played %s, a corrupted card. Instead of the top of the reserve, "
+                                    "you must banish one card from your hand." % (attacker, corrupt), (0, 0, 10, 60), 13, False, T.TEXT, ui.ALIGN_CENTER, 3))
+        elif d.get("kind") == "emblem_place":
             items.append(make_label("%s: place a card for %s's %s attack?" % (who, attacker, attack), (0, 0, 10, 44), 16, True, T.TEXT, ui.ALIGN_CENTER, 2))
             items.append(make_label("Azure Emblem: before the mage looks at the reserve deck you may place one card "
                                     "from your hand face down on top of it, or pass.", (0, 0, 10, 60), 13, False, T.TEXT, ui.ALIGN_CENTER, 3))
@@ -953,9 +1075,22 @@ class PickOverlay(Overlay):
                                           "and the top card's strength adds to the next enemy. Which card ends on top?"),
         "zone_move": ("Enemy defeated", "Choose one card in play to move to the mission zone. Its strength joins "
                                         "Myla's team damage."),
+        "pilgrim_banish": ("A pilgrim matches", "The card that entered play has the strength of a pilgrim in the "
+                                                "mission zone: you may banish that pilgrim (once per card)."),
+        "zone_banish": ("Exact kill!", "You may first move one mission zone card to the banished pile. Then cards "
+                                       "equal to the zone's total strength go from the reserve to the discard pile "
+                                       "and the zone is discarded."),
+        "zone_build": ("Enemy defeated", "You may move cards in play to the mission zone one at a time, each exactly "
+                                         "one strength higher than the zone's highest card. Non-pilgrims there add "
+                                         "their strength to the enemies; a 10 fills the zone and heals."),
+        "mother_choice": ("Evergreen Mother", "A corrupted card entered play. Banish the top card of the discard pile "
+                                              "instead of the top card of the reserve deck?"),
+        "pile_to_reserve": ("Exact kill!", "You may move the top card of one captured pile to the top of the "
+                                           "reserve deck."),
     }
     VERBS = {"mage_pick": "Add", "emblem_keep": "Keep", "reaver_pick": "Add", "zone_rescue": "Rescue",
-             "zone_move": "Move", "cleanup_top": "Top", "whistle_take": "Add"}
+             "zone_move": "Move", "cleanup_top": "Top", "whistle_take": "Add", "pilgrim_banish": "Banish",
+             "zone_banish": "Banish", "zone_build": "Move", "discard_pick": "Top"}
     MANY = 4   # more card options than this go in two columns with short titles
 
     def heading(self, g: Game, d: dict) -> tuple:
@@ -972,7 +1107,7 @@ class PickOverlay(Overlay):
         return 2 if n > self.MANY else 1
 
     def is_option(self, a: dict) -> bool:
-        return bool(a.get("card")) or "count" in a
+        return bool(a.get("card")) or "count" in a or ("pile" in a and not a.get("skip"))
 
     def option_title(self, g: Game, a: dict, short: bool) -> str:
         if not short:
@@ -1123,11 +1258,256 @@ class ReaverCountOverlay(PickOverlay):
         return 5 if n > self.MANY else 1
 
 
+class ChanterDeclareOverlay(PickOverlay):
+    """Chanter: how many cards everyone draws (a grid of numbers, 0 included)."""
+
+    def heading(self, g: Game, d: dict) -> tuple:
+        return ("Chanter", "Declare any number from 0 to %d: starting with you and going clockwise, every player "
+                           "draws that many cards ignoring the hand limit, then discards down to it." % len(g.tavern))
+
+    def columns(self, n: int) -> int:
+        return 5 if n > self.MANY else 1
+
+
+class PileToReserveOverlay(PickOverlay):
+    """Mission 9's exact kill: the top card of one captured pile may go on top of the reserve."""
+
+    def strip(self, g: Game, d: dict) -> Optional[CardStrip]:
+        tops = [g.card(p[0]) for p in g.extra.get("captured", []) if p]
+        if not tops:
+            return None
+        strip = CardStrip(frame=(0, 0, 10, 84))
+        strip.set_cards(tops, "Captured piles (top cards)")
+        return strip
+
+    def columns(self, n: int) -> int:
+        return 1
+
+
+class CardGridOverlay(Overlay):
+    """A decision over many cards (a Druid's deal, the discard pile): a scrollable grid of
+    small tappable cards; subclasses say which cards, how many may be picked and which
+    buttons follow. ``picked`` holds the selection in tap order."""
+
+    columns = 6
+    grid_height = 196
+    single = False
+
+    def __init__(self, screen: GameScreen, **kw) -> None:
+        super().__init__(screen, **kw)
+        self.picked: List[str] = []
+        self.card_views: Dict[str, CardView] = {}
+
+    def heading(self, g: Game, d: dict) -> tuple:
+        return ("Your choice", "")
+
+    def card_ids(self, g: Game, d: dict) -> List[str]:
+        return []
+
+    def badges(self, g: Game, d: dict) -> Dict[str, str]:
+        return {}
+
+    def buttons(self, g: Game, d: dict) -> List[ui.View]:
+        return []
+
+    def tapped(self, v: CardView) -> None:
+        cid = v.card.id
+        if cid in self.picked:
+            self.picked.remove(cid)
+        elif self.single:
+            self.picked = [cid]
+        else:
+            self.picked.append(cid)
+        self.layout()
+
+    def build(self) -> List[ui.View]:
+        g = self.screen.game
+        d = g.decision or {}
+        title, text = self.heading(g, d)
+        items: List[ui.View] = [make_label(title, (0, 0, 10, 36), 20, True, T.ACCENT, ui.ALIGN_CENTER)]
+        if text:
+            items.append(make_label(text, (0, 0, 10, 76), 13, False, T.TEXT, ui.ALIGN_CENTER, 4))
+        ids = self.card_ids(g, d)
+        pw = min(340, self.width - 2 * T.MARGIN) - 40
+        cols = self.columns
+        gap = 5.0
+        cw = (pw - gap * (cols - 1)) / cols
+        ch = cw * 1.42
+        rows = (len(ids) + cols - 1) // cols
+        need = rows * (ch + gap)
+        sv = ui.ScrollView(frame=(0, 0, pw, min(self.grid_height, need) if ids else 24))
+        sv.content_size = (pw, need + 4)
+        badges = self.badges(g, d)
+        self.card_views = {}
+        for i, cid in enumerate(ids):
+            r, c = divmod(i, cols)
+            v = CardView(g.card(cid), on_tap=self.tapped)
+            v.small = True
+            v.selected = cid in self.picked
+            v.badge = badges.get(cid, "")
+            v.frame = (c * (cw + gap), r * (ch + gap) + (0 if v.selected else 3), cw, ch - 3)
+            sv.add_subview(v)
+            self.card_views[cid] = v
+        items.append(sv)
+        items.extend(self.buttons(g, d))
+        items.append(make_button("Game menu", lambda s: self.screen._menu(s), (0, 0, 10, 36), False, 13))
+        return items
+
+
+class DruidOverlay(CardGridOverlay):
+    """Druid: the cards dealt to one player in a grid; tap a card, then one of the four
+    destination slots (Banish / Hand / Reserve top / Reserve bottom); Confirm when every
+    needed slot is filled. A player dealt fewer than four cards fills that many slots."""
+
+    SLOTS = (("banish", "Banish"), ("hand", "Hand"), ("top", "Reserve top"), ("bottom", "Reserve bottom"))
+    single = True
+
+    def __init__(self, screen: GameScreen, **kw) -> None:
+        super().__init__(screen, **kw)
+        self.assign: Dict[str, str] = {}   # slot -> card id
+
+    def _template(self, g: Game) -> dict:
+        acts = [a for a in g.legal_actions() if a["type"] == "druid_assign"]
+        return acts[0] if acts else {"pick_from": [], "needs": 0}
+
+    def heading(self, g: Game, d: dict) -> tuple:
+        t = self._template(g)
+        who = g.players[g.deciding].name
+        n, needs = len(t.get("pick_from", [])), int(t.get("needs", 0))
+        return ("Druid: sort %d card%s" % (n, "" if n == 1 else "s"),
+                "%s was dealt these from the shuffled discard pile. Tap a card, then where it goes: one each to the "
+                "banished pile, your hand (ignoring the limit), the top and the bottom of the reserve deck%s. The "
+                "rest goes back to the discard pile." % (
+                    who, "" if needs == 4 else " (%d of the four with %d card%s)" % (needs, n, "" if n == 1 else "s")))
+
+    def card_ids(self, g: Game, d: dict) -> List[str]:
+        return [str(c) for c in self._template(g).get("pick_from", [])]
+
+    def badges(self, g: Game, d: dict) -> Dict[str, str]:
+        names = dict(self.SLOTS)
+        return dict((cid, names[slot].lower()) for slot, cid in self.assign.items())
+
+    def set_slot(self, slot: str) -> None:
+        g = self.screen.game
+        if self.picked:
+            cid = self.picked[0]
+            for k, v in list(self.assign.items()):
+                if v == cid:
+                    del self.assign[k]
+            self.assign[slot] = cid
+            self.picked = []
+        else:
+            self.assign.pop(slot, None)
+        self.layout()
+
+    def buttons(self, g: Game, d: dict) -> List[ui.View]:
+        t = self._template(g)
+        needs = int(t.get("needs", 0))
+        row = ui.View(frame=(0, 0, 10, 92))
+        pw = min(340, self.width - 2 * T.MARGIN) - 40
+        bw = (pw - 8) / 2
+        for i, (slot, title) in enumerate(self.SLOTS):
+            cid = self.assign.get(slot)
+            label = "%s: %s" % (title, g.card(cid).label() if cid else "—")
+            b = make_button(label, (lambda sl: lambda s: self.set_slot(sl))(slot),
+                            ((i % 2) * (bw + 8), (i // 2) * 48, bw, 40), bool(cid), 13)
+            row.add_subview(b)
+        confirm = make_button("Confirm", lambda s: self.confirm(), (0, 0, 10, 46))
+        set_enabled(confirm, len(self.assign) == needs)
+        return [row, confirm]
+
+    def confirm(self) -> None:
+        g = self.screen.game
+        act = {"type": "druid_assign", "player": g.deciding}
+        act.update(self.assign)
+        self.screen.decide(act)
+
+
+class DiscardBanishOverlay(CardGridOverlay):
+    """Mission 8's filled zone: banish any cards from the discard pile (multi-select), the
+    rest is shuffled under the reserve."""
+
+    def heading(self, g: Game, d: dict) -> tuple:
+        return ("Mission zone filled!", "The zone went to the discard pile. Search it and banish any cards you want "
+                                        "(Jesters, pilgrims, weak cards); the rest is shuffled under the reserve deck. "
+                                        "No more cards may be moved to the zone this mission.")
+
+    def card_ids(self, g: Game, d: dict) -> List[str]:
+        return list(g.discard)
+
+    def buttons(self, g: Game, d: dict) -> List[ui.View]:
+        n = len(self.picked)
+        title = "Banish %d selected" % n if n else "Banish nothing"
+        return [make_button(title, lambda s: self.confirm(), (0, 0, 10, 46))]
+
+    def confirm(self) -> None:
+        g = self.screen.game
+        if self.picked:
+            self.screen.decide({"type": "discard_banish", "player": g.deciding, "cards": list(self.picked)})
+        else:
+            self.screen.decide({"type": "discard_banish_skip"})
+
+
+class DiscardPickOverlay(CardGridOverlay):
+    """Mission 8's exact kill: any one card of the discard pile goes on top of the reserve."""
+
+    single = True
+
+    def heading(self, g: Game, d: dict) -> tuple:
+        return ("Exact kill!", "You may put any one card from the discard pile on top of the reserve deck. Tap it, "
+                               "then confirm, or leave the pile as it is.")
+
+    def card_ids(self, g: Game, d: dict) -> List[str]:
+        return list(g.discard)
+
+    def buttons(self, g: Game, d: dict) -> List[ui.View]:
+        title = "Put %s on top of the reserve" % g.card(self.picked[0]).label() if self.picked else "Put the selected card on top"
+        b = make_button(title, lambda s: self.screen.decide({"type": "discard_pick", "card": self.picked[0]}), (0, 0, 10, 46))
+        set_enabled(b, bool(self.picked))
+        return [b, make_button("Leave the discard pile", lambda s: self.screen.decide({"type": "discard_pick_skip"}), (0, 0, 10, 44), False)]
+
+
+class PileRescueOverlay(Overlay):
+    """Mission 9's end of turn: rescue the top card of one captured pile by banishing a card
+    from hand (pick the pile here, then the card from the hand), or rotate every pile."""
+
+    def build(self) -> List[ui.View]:
+        g = self.screen.game
+        who = g.players[g.deciding].name
+        piles = g.extra.get("captured", [])
+        items: List[ui.View] = [
+            make_label("End of turn", (0, 0, 10, 36), 20, True, T.ACCENT, ui.ALIGN_CENTER),
+            make_label("%s may banish a card from hand to move the top card of one captured pile to the discard "
+                       "pile. Otherwise the top card of every pile goes to its bottom." % who, (0, 0, 10, 60), 13, False, T.TEXT, ui.ALIGN_CENTER, 3),
+        ]
+        tops = [g.card(p[0]) for p in piles if p]
+        if tops:
+            strip = CardStrip(frame=(0, 0, 10, 84))
+            strip.set_cards(tops, "Captured piles (top cards)")
+            items.append(strip)
+        can = bool(g.rules.unlocked_hand(g, g.deciding))
+        for k, pile in enumerate(piles):
+            if not pile:
+                continue
+            b = make_button("Rescue %s (pile %d, %d cards)" % (g.card(pile[0]).label(), k + 1, len(pile)),
+                            (lambda idx: lambda s: self.screen.pick_pile(idx))(k), (0, 0, 10, 44))
+            set_enabled(b, can)
+            items.append(b)
+        items.append(make_button("Rotate the piles", lambda s: self.screen.decide({"type": "pile_rotate"}), (0, 0, 10, 44), False))
+        items.append(make_button("Game menu", lambda s: self.screen._menu(s), (0, 0, 10, 36), False, 13))
+        return items
+
+
 # Decision kinds shown as the deciding player's hand (flute-style) rather than as a list
-# of buttons; the team damage of mission 6 has its own seat picker.
-HAND_DECISIONS = ("flute_add", "emblem_place", "whistle_add", "team_discard")
+# of buttons; the team damage of mission 6 has its own seat picker, mission 9's rescue
+# its pile picker first.
+HAND_DECISIONS = ("flute_add", "emblem_place", "whistle_add", "team_discard", "chanter_discard", "mother_banish",
+                  "pile_rescue")
 PICK_OVERLAYS = {"mage_peek": MagePeekOverlay, "emblem_keep": EmblemKeepOverlay,
-                 "reaver_count": ReaverCountOverlay, "reaver_pick": ReaverPickOverlay}
+                 "reaver_count": ReaverCountOverlay, "reaver_pick": ReaverPickOverlay,
+                 "druid_assign": DruidOverlay, "chanter_declare": ChanterDeclareOverlay,
+                 "discard_banish": DiscardBanishOverlay, "discard_pick": DiscardPickOverlay,
+                 "pile_to_reserve": PileToReserveOverlay}
 
 
 class TeamDamageOverlay(Overlay):
@@ -1826,6 +2206,10 @@ def describe_preview(g: Game, pv: dict) -> str:
             parts.append("%s +%d then double" % (sym, ev.get("added", 0)))
         elif suit == "G":
             parts.append("%s no damage this turn" % sym)
+        elif suit == "U":
+            parts.append("%s sort the discard pile" % sym)
+        elif suit == "T":
+            parts.append("%s everyone draws" % sym)
     s = "%d damage" % pv["damage"]
     if pv["defeats"]:
         tail = ""
@@ -1851,6 +2235,16 @@ def describe_preview(g: Game, pv: dict) -> str:
         prefix = "Scarlet Whistle: another player may add a card. If nobody does: "
     elif pv.get("decision_kind") == "reaver_count":
         prefix = "Reaver: reveal reserve cards and add one's strength (counted as 0 here). "
+    elif pv.get("decision_kind") == "druid_assign":
+        prefix = "Druid: the discard pile is dealt out and sorted first. "
+    elif pv.get("decision_kind") == "chanter_declare":
+        prefix = "Chanter: declare how many cards everyone draws (0 here). "
+    elif pv.get("decision_kind") == "mother_choice":
+        prefix = "Evergreen Mother: banish from the discard pile or the reserve first. "
+    elif pv.get("decision_kind") == "mother_banish":
+        prefix = "Evergreen Mother: another player banishes a card from hand first. "
+    elif pv.get("decision_kind") == "pilgrim_banish":
+        prefix = "A pilgrim of the same strength may be banished first. "
     peeks = pv.get("mage_peeks") or []
     if peeks:
         n = int(peeks[0])
@@ -1990,6 +2384,86 @@ def describe_events(g: Game) -> str:
                 g.players[int(ev["player"])].name, g.card(ev["card"]).label(), int(ev["paid"]), int(ev["damage"])))
         elif t == "team_damage_done":
             parts.append("Team damage satisfied.")
+        elif t == "corrupt_banish":
+            if ev.get("source") == "hand":
+                parts.append("%s banishes %s from hand (Evergreen Mother)." % (
+                    g.players[int(ev["player"])].name, g.card(ev["banished"]).label()))
+            else:
+                parts.append("%s is corrupted: %s banished from the %s." % (
+                    g.card(ev["card"]).label(), g.card(ev["banished"]).label(), ev.get("source", "reserve deck")))
+        elif t == "corrupt_banish_none":
+            parts.append("%s is corrupted, but nothing is banished." % g.card(ev["card"]).label())
+        elif t == "decide" and ev.get("kind") == "mother_choice":
+            parts.append("Evergreen Mother: banish from the discard pile or the reserve?")
+        elif t == "decide" and ev.get("kind") == "mother_banish":
+            parts.append("Evergreen Mother: %s must banish a card from hand." % g.players[int(ev["player"])].name)
+        elif t == "druid_deal":
+            dealt = ev.get("dealt", [])
+            parts.append("Druid: the discard pile is dealt out (%s)." % ", ".join(
+                "%s %d" % (g.players[i].name, len(x)) for i, x in enumerate(dealt) if x))
+        elif t == "decide" and ev.get("kind") == "druid_assign":
+            parts.append("%s sorts the dealt cards." % g.players[int(ev["player"])].name)
+        elif t == "druid_assign":
+            bits = []
+            for slot, word in (("banish", "banished"), ("hand", "to hand"), ("top", "on top of the reserve"), ("bottom", "under the reserve")):
+                if ev.get(slot):
+                    bits.append("%s %s" % (g.card(ev[slot]).label(), word))
+            parts.append("Druid: %s: %s." % (g.players[int(ev["player"])].name, ", ".join(bits)))
+        elif t == "druid_done":
+            parts.append("%d card%s back to the discard pile, shuffled." % (int(ev["returned"]), "" if int(ev["returned"]) == 1 else "s"))
+        elif t == "decide" and ev.get("kind") == "chanter_declare":
+            parts.append("Chanter: declare how many cards everyone draws.")
+        elif t == "chanter_declare":
+            n = int(ev["count"])
+            parts.append("Chanter: %s declares %d%s." % (
+                g.players[int(ev["player"])].name, n,
+                "; " + ", ".join("%s draws %d" % (g.players[int(x["player"])].name, len(x["cards"])) for x in ev.get("drawn", [])) if n else ""))
+        elif t == "decide" and ev.get("kind") == "chanter_discard":
+            parts.append("%s discards down to the limit." % g.players[int(ev["player"])].name)
+        elif t == "chanter_discard":
+            parts.append("%s discards %s." % (g.players[int(ev["player"])].name, " + ".join(g.card(c).label() for c in ev["cards"])))
+        elif t == "decide" and ev.get("kind") == "pilgrim_banish":
+            parts.append("%s matches a pilgrim in the mission zone: banish it?" % g.card(ev["entering"]).label())
+        elif t == "pilgrim_banish":
+            parts.append("%s banished from the mission zone." % g.card(ev["pilgrim"]).label())
+        elif t == "pilgrim_skip":
+            parts.append("The pilgrims stay.")
+        elif t == "reserve_discard":
+            parts.append("%d card%s from the reserve to the discard pile." % (len(ev["cards"]), "" if len(ev["cards"]) == 1 else "s"))
+        elif t == "decide" and ev.get("kind") == "zone_banish":
+            parts.append("Exact kill: banish a mission zone card first?")
+        elif t == "zone_banish":
+            parts.append("%s banished from the mission zone." % g.card(ev["card"]).label())
+        elif t == "decide" and ev.get("kind") == "zone_build":
+            parts.append("Move cards in play to the mission zone?")
+        elif t == "zone_build":
+            parts.append("%s moves to the mission zone (enemy strength +%d)." % (g.card(ev["card"]).label(), int(ev.get("bonus", 0))))
+        elif t == "zone_build_stop":
+            parts.append("Nothing more moves to the zone.")
+        elif t == "decide" and ev.get("kind") == "discard_banish":
+            parts.append("Mission zone filled: banish any discards?")
+        elif t == "zone_filled":
+            parts.append("Banished %d; %d card%s healed under the reserve. The zone is closed." % (
+                len(ev["banished"]), int(ev["healed"]), "" if int(ev["healed"]) == 1 else "s"))
+        elif t == "decide" and ev.get("kind") == "discard_pick":
+            parts.append("Exact kill: put a discard pile card on top of the reserve?")
+        elif t == "discard_pick":
+            parts.append("%s from the discard pile on top of the reserve." % g.card(ev["card"]).label())
+        elif t == "discard_pick_skip":
+            parts.append("The discard pile stays.")
+        elif t == "decide" and ev.get("kind") == "pile_rescue":
+            parts.append("End of turn: rescue a captured card or rotate the piles.")
+        elif t == "pile_rescue":
+            parts.append("%s banished; %s rescued from pile %d to the discard pile." % (
+                g.card(ev["card"]).label(), g.card(ev["rescued"]).label(), int(ev["pile"]) + 1))
+        elif t == "pile_rotate":
+            parts.append("The captured piles rotate.")
+        elif t == "decide" and ev.get("kind") == "pile_to_reserve":
+            parts.append("Exact kill: move a captured card on top of the reserve?")
+        elif t == "pile_to_reserve":
+            parts.append("%s from pile %d on top of the reserve." % (g.card(ev["card"]).label(), int(ev["pile"]) + 1))
+        elif t == "pile_to_reserve_skip":
+            parts.append("The captured piles stay.")
     return " ".join(parts)
 
 

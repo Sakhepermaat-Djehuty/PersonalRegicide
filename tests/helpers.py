@@ -62,7 +62,10 @@ def _pull(g: Game, cid: str) -> None:
         if cid in p.hand:
             p.hand.remove(cid)
             return
-    for pile in (g.tavern, g.castle, g.discard, g.banished, g.mission_zone):
+    piles = [g.tavern, g.castle, g.discard, g.banished, g.mission_zone, g.set_aside]
+    piles.append(g.extra.get("pilgrim_deck", []))      # Legacy mission 7's face-down pilgrims
+    piles.extend(g.extra.get("captured", []))          # Legacy mission 9's captured piles
+    for pile in piles:
         if cid in pile:
             pile.remove(cid)
             return

@@ -37,6 +37,10 @@ class LegacyRules(BaseRules):
         banished = [Card.from_dict(d) for d in extra.get("banished_start", [])]
         zone = [Card.from_dict(d) for d in extra.get("zone_start", [])]
         reserve = list(party)
+        if not extra.get("capture"):
+            # Mission 8: "shuffle the pilgrims into the reserve deck" (ordinary classless
+            # cards there). Mission 9 shuffles them in itself, after dealing its piles.
+            reserve.extend(Card.from_dict(d) for d in extra.get("pilgrims_in_reserve", []))
         jesters = game.config.deck_jesters + int(extra.get("extra_jesters", 0)) if game.n_players > 1 else 0
         for i in range(jesters):
             reserve.append(jester_card(i + 1))
@@ -61,10 +65,31 @@ class LegacyRules(BaseRules):
     def immune(self, game, suit: str, cards: Sequence[Card] = ()) -> bool:
         if suit not in self.immune_suits(game):
             return False
+        if self.fixed_immunity(game, suit):
+            return True
         for c in cards:
             if suit in c.suits and (c.has("corrupted") or c.has("restored") or c.has("ignores_immunity")):
                 return False
         return True
+
+    def fixed_immunity(self, game, suit: str) -> bool:
+        """Mission 9's Myla (flag ``fixed_immunity``): "her immunity to bards and paladins
+        can never be ignored (e.g. via corruption and jesters)"."""
+        enemy = game.enemy
+        if enemy is None or suit not in enemy.suits:
+            return False
+        card = game.cards.get(enemy.card_id)
+        return card is not None and card.has("fixed_immunity")
+
+    def unlocked_hand(self, game, player: int) -> List[str]:
+        """The ids a player may give away from hand (not the locked ones, p. mission 7)."""
+        return [cid for cid in game.players[player].hand if not self.hand_locked(game, game.cards[cid])]
+
+    def extra_card_ids(self, game) -> List[str]:
+        ids = list(game.extra.get("pilgrim_deck", []))
+        for pile in game.extra.get("captured", []):
+            ids.extend(pile)
+        return ids
 
     def jester_mode(self, game) -> str:
         return "claim"
@@ -127,7 +152,7 @@ class LegacyRules(BaseRules):
         return out
 
     def playable_ids(self, game) -> List[str]:
-        ids = list(game.active_player.hand)
+        ids = self.unlocked_hand(game, game.active)
         ids.extend(game.extra.get("flute", []))
         return ids
 
@@ -214,7 +239,7 @@ class LegacyRules(BaseRules):
         if total + strength > 10:
             return []
         out = []
-        for cid in game.players[player].hand:
+        for cid in self.unlocked_hand(game, player):
             c = game.cards[cid]
             if c.is_ace or c.is_jester or c.has("beast"):
                 continue
@@ -232,6 +257,16 @@ class LegacyRules(BaseRules):
         return None, []
 
     def after_attack_formed(self, game, play) -> Optional[Dict[str, Any]]:
+        # Effects owed to the cards that just entered play (the Evergreen Mother's banish,
+        # mission 7's pilgrim matches) are settled before the relics look at the attack: the
+        # Scarlet Whistle offers the top of the discard pile, which the Mother may banish.
+        entry = self._pending_entry_decision(game)
+        if entry is not None:
+            entry["resume_step"] = "after_attack"
+            return entry
+        return self._relic_after_attack(game, play)
+
+    def _relic_after_attack(self, game, play) -> Optional[Dict[str, Any]]:
         # The Scarlet Whistle wants a solitary companion or beast, which is never a kinfolk
         # attack, so the two relics never compete for the same attack.
         whistle = self._whistle_after_attack(game, play)
@@ -278,6 +313,24 @@ class LegacyRules(BaseRules):
             # Revealing nothing is not allowed, and a forecast must not look at the reserve:
             # it assumes a reveal that adds 0, then the doubling.
             return {"type": "reaver_count", "player": int(d["player"]), "count": 0, "forecast": True}
+        if d and d.get("kind") == "druid_assign":
+            # A forecast must not show the deal: everything goes back to the discard pile.
+            return {"type": "druid_assign", "player": int(d["player"]), "forecast": True}
+        if d and d.get("kind") == "chanter_declare":
+            return {"type": "chanter_declare", "player": int(d["player"]), "count": 0, "forecast": True}
+        if d and d.get("kind") == "chanter_discard":
+            acts = self._actions_chanter_discard(game, d)
+            if acts:
+                t = acts[0]
+                lowest = sorted(t["pick_from"], key=lambda c: (game.cards[c].defence_value, game.cards[c].value))
+                return {"type": "chanter_discard", "player": int(d["player"]), "cards": lowest[:int(t["needs"])],
+                        "forecast": True}
+        if d and d.get("kind") == "mother_choice":
+            return {"type": "mother_choice", "player": int(d["player"]), "option": "reserve", "forecast": True}
+        if d and d.get("kind") == "mother_banish":
+            acts = self._actions_mother_banish(game, d)
+            if acts:
+                return dict(acts[0], forecast=True)
         return super().forecast_action(game)
 
     # --- mission zone rescue (missions 3 and 6) -----------------------------------
@@ -329,7 +382,7 @@ class LegacyRules(BaseRules):
         player = int(d["player"])
         acts = [{"type": "emblem_place", "player": player, "card": cid,
                  "label": "Place %s on top of the reserve" % game.cards[cid].label()}
-                for cid in game.players[player].hand]
+                for cid in self.unlocked_hand(game, player)]
         acts.append({"type": "emblem_pass", "player": player, "skip": True, "label": "Pass"})
         return acts
 
@@ -361,9 +414,16 @@ class LegacyRules(BaseRules):
             play = game.add_cards_to_play(play_index, player, ids)
             game._say("%s adds %s to the attack (Kinfolk Flute): strength %d." % (
                 name, " + ".join(game.cards[c].label() for c in ids), play.value))
+            if self._interrupt(game, d, "flute"):
+                return
         else:
             game._event("flute_pass", player=player)
             game._say("%s adds nothing to the attack." % name)
+        self._continue_flute(game, d)
+
+    def _continue_flute(self, game, d: Dict[str, Any]) -> None:
+        """After a Kinfolk Flute player acted: ask the next one who can add, or resolve."""
+        play_index = int(d["play_index"])
         play = game.plays[play_index]
         nxt, rest = self._flute_next(game, d.get("queue", []), int(d["strength"]), play.value)
         if nxt is None:
@@ -397,7 +457,7 @@ class LegacyRules(BaseRules):
         return c.is_ace or c.has("beast")
 
     def _whistle_candidates(self, game, player: int) -> List[str]:
-        return [cid for cid in game.players[player].hand if not game.cards[cid].is_jester]
+        return [cid for cid in self.unlocked_hand(game, player) if not game.cards[cid].is_jester]
 
     def _whistle_next(self, game, queue: Sequence[int]) -> Tuple[Optional[int], List[int]]:
         rest = list(queue)
@@ -444,9 +504,14 @@ class LegacyRules(BaseRules):
             game._event("whistle_take", player=player, card=cid, value=play.value)
             game._say("%s adds %s from the discard pile to the attack (Scarlet Whistle): strength %d." % (
                 game.players[player].name, game.cards[cid].label(), play.value))
+            if self._interrupt(game, d, "resolve"):
+                return
         else:
             game._event("whistle_skip", player=player)
             game._say("%s leaves the discard pile alone." % game.players[player].name)
+        game.resolve_pending_attack()
+
+    def _continue_resolve(self, game, d: Dict[str, Any]) -> None:
         game.resolve_pending_attack()
 
     def _actions_whistle_add(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -466,6 +531,8 @@ class LegacyRules(BaseRules):
             play = game.add_cards_to_play(play_index, player, [cid])
             game._say("%s adds %s to the attack (Scarlet Whistle): strength %d." % (
                 name, game.cards[cid].label(), play.value))
+            if self._interrupt(game, d, "resolve"):
+                return
             game.resolve_pending_attack()   # one other player adds: the others are not asked
             return
         game._event("whistle_pass", player=player)
@@ -501,6 +568,10 @@ class LegacyRules(BaseRules):
                 if placing is not None:
                     return {"decision": placing}
             return {"decision": self._mage_peek(game, value)}
+        if suit == "U":
+            return self._druid_start(game)
+        if suit == "T":
+            return self._chanter_start(game)
         if suit == "R":
             return self._reaver_start(game, value if damage is None else int(damage))
         if suit == "G":
@@ -586,6 +657,204 @@ class LegacyRules(BaseRules):
             " + ".join(game.cards[c].label() for c in order)))
         game.resolve_pending_attack()
 
+    # ------------------------------------------------------------------ druids
+    # Rulebook p.16 (confirmed): "players set their hands aside; shuffle the discard pile
+    # and deal it out clockwise starting with the druid's player; each player picks 4 of
+    # their dealt cards and moves one each to the banished pile, their hand (ignoring the
+    # limit), the top of the reserve and the bottom of the reserve; everything else goes
+    # back to the discard pile, which is shuffled. The druid's strength is not used."
+    # One ``druid_assign`` decision per player who was dealt cards, clockwise from the
+    # druid's player; a player dealt fewer than four cards assigns each of them to a
+    # distinct destination of their choice. The action list holds a template (``needs``
+    # cards from ``pick_from``) that the player fills in: {"type": "druid_assign",
+    # "player": i, "banish": id, "hand": id, "top": id, "bottom": id}.
+    DRUID_SLOTS = ("banish", "hand", "top", "bottom")
+
+    def _druid_start(self, game) -> Any:
+        if not game.discard:
+            game._say("Druid: the discard pile is empty, there is nothing to sort.")
+            return {"dealt": 0}
+        pile = list(game.discard)
+        game.rng.shuffle(pile)
+        game.discard = []
+        dealt: List[List[str]] = [[] for _ in range(game.n_players)]
+        for i, cid in enumerate(pile):
+            dealt[(game.active + i) % game.n_players].append(cid)
+        game._event("druid_deal", player=game.active, dealt=[list(x) for x in dealt])
+        game._say("Druid: the discard pile (%d card%s) is shuffled and dealt out, starting with %s." % (
+            len(pile), "" if len(pile) == 1 else "s", game.players[game.active].name))
+        queue = [(game.active + k) % game.n_players for k in range(game.n_players)]
+        first, rest = self._druid_next(game, queue, dealt)
+        return {"decision": {"kind": "druid_assign", "player": first, "dealt": dealt, "queue": rest}}
+
+    @staticmethod
+    def _druid_next(game, queue: Sequence[int], dealt: Sequence[Sequence[str]]) -> Tuple[Optional[int], List[int]]:
+        rest = list(queue)
+        while rest:
+            p = rest.pop(0)
+            if dealt[p]:
+                return p, rest
+        return None, []
+
+    def druid_options(self, game) -> List[str]:
+        """The cards dealt to the player who must assign them now (for UIs)."""
+        d = game.decision or {}
+        if d.get("kind") != "druid_assign":
+            return []
+        return [str(c) for c in d["dealt"][int(d["player"])]]
+
+    def _actions_druid_assign(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        player = int(d["player"])
+        options = [str(c) for c in d["dealt"][player]]
+        needs = min(4, len(options))
+        return [{"type": "druid_assign", "player": player, "pick_from": options, "needs": needs,
+                 "slots": list(self.DRUID_SLOTS),
+                 "label": "Assign %d card%s: banish, hand, top and bottom of the reserve" % (needs, "" if needs == 1 else "s")}]
+
+    def _decide_druid_assign(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        from ..engine import IllegalAction
+        player = int(d["player"])
+        dealt = [list(x) for x in d["dealt"]]
+        mine = dealt[player]
+        if not action.get("forecast"):
+            picks = {slot: str(action[slot]) for slot in self.DRUID_SLOTS if action.get(slot)}
+            ids = list(picks.values())
+            needs = min(4, len(mine))
+            if len(ids) != needs or len(set(ids)) != needs:
+                raise IllegalAction("Assign %d distinct card%s." % (needs, "" if needs == 1 else "s"))
+            for cid in ids:
+                if cid not in mine:
+                    raise IllegalAction("Card %s was not dealt to you." % cid)
+            name = game.players[player].name
+            said = []
+            for slot in self.DRUID_SLOTS:
+                cid = picks.get(slot)
+                if cid is None:
+                    continue
+                mine.remove(cid)
+                label = game.cards[cid].label()
+                if slot == "banish":
+                    game.banished.append(cid)
+                    said.append("%s banished" % label)
+                elif slot == "hand":
+                    game.players[player].hand.append(cid)
+                    said.append("%s to hand" % label)
+                elif slot == "top":
+                    game.tavern.insert(0, cid)
+                    said.append("%s on top of the reserve" % label)
+                else:
+                    game.tavern.append(cid)
+                    said.append("%s under the reserve" % label)
+            game._event("druid_assign", player=player, **picks)
+            game._say("Druid: %s sorts: %s." % (name, ", ".join(said)))
+            d["dealt"] = dealt
+            nxt, rest = self._druid_next(game, d.get("queue", []), dealt)
+            if nxt is not None:
+                d["player"] = nxt
+                d["queue"] = rest
+                game._event("decide", **d)
+                game._say("Druid: %s assigns %d of the %d cards dealt." % (
+                    game.players[nxt].name, min(4, len(dealt[nxt])), len(dealt[nxt])))
+                return
+        rest_cards = [c for lst in dealt for c in lst]
+        game.rng.shuffle(rest_cards)
+        game.discard = rest_cards
+        d["dealt"] = [[] for _ in dealt]
+        game._event("druid_done", returned=len(rest_cards))
+        game._say("Druid: the %d other card%s go back to the discard pile, shuffled." % (
+            len(rest_cards), "" if len(rest_cards) == 1 else "s"))
+        game.resolve_pending_attack()
+
+    # ------------------------------------------------------------------ chanters
+    # Rulebook p.16 (confirmed): "declare any number; starting with the current player and
+    # going clockwise, each player draws that many cards ignoring the hand limit, then
+    # discards down to the limit." The attacker declares (0 to the size of the reserve),
+    # everyone draws, then each player over the limit, clockwise from the attacker,
+    # chooses what to discard (a template action filled in with ``cards``).
+    def _chanter_start(self, game) -> Any:
+        game._say("Chanter: %s declares how many cards everyone draws (0 to %d)." % (
+            game.players[game.active].name, len(game.tavern)))
+        return {"decision": {"kind": "chanter_declare", "player": game.active, "max": len(game.tavern)}}
+
+    def _actions_chanter_declare(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        player = int(d["player"])
+        return [{"type": "chanter_declare", "player": player, "count": n,
+                 "label": "Everyone draws %d" % n if n else "Nobody draws"}
+                for n in range(0, len(game.tavern) + 1)]
+
+    def _decide_chanter_declare(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        from ..engine import IllegalAction
+        player = int(d["player"])
+        n = int(action.get("count", 0))
+        if not 0 <= n <= len(game.tavern):
+            raise IllegalAction("Declare between 0 and %d." % len(game.tavern))
+        drawn: List[Dict[str, Any]] = []
+        for k in range(game.n_players):
+            p = (player + k) % game.n_players
+            got = []
+            for _ in range(n):
+                if not game.tavern:
+                    break
+                cid = game.tavern.pop(0)
+                game.players[p].hand.append(cid)
+                got.append(cid)
+            drawn.append({"player": p, "cards": got})
+        game._event("chanter_declare", player=player, count=n, drawn=drawn)
+        if n == 0:
+            game._say("Chanter: %s declares 0, nobody draws." % game.players[player].name)
+        else:
+            game._say("Chanter: %s declares %d; %s." % (
+                game.players[player].name, n,
+                ", ".join("%s draws %d" % (game.players[x["player"]].name, len(x["cards"])) for x in drawn)))
+        d["kind"] = "chanter_discard"
+        d.pop("max", None)
+        d["queue"] = [(player + k) % game.n_players for k in range(game.n_players)]
+        self._chanter_next(game, d)
+
+    def _chanter_excess(self, game, player: int) -> int:
+        """Cards a player must discard down to the limit (never a locked card)."""
+        over = len(game.players[player].hand) - game.config.max_hand
+        return max(0, min(over, len(self.unlocked_hand(game, player))))
+
+    def _chanter_next(self, game, d: Dict[str, Any]) -> None:
+        queue = list(d.get("queue", []))
+        while queue:
+            p = queue.pop(0)
+            if self._chanter_excess(game, p) > 0:
+                d["player"] = p
+                d["queue"] = queue
+                game._event("decide", **d)
+                game._say("Chanter: %s discards down to %d cards." % (game.players[p].name, game.config.max_hand))
+                return
+        d["queue"] = []
+        game.resolve_pending_attack()
+
+    def _actions_chanter_discard(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        player = int(d["player"])
+        needs = self._chanter_excess(game, player)
+        if needs <= 0:
+            return []
+        return [{"type": "chanter_discard", "player": player, "pick_from": self.unlocked_hand(game, player),
+                 "needs": needs, "label": "Discard %d card%s" % (needs, "" if needs == 1 else "s")}]
+
+    def _decide_chanter_discard(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        from ..engine import IllegalAction
+        player = int(d["player"])
+        needs = self._chanter_excess(game, player)
+        ids = [str(c) for c in action.get("cards", [])]
+        allowed = self.unlocked_hand(game, player)
+        if len(ids) != needs or len(set(ids)) != needs:
+            raise IllegalAction("Discard exactly %d card%s." % (needs, "" if needs == 1 else "s"))
+        for cid in ids:
+            if cid not in allowed:
+                raise IllegalAction("Card %s cannot be discarded." % cid)
+        for cid in ids:
+            game.players[player].hand.remove(cid)
+        game._discard_cards([game.cards[c] for c in ids])
+        game._event("chanter_discard", player=player, cards=ids)
+        game._say("Chanter: %s discards %s." % (game.players[player].name, " + ".join(game.cards[c].label() for c in ids)))
+        self._chanter_next(game, d)
+
     @staticmethod
     def mage_eligible(card: Card) -> bool:
         """May a revealed card join the attack? Jesters and corrupted cards never do."""
@@ -620,24 +889,11 @@ class LegacyRules(BaseRules):
         name = game.players[player].name
         if action["type"] == "mage_pick":
             cid = str(action["card"])
-            play = game.mage_add_to_play(cid)
-            card = game.cards[cid]
-            if self._emblem(game) and game.config.players == 1 and d.get("revealed"):
-                # Azure Emblem, solo side: the rest is not discarded yet, one of those cards
-                # may go back on top of the reserve first (``_emblem_keep_decide``).
-                game._event("mage_pick", player=player, card=cid, value=play.value, discarded=[])
-                game._say("%s adds %s to the attack (Mage): strength %d." % (name, card.label(), play.value))
-                d["kind"] = "emblem_keep"
-                d["picked"] = cid
-                d.pop("eligible", None)
-                game._event("decide", **d)
-                game._say("Azure Emblem: %s may put one of the other revealed cards back on top of the reserve deck." % name)
+            game.mage_add_to_play(cid)
+            d["picked"] = cid
+            if self._interrupt(game, d, "mage_picked"):
                 return
-            rest = self._mage_discard_rest(game, d)
-            game._event("mage_pick", player=player, card=cid, value=play.value, discarded=rest)
-            tail = " %s to the discard pile." % " + ".join(game.cards[c].label() for c in rest) if rest else ""
-            game._say("%s adds %s to the attack (Mage): strength %d.%s" % (name, card.label(), play.value, tail))
-            self._mage_continue(game, d, card)
+            self._continue_mage_picked(game, d)
             return
         rest = self._mage_discard_rest(game, d)
         game._event("mage_skip", player=player, discarded=rest)
@@ -647,6 +903,30 @@ class LegacyRules(BaseRules):
         else:
             game._say("Mage: nothing to add.")
         game.resolve_pending_attack()
+
+    def _continue_mage_picked(self, game, d: Dict[str, Any]) -> None:
+        """The chosen card joined the attack (and any effect it owed is settled): the
+        Emblem's solo keep, or the rest to the discard pile and the chain."""
+        player = int(d["player"])
+        name = game.players[player].name
+        cid = str(d["picked"])
+        play = game.plays[int(d["play_index"])]
+        card = game.cards[cid]
+        if self._emblem(game) and game.config.players == 1 and d.get("revealed"):
+            # Azure Emblem, solo side: the rest is not discarded yet, one of those cards
+            # may go back on top of the reserve first (``_emblem_keep_decide``).
+            game._event("mage_pick", player=player, card=cid, value=play.value, discarded=[])
+            game._say("%s adds %s to the attack (Mage): strength %d." % (name, card.label(), play.value))
+            d["kind"] = "emblem_keep"
+            d.pop("eligible", None)
+            game._event("decide", **d)
+            game._say("Azure Emblem: %s may put one of the other revealed cards back on top of the reserve deck." % name)
+            return
+        rest = self._mage_discard_rest(game, d)
+        game._event("mage_pick", player=player, card=cid, value=play.value, discarded=rest)
+        tail = " %s to the discard pile." % " + ".join(game.cards[c].label() for c in rest) if rest else ""
+        game._say("%s adds %s to the attack (Mage): strength %d.%s" % (name, card.label(), play.value, tail))
+        self._mage_continue(game, d, card)
 
     def _mage_continue(self, game, d: Dict[str, Any], card: Card) -> None:
         """After a pick (and the Emblem's keep, if any): a chosen mage looks again with its
@@ -682,7 +962,7 @@ class LegacyRules(BaseRules):
         rest = list(queue)
         while rest:
             p = rest.pop(0)
-            if game.players[p].hand:
+            if self.unlocked_hand(game, p):
                 return p, rest
         return None, []
 
@@ -702,7 +982,7 @@ class LegacyRules(BaseRules):
         if action["type"] == "emblem_place":
             cid = str(action["card"])
             hand = game.players[player].hand
-            if cid not in hand:
+            if cid not in self.unlocked_hand(game, player):
                 from ..engine import IllegalAction
                 raise IllegalAction("Card %s is not in hand." % cid)
             hand.remove(cid)
@@ -746,29 +1026,178 @@ class LegacyRules(BaseRules):
         self._mage_continue(game, d, game.cards[str(d["picked"])])
 
     # ------------------------------------------------------------------ corruption
-    def on_cards_played(self, game, cards: Sequence[Card]) -> None:
+    def on_cards_played(self, game, cards: Sequence[Card], player: Optional[int] = None) -> None:
+        owner = game.active if player is None else int(player)
         for c in cards:
             if c.has("corrupted"):
-                self._corrupted_banish(game, c)
+                self._corrupted_banish(game, c, owner)
             if c.has("restored") and game.banished:
                 back = game.banished.pop()
                 game.tavern.append(back)
                 game._event("restore", card=c.id, returned=back)
                 game._say("%s (restored) returns %s under the reserve deck." % (c.label(), game.cards[back].label()))
 
-    def _corrupted_banish(self, game, card: Card) -> None:
-        relics = game.extra.get("relics", [])
-        if "evergreen_corrupted" in relics and game.discard:
+    def _mother(self, game) -> bool:
+        return "mother" in game.extra.get("relics", [])
+
+    def _corrupted_banish(self, game, card: Card, owner: int) -> None:
+        """Rulebook p.15: when a corrupted card enters play, banish the top card of the
+        reserve deck. With the Evergreen Mother (corrupt relic, confirmed) the banish may
+        need a choice, which is queued in ``extra["mother_pending"]`` and asked before the
+        attack goes on (see ``_pending_entry_decision``): solo, "if the discard pile is not
+        empty, you may choose to banish a card from the top of the discard pile instead";
+        2+ players, "another player must banish a card from their hand; if all other
+        players' hands are empty, do not banish any card"."""
+        if self._mother(game):
+            if game.n_players == 1 and game.discard:
+                game.extra.setdefault("mother_pending", []).append({"card": card.id, "player": owner})
+                return
+            if game.n_players >= 2:
+                if self._mother_hand(game, owner) is None:
+                    game._event("corrupt_banish_none", card=card.id)
+                    game._say("%s is corrupted, but every other hand is empty: nothing is banished (Evergreen Mother)." % card.label())
+                    return
+                game.extra.setdefault("mother_pending", []).append({"card": card.id, "player": owner})
+                return
+        self._banish_from(game, card, "reserve")
+
+    def _banish_from(self, game, card: Card, source: str) -> None:
+        if source == "discard" and game.discard:
             lost = game.discard.pop(0)
             src = "discard pile"
         elif game.tavern:
             lost = game.tavern.pop(0)
             src = "reserve deck"
         else:
+            game._event("corrupt_banish_none", card=card.id)
+            game._say("%s is corrupted, but the reserve deck is empty: nothing is banished." % card.label())
             return
         game.banished.append(lost)
-        game._event("corrupt_banish", card=card.id, banished=lost)
+        game._event("corrupt_banish", card=card.id, banished=lost, source=src)
         game._say("%s is corrupted: %s banished from the %s." % (card.label(), game.cards[lost].label(), src))
+
+    def _mother_hand(self, game, owner: int) -> Optional[int]:
+        """The first other player clockwise from the corrupted card's owner with a card
+        they may banish from hand."""
+        for k in range(1, game.n_players):
+            p = (owner + k) % game.n_players
+            if self.unlocked_hand(game, p):
+                return p
+        return None
+
+    def _mother_next(self, game) -> Optional[Dict[str, Any]]:
+        """The next Evergreen Mother decision owed, popped from the queue, or None."""
+        queue = game.extra.get("mother_pending") or []
+        while queue:
+            entry = queue.pop(0)
+            card = game.cards[str(entry["card"])]
+            owner = int(entry["player"])
+            if game.n_players == 1:
+                if not game.discard:
+                    self._banish_from(game, card, "reserve")
+                    continue
+                game._say("Evergreen Mother: %s is corrupted; banish the top of the discard pile or of the reserve deck?" % card.label())
+                return {"kind": "mother_choice", "player": game.active, "card": card.id}
+            p = self._mother_hand(game, owner)
+            if p is None:
+                game._event("corrupt_banish_none", card=card.id)
+                game._say("%s is corrupted, but every other hand is empty: nothing is banished (Evergreen Mother)." % card.label())
+                continue
+            game._say("Evergreen Mother: %s is corrupted; %s must banish a card from hand." % (
+                card.label(), game.players[p].name))
+            return {"kind": "mother_banish", "player": p, "card": card.id, "owner": owner}
+        game.extra.pop("mother_pending", None)
+        return None
+
+    def _actions_mother_choice(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        player = int(d["player"])
+        acts: List[Dict[str, Any]] = []
+        if game.discard:
+            acts.append({"type": "mother_choice", "player": player, "option": "discard",
+                         "label": "Banish %s, top of the discard pile" % game.cards[game.discard[0]].label()})
+        if game.tavern:
+            acts.append({"type": "mother_choice", "player": player, "option": "reserve",
+                         "label": "Banish the top card of the reserve deck"})
+        return acts
+
+    def _decide_mother_choice(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        card = game.cards[str(d["card"])]
+        option = str(action.get("option"))
+        if option == "discard" and not game.discard:
+            from ..engine import IllegalAction
+            raise IllegalAction("The discard pile is empty.")
+        self._banish_from(game, card, "discard" if option == "discard" else "reserve")
+        self._entry_done(game, d)
+
+    def _actions_mother_banish(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        player = int(d["player"])
+        return [{"type": "mother_banish", "player": player, "card": cid,
+                 "label": "Banish %s from hand" % game.cards[cid].label()}
+                for cid in self.unlocked_hand(game, player)]
+
+    def _decide_mother_banish(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        player = int(d["player"])
+        cid = str(action["card"])
+        if cid not in self.unlocked_hand(game, player):
+            from ..engine import IllegalAction
+            raise IllegalAction("Card %s is not in hand." % cid)
+        game.players[player].hand.remove(cid)
+        game.banished.append(cid)
+        card = game.cards[str(d["card"])]
+        game._event("corrupt_banish", card=card.id, banished=cid, source="hand", player=player)
+        game._say("%s is corrupted: %s banishes %s from hand (Evergreen Mother)." % (
+            card.label(), game.players[player].name, game.cards[cid].label()))
+        self._entry_done(game, d)
+
+    # ------------------------------------------------------------------ effects owed to cards entering play
+    # A card entering play may owe a decision (the Evergreen Mother's banish; mission 7's
+    # pilgrim matches add theirs). ``_pending_entry_decision`` builds the next one. Such a
+    # decision can arise inside another decision's flow (a Kinfolk Flute or Scarlet Whistle
+    # addition, a mage's pick): ``_interrupt`` parks the running decision inside the new
+    # one and ``_entry_done`` restores it and calls its ``_continue_<step>`` method; from
+    # ``after_attack_formed`` the step is "after_attack" (the relics' turn, then the
+    # resolution).
+    def _pending_entry_decision(self, game) -> Optional[Dict[str, Any]]:
+        return self._mother_next(game)
+
+    def _interrupt(self, game, d: Dict[str, Any], step: str) -> bool:
+        nd = self._pending_entry_decision(game)
+        if nd is None:
+            return False
+        nd["play_index"] = d["play_index"]
+        if "choice" in d:
+            nd["choice"] = d["choice"]
+        nd["resume_decision"] = dict(d)
+        nd["resume_step"] = step
+        game.decision = nd
+        game._event("decide", **nd)
+        return True
+
+    def _entry_done(self, game, d: Dict[str, Any]) -> None:
+        nd = self._pending_entry_decision(game)
+        if nd is not None:
+            for key in ("play_index", "choice", "resume_decision", "resume_step"):
+                if key in d:
+                    nd[key] = d[key]
+            game.decision = nd
+            game._event("decide", **nd)
+            return
+        step = str(d.get("resume_step", "after_attack"))
+        if step == "after_attack":
+            play = game.plays[int(d["play_index"])]
+            rd = self._relic_after_attack(game, play)
+            if rd is None:
+                game.resolve_pending_attack()
+                return
+            rd["play_index"] = d["play_index"]
+            if "choice" in d:
+                rd["choice"] = d["choice"]
+            game.decision = rd
+            game._event("decide", **rd)
+            return
+        saved = dict(d["resume_decision"])
+        game.decision = saved
+        getattr(self, "_continue_" + step)(game, saved)
 
     # ------------------------------------------------------------------ cleanup
     def order_for_discard(self, game, cards: List[Card]) -> List[Card]:
@@ -1020,7 +1449,7 @@ class Mission6Rules(LegacyRules):
     def _actions_team_discard(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
         acts: List[Dict[str, Any]] = []
         for i, p in enumerate(game.players):
-            for cid in p.hand:
+            for cid in self.unlocked_hand(game, i):
                 acts.append({"type": "team_discard", "player": i, "card": cid,
                              "label": "%s discards %s" % (p.name, game.cards[cid].label())})
         return acts
@@ -1029,7 +1458,7 @@ class Mission6Rules(LegacyRules):
         cid = str(action["card"])
         owner = None
         for i, p in enumerate(game.players):
-            if cid in p.hand:
+            if cid in self.unlocked_hand(game, i):
                 owner = i
                 break
         if owner is None:
@@ -1049,3 +1478,436 @@ class Mission6Rules(LegacyRules):
             game.resume_defeat()
             return
         game._event("decide", **d)
+
+
+@register_rules
+class Mission7Rules(LegacyRules):
+    """Tales of Rebirth (confirmed from the cards). Pack P's pilgrims form a face-down
+    pilgrim deck in the mission zone (``extra["pilgrim_deck"]``, top first). Start of
+    turn: the top pilgrim is turned face up into the zone. When a card enters play, if a
+    zone pilgrim has the same strength the player may banish that pilgrim (once per
+    card). Pilgrims may never leave players' hands. Enemy defeated: cards equal to the
+    zone's total strength go from the top of the reserve to the discard pile, then the
+    zone goes to the discard pile and the enemy is banished; on exact damage one zone
+    card may first be moved to the banished pile."""
+
+    id = "legacy_m7"
+    mission = 7
+    uses_mission_zone = True
+
+    def build_decks(self, game) -> None:
+        super().build_decks(game)
+        pilgrims = [Card.from_dict(d) for d in game.config.extra.get("pilgrims", [])]
+        for c in pilgrims:
+            if c.id in game.cards:
+                raise ValueError("duplicate card id %s" % c.id)
+            game.cards[c.id] = c
+        game.extra["pilgrim_deck"] = [c.id for c in pilgrims]
+
+    def hand_locked(self, game, card: Card) -> bool:
+        return card.has("pilgrim")
+
+    def zone_pilgrims(self, game) -> List[str]:
+        return [cid for cid in game.mission_zone if game.cards[cid].has("pilgrim")]
+
+    def on_turn_start(self, game) -> None:
+        deck = game.extra.get("pilgrim_deck", [])
+        if not deck:
+            return
+        cid = deck.pop(0)
+        game.mission_zone.append(cid)
+        game._event("zone_add", card=cid, zone=list(game.mission_zone), source="pilgrims")
+        game._say("Start of turn: %s is turned face up in the mission zone (zone strength %d, %d left in the pilgrim deck)." % (
+            game.cards[cid].label(), self.zone_strength(game), len(deck)))
+
+    # --- a card entering play may banish a zone pilgrim of the same strength ---------------
+    def on_cards_played(self, game, cards: Sequence[Card], player: Optional[int] = None) -> None:
+        super().on_cards_played(game, cards, player)
+        for c in cards:
+            game.extra.setdefault("pilgrim_pending", []).append(c.id)
+
+    def _strength_in_play(self, game, cid: str) -> int:
+        """A card's strength as it entered play: a beast's equals its partner's (p.14)."""
+        card = game.cards[cid]
+        if not card.has("beast"):
+            return self.strength(card)
+        for play in game.plays:
+            if cid in play.card_ids:
+                others = [c for c in play.card_ids if not game.cards[c].has("beast")]
+                return self.strength(game.cards[others[0]]) if others else 0
+        return 0
+
+    def _pending_entry_decision(self, game) -> Optional[Dict[str, Any]]:
+        d = super()._pending_entry_decision(game)
+        if d is not None:
+            return d
+        queue = game.extra.get("pilgrim_pending") or []
+        while queue:
+            cid = str(queue.pop(0))
+            if cid not in game.cards:
+                continue
+            strength = self._strength_in_play(game, cid)
+            matches = [p for p in self.zone_pilgrims(game) if self.strength(game.cards[p]) == strength]
+            if not matches:
+                continue
+            game._say("%s matches %s in the mission zone: %s may banish one pilgrim." % (
+                game.cards[cid].label(), " / ".join(game.cards[p].label() for p in matches),
+                game.players[game.active].name))
+            return {"kind": "pilgrim_banish", "player": game.active, "entering": cid, "options": matches}
+        game.extra.pop("pilgrim_pending", None)
+        return None
+
+    def _actions_pilgrim_banish(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        player = int(d["player"])
+        acts = [{"type": "pilgrim_banish", "player": player, "card": str(cid),
+                 "label": "Banish %s" % game.cards[str(cid)].label()}
+                for cid in d.get("options", []) if str(cid) in game.mission_zone]
+        acts.append({"type": "pilgrim_skip", "player": player, "skip": True, "label": "Keep the pilgrims"})
+        return acts
+
+    def _decide_pilgrim_banish(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        player = int(d["player"])
+        entering = str(d.get("entering", ""))
+        if action["type"] == "pilgrim_banish":
+            cid = str(action["card"])
+            if cid not in game.mission_zone or cid not in [str(c) for c in d.get("options", [])]:
+                from ..engine import IllegalAction
+                raise IllegalAction("%s is not a matching pilgrim in the mission zone." % cid)
+            game.mission_zone.remove(cid)
+            game.banished.append(cid)
+            game._event("pilgrim_banish", player=player, card=entering, pilgrim=cid, zone=list(game.mission_zone))
+            game._say("%s banishes %s from the mission zone (matched by %s)." % (
+                game.players[player].name, game.cards[cid].label(),
+                game.cards[entering].label() if entering in game.cards else "the played card"))
+        else:
+            game._event("pilgrim_skip", player=player, card=entering)
+            game._say("%s leaves the pilgrims in the mission zone." % game.players[player].name)
+        self._entry_done(game, d)
+
+    # --- enemy defeated -------------------------------------------------------------------
+    def defeat_plan(self, game, exact: bool) -> Dict[str, Any]:
+        return {"enemy_to": "banish", "played_to": "discard", "zone_to": "discard",
+                "reserve_to_discard": self.zone_strength(game)}
+
+    def before_defeat(self, game, exact: bool) -> Optional[Dict[str, Any]]:
+        if exact and game.mission_zone:
+            game._say("Exact kill: %s may move one mission zone card to the banished pile first." % (
+                game.players[game.active].name))
+            return {"kind": "zone_banish", "player": game.active, "options": list(game.mission_zone)}
+        return None
+
+    def _actions_zone_banish(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        player = int(d["player"])
+        acts = [{"type": "zone_banish", "player": player, "card": str(cid),
+                 "label": "Banish %s" % game.cards[str(cid)].label()}
+                for cid in d.get("options", []) if str(cid) in game.mission_zone]
+        acts.append({"type": "zone_banish_skip", "player": player, "skip": True, "label": "Banish nothing"})
+        return acts
+
+    def _decide_zone_banish(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        player = int(d["player"])
+        if action["type"] == "zone_banish":
+            cid = str(action["card"])
+            if cid not in game.mission_zone:
+                from ..engine import IllegalAction
+                raise IllegalAction("%s is not in the mission zone." % cid)
+            game.mission_zone.remove(cid)
+            game.banished.append(cid)
+            game._event("zone_banish", player=player, card=cid, zone=list(game.mission_zone))
+            game._say("%s moves %s from the mission zone to the banished pile." % (
+                game.players[player].name, game.cards[cid].label()))
+        else:
+            game._event("zone_banish_skip", player=player)
+            game._say("%s banishes nothing from the mission zone." % game.players[player].name)
+        game.resume_defeat()
+
+
+@register_rules
+class Mission8Rules(LegacyRules):
+    """Winds of Chaos (confirmed from the cards). The pilgrim puppy starts in the mission
+    zone and the other pilgrims are shuffled into the reserve as ordinary classless cards.
+    Each enemy has additional strength equal to the combined strength of the non-pilgrim
+    zone cards. Enemy defeated: banish the enemy; then the player may move cards in play
+    to the zone one at a time, each exactly one strength higher than the zone's highest
+    (the puppy is 1). When a 10 is moved the zone goes to the discard pile, the player
+    banishes any discards they want, the rest is shuffled under the reserve, and no more
+    cards may be moved for the rest of the mission. On exact damage any one discard pile
+    card may go on top of the reserve (asked once the piles are final)."""
+
+    id = "legacy_m8"
+    mission = 8
+    uses_mission_zone = True
+
+    def attack_bonus(self, game) -> int:
+        return sum(self.strength(game.cards[c]) for c in game.mission_zone if not game.cards[c].has("pilgrim"))
+
+    def _in_play(self, game) -> List[str]:
+        solo = game.n_players == 1 and self.solo_jester_mode(game) == "attack"
+        return [c for p in game.plays for c in p.card_ids if not (solo and game.cards[c].is_jester)]
+
+    def zone_highest(self, game) -> int:
+        return max([self.strength(game.cards[c]) for c in game.mission_zone] or [0])
+
+    def _build_options(self, game) -> List[str]:
+        if game.extra.get("zone_filled"):
+            return []
+        want = self.zone_highest(game) + 1
+        return [c for c in self._in_play(game) if self.strength(game.cards[c]) == want]
+
+    def defeat_plan(self, game, exact: bool) -> Dict[str, Any]:
+        return {"enemy_to": "banish", "played_to": "discard"}   # the zone stays
+
+    def before_defeat(self, game, exact: bool) -> Optional[Dict[str, Any]]:
+        options = self._build_options(game)
+        if options:
+            game._say("Enemy defeated: %s may move cards in play to the mission zone, one strength at a time (next: %d)." % (
+                game.players[game.active].name, self.zone_highest(game) + 1))
+            return {"kind": "zone_build", "player": game.active, "options": options}
+        return None
+
+    def _actions_zone_build(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        player = int(d["player"])
+        acts = [{"type": "zone_build", "player": player, "card": str(cid),
+                 "label": "Move %s to the mission zone" % game.cards[str(cid)].label()}
+                for cid in d.get("options", [])]
+        acts.append({"type": "zone_build_stop", "player": player, "skip": True, "label": "Stop"})
+        return acts
+
+    def _decide_zone_build(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        player = int(d["player"])
+        if action["type"] != "zone_build":
+            game._event("zone_build_stop", player=player)
+            game._say("%s moves nothing more to the mission zone." % game.players[player].name)
+            d.pop("options", None)
+            game.resume_defeat()
+            return
+        cid = str(action["card"])
+        if cid not in self._build_options(game):
+            from ..engine import IllegalAction
+            raise IllegalAction("%s cannot go to the mission zone now." % cid)
+        for play in game.plays:
+            if cid in play.card_ids:
+                play.card_ids.remove(cid)
+                break
+        game.mission_zone.append(cid)
+        game._event("zone_build", player=player, card=cid, zone=list(game.mission_zone), bonus=self.attack_bonus(game))
+        game._say("%s moves %s to the mission zone (enemy strength +%d)." % (
+            game.players[player].name, game.cards[cid].label(), self.attack_bonus(game)))
+        if self.strength(game.cards[cid]) == 10:
+            self._zone_filled(game, d)
+            return
+        options = self._build_options(game)
+        if not options:
+            d.pop("options", None)
+            game.resume_defeat()
+            return
+        d["options"] = options
+        game._event("decide", **d)
+
+    def _zone_filled(self, game, d: Dict[str, Any]) -> None:
+        """Mission zone filled (confirmed): the zone goes to the discard pile, the player
+        banishes any discards, the rest is shuffled under the reserve, no more moves."""
+        zone = list(game.mission_zone)
+        game.mission_zone = []
+        game._discard_cards([game.cards[c] for c in zone])
+        game.extra["zone_filled"] = True
+        game._event("zone_cleared", cards=zone, to="discard")
+        game._say("Mission zone filled! The zone (%d cards) goes to the discard pile; %s may banish any cards from the discard pile, the rest heals under the reserve deck." % (
+            len(zone), game.players[int(d["player"])].name))
+        d.pop("options", None)
+        d["kind"] = "discard_banish"
+        game._event("decide", **d)
+
+    def _actions_discard_banish(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        player = int(d["player"])
+        acts: List[Dict[str, Any]] = []
+        if game.discard:
+            acts.append({"type": "discard_banish", "player": player, "pick_from": list(game.discard), "needs": None,
+                         "max": len(game.discard), "label": "Banish the selected discards"})
+        acts.append({"type": "discard_banish_skip", "player": player, "skip": True, "label": "Banish nothing"})
+        return acts
+
+    def _decide_discard_banish(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        player = int(d["player"])
+        ids = [str(c) for c in action.get("cards", [])] if action["type"] == "discard_banish" else []
+        if len(set(ids)) != len(ids) or any(cid not in game.discard for cid in ids):
+            from ..engine import IllegalAction
+            raise IllegalAction("Choose distinct cards from the discard pile.")
+        for cid in ids:
+            game.discard.remove(cid)
+            game.banished.append(cid)
+        healed = list(game.discard)
+        game.rng.shuffle(healed)
+        game.discard = []
+        game.tavern.extend(healed)
+        game._event("zone_filled", player=player, banished=ids, healed=len(healed))
+        game._say("%s banishes %s; %d card%s are shuffled under the reserve deck. No more cards may be moved to the mission zone." % (
+            game.players[player].name, " + ".join(game.cards[c].label() for c in ids) or "nothing",
+            len(healed), "" if len(healed) == 1 else "s"))
+        game.resume_defeat()
+
+    # --- exact damage: a discard pile card on top of the reserve ---------------------------
+    def after_cleanup(self, game, exact: bool, plan: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if exact and game.discard:
+            game._say("Exact kill: %s may put any one card from the discard pile on top of the reserve deck." % (
+                game.players[game.active].name))
+            return {"kind": "discard_pick", "player": game.active}
+        return None
+
+    def _actions_discard_pick(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        player = int(d["player"])
+        acts = [{"type": "discard_pick", "player": player, "card": cid,
+                 "label": "Put %s on top of the reserve" % game.cards[cid].label()} for cid in game.discard]
+        acts.append({"type": "discard_pick_skip", "player": player, "skip": True, "label": "Leave the discard pile"})
+        return acts
+
+    def _decide_discard_pick(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        player = int(d["player"])
+        if action["type"] == "discard_pick":
+            cid = str(action["card"])
+            if cid not in game.discard:
+                from ..engine import IllegalAction
+                raise IllegalAction("%s is not in the discard pile." % cid)
+            game.discard.remove(cid)
+            game.tavern.insert(0, cid)
+            game._event("discard_pick", player=player, card=cid)
+            game._say("%s puts %s from the discard pile on top of the reserve deck." % (
+                game.players[player].name, game.cards[cid].label()))
+        else:
+            game._event("discard_pick_skip", player=player)
+            game._say("%s leaves the discard pile as it is." % game.players[player].name)
+        game.resume_defeat()
+
+
+@register_rules
+class Mission9Rules(LegacyRules):
+    """Hope From Ashes (confirmed from the cards). Setup: Gøran, the chosen beast, Jesters
+    and mercenaries are set aside; the rest of the reserve is shuffled and dealt into
+    three captured piles of ten (``extra["captured"]``, index 0 = the face-up top); the
+    pilgrims and the set-aside cards are shuffled into the remaining reserve. End of turn
+    (skipped on a kill): the player may banish a card from hand to move the top card of
+    one pile to the discard pile, or every pile's top card goes to its bottom. Enemy
+    defeated: banish the enemy; on exact damage one pile's top card may go on top of the
+    reserve. Myla's immunity to bards and paladins can never be ignored."""
+
+    id = "legacy_m9"
+    mission = 9
+    uses_mission_zone = True
+
+    def build_decks(self, game) -> None:
+        super().build_decks(game)
+        extra = game.config.extra
+        cap = extra.get("capture") or {}
+        exempt = set(str(x) for x in cap.get("exempt", []))
+        aside = [cid for cid in game.tavern if cid in exempt or game.cards[cid].is_jester]
+        rest = [cid for cid in game.tavern if cid not in aside]
+        game.rng.shuffle(rest)
+        n_piles = int(cap.get("piles", 3))
+        size = int(cap.get("size", 10))
+        piles: List[List[str]] = [[] for _ in range(n_piles)]
+        for i in range(min(n_piles * size, len(rest))):
+            piles[i % n_piles].append(rest.pop(0))
+        pilgrims = [Card.from_dict(d) for d in extra.get("pilgrims_in_reserve", [])]
+        for c in pilgrims:
+            if c.id in game.cards:
+                raise ValueError("duplicate card id %s" % c.id)
+            game.cards[c.id] = c
+        reserve = rest + aside + [c.id for c in pilgrims]
+        game.rng.shuffle(reserve)
+        game.tavern = reserve
+        game.extra["captured"] = piles
+
+    def piles(self, game) -> List[List[str]]:
+        return [list(p) for p in game.extra.get("captured", [])]
+
+    def pile_tops(self, game) -> List[Optional[str]]:
+        return [p[0] if p else None for p in game.extra.get("captured", [])]
+
+    def defeat_plan(self, game, exact: bool) -> Dict[str, Any]:
+        return {"enemy_to": "banish", "played_to": "discard"}
+
+    # --- end of turn: rescue or rotate -------------------------------------------------------
+    def on_turn_end(self, game) -> Optional[Dict[str, Any]]:
+        if game.is_over or not any(game.extra.get("captured", [])):
+            return None
+        game._say("End of turn: %s may banish a card from hand to rescue a captured card, or the piles rotate." % (
+            game.players[game.active].name))
+        return {"kind": "pile_rescue", "player": game.active}
+
+    def _actions_pile_rescue(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        player = int(d["player"])
+        acts: List[Dict[str, Any]] = []
+        piles = game.extra.get("captured", [])
+        for k, pile in enumerate(piles):
+            if not pile:
+                continue
+            top = game.cards[pile[0]].label()
+            for cid in self.unlocked_hand(game, player):
+                acts.append({"type": "pile_rescue", "player": player, "pile": k, "card": cid,
+                             "label": "Banish %s: rescue %s (pile %d)" % (game.cards[cid].label(), top, k + 1)})
+        acts.append({"type": "pile_rotate", "player": player, "skip": True, "label": "Rotate the piles"})
+        return acts
+
+    def _decide_pile_rescue(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        from ..engine import IllegalAction
+        player = int(d["player"])
+        piles = game.extra.get("captured", [])
+        if action["type"] == "pile_rescue":
+            k = int(action["pile"])
+            cid = str(action["card"])
+            if not 0 <= k < len(piles) or not piles[k]:
+                raise IllegalAction("That pile is empty.")
+            if cid not in self.unlocked_hand(game, player):
+                raise IllegalAction("Card %s cannot be banished from hand." % cid)
+            game.players[player].hand.remove(cid)
+            game.banished.append(cid)
+            rescued = piles[k].pop(0)
+            game.discard.insert(0, rescued)
+            game._event("pile_rescue", player=player, card=cid, rescued=rescued, pile=k,
+                        tops=self.pile_tops(game))
+            game._say("%s banishes %s and rescues %s from captured pile %d to the discard pile." % (
+                game.players[player].name, game.cards[cid].label(), game.cards[rescued].label(), k + 1))
+        else:
+            for pile in piles:
+                if len(pile) >= 2:
+                    pile.append(pile.pop(0))
+            game._event("pile_rotate", player=player, tops=self.pile_tops(game))
+            game._say("%s banishes nothing: the top card of each captured pile goes to its bottom." % (
+                game.players[player].name))
+        game.resume_end_turn()
+
+    # --- exact damage: a pile's top card on top of the reserve -------------------------------
+    def before_defeat(self, game, exact: bool) -> Optional[Dict[str, Any]]:
+        if exact and any(game.extra.get("captured", [])):
+            game._say("Exact kill: %s may move the top card of one captured pile to the top of the reserve deck." % (
+                game.players[game.active].name))
+            return {"kind": "pile_to_reserve", "player": game.active}
+        return None
+
+    def _actions_pile_to_reserve(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        player = int(d["player"])
+        acts: List[Dict[str, Any]] = []
+        for k, pile in enumerate(game.extra.get("captured", [])):
+            if pile:
+                acts.append({"type": "pile_to_reserve", "player": player, "pile": k,
+                             "label": "%s (pile %d) on top of the reserve" % (game.cards[pile[0]].label(), k + 1)})
+        acts.append({"type": "pile_to_reserve_skip", "player": player, "skip": True, "label": "Leave the piles"})
+        return acts
+
+    def _decide_pile_to_reserve(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        player = int(d["player"])
+        piles = game.extra.get("captured", [])
+        if action["type"] == "pile_to_reserve":
+            k = int(action["pile"])
+            if not 0 <= k < len(piles) or not piles[k]:
+                from ..engine import IllegalAction
+                raise IllegalAction("That pile is empty.")
+            cid = piles[k].pop(0)
+            game.tavern.insert(0, cid)
+            game._event("pile_to_reserve", player=player, card=cid, pile=k, tops=self.pile_tops(game))
+            game._say("%s moves %s from captured pile %d to the top of the reserve deck." % (
+                game.players[player].name, game.cards[cid].label(), k + 1))
+        else:
+            game._event("pile_to_reserve_skip", player=player)
+            game._say("%s leaves the captured piles alone." % game.players[player].name)
+        game.resume_defeat()

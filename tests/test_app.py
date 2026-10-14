@@ -965,3 +965,249 @@ def test_mission4_cleanup_top_overlay_and_enemy_bonus(app):
     _tap_button(app, "Put A♠ on top of the discard pile")
     assert g.discard == ["AS", "9C", "LABJD", "7D"] and g.enemies_defeated == 1 and gs.overlay is None
     assert "A♠ on top of the discard pile" in gs.message_text and g.enemy_attack == 11
+
+
+
+# ---------------------------------------------------------------------------- missions 7 to 9
+def _empty_pilgrim_zone(g):
+    """Mission 7: no pilgrim face up, so no card can match one (the rigged plays stay simple)."""
+    g.extra["pilgrim_deck"].extend(g.mission_zone)
+    g.mission_zone = []
+
+
+def test_druid_overlay_assigns_the_dealt_cards_to_four_slots(app):
+    from app import store
+    from app.screens import DruidOverlay
+    from app.widgets import CardView
+    from helpers import set_discard, set_mission_enemy
+    gs, g = _mission_attempt(app, 7)
+    assert "pilgrim deck" in gs.zone.title and "1 pilgrim" in gs.zone.title
+    set_mission_enemy(g, "WLJH", hp=100)
+    _empty_pilgrim_zone(g)
+    set_hand(g, ["5U", "9S", "8S"])
+    set_discard(g, ["2H", "3H", "4H", "6C", "7C", "AD"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["5U"])
+    assert "Druid" in gs.message.text and "5 damage" in gs.message.text and len(g.discard) == 6   # the forecast dealt nothing
+    _tap_button(app, "Play")
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "druid_assign" and isinstance(gs.overlay, DruidOverlay)
+    dealt = g.decision["dealt"][0]
+    assert sorted(dealt) == ["2H", "3H", "4H", "6C", "7C", "AD"] and g.discard == []
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert "Druid: sort 6 cards" in texts and any(t.startswith("Solo was dealt these") for t in texts)
+    cards = ui.find(gs.overlay, lambda v: isinstance(v, CardView))
+    assert [v.card.id for v in cards] == dealt
+    confirm = ui.find(gs.overlay, lambda v: isinstance(v, ui.Button) and v.title == "Confirm")[0]
+    assert not confirm.enabled and ui.render(app).size[0] > 0
+    assert store.load_attempt(app.campaign.slot).decision["kind"] == "druid_assign"
+
+    def slot(prefix):
+        return ui.find(gs.overlay, lambda v: isinstance(v, ui.Button) and v.title.startswith(prefix))[0]
+
+    def card(cid):
+        return ui.find(gs.overlay, lambda v: isinstance(v, CardView) and v.card.id == cid)[0]
+
+    # tap a card, then a slot; a card may be moved to another slot; a slot tapped with nothing selected empties
+    ui.tap(app, *ui.root_point(app, card("7C")))
+    assert gs.overlay.picked == ["7C"]
+    ui.tap(app, *ui.root_point(app, slot("Hand:")))
+    assert gs.overlay.assign == {"hand": "7C"} and slot("Hand:").title == "Hand: 7♣" and card("7C").badge == "hand"
+    ui.tap(app, *ui.root_point(app, card("7C")))
+    ui.tap(app, *ui.root_point(app, slot("Banish:")))
+    assert gs.overlay.assign == {"banish": "7C"} and slot("Hand:").title == "Hand: —"
+    ui.tap(app, *ui.root_point(app, slot("Banish:")))
+    assert gs.overlay.assign == {}
+    for cid, prefix in (("AD", "Banish:"), ("7C", "Hand:"), ("6C", "Reserve top:"), ("4H", "Reserve bottom:")):
+        ui.tap(app, *ui.root_point(app, card(cid)))
+        ui.tap(app, *ui.root_point(app, slot(prefix)))
+    confirm = ui.find(gs.overlay, lambda v: isinstance(v, ui.Button) and v.title == "Confirm")[0]
+    assert confirm.enabled and ui.render(app).size[0] > 0
+    ui.tap(app, *ui.root_point(app, confirm))
+    assert g.decision is None and gs.overlay is None
+    assert g.banished[-1] == "AD" and "7C" in g.players[0].hand and g.tavern[0] == "6C" and g.tavern[-1] == "4H"
+    assert sorted(g.discard) == ["2H", "3H"] and g.enemy.hp == 95 and g.phase == PHASE_SUFFER
+    assert "Druid: Solo: A♦ banished, 7♣ to hand" in gs.message_text and "2 cards back to the discard pile" in gs.message_text
+    assert [c.id for c in gs.hand.cards] == g.players[0].hand
+
+
+def test_chanter_declare_grid_then_the_other_players_discard_down(app):
+    from app.screens import ChanterDeclareOverlay, DecisionOverlay
+    from helpers import set_mission_enemy
+    gs, g = _mission_attempt(app, 8, names=("Ana", "Ben"))
+    assert g.mission_zone == ["PILA"] and gs.zone.title == "Mission zone · enemy strength +0"
+    set_mission_enemy(g, "HEJ6", hp=100)
+    set_hand(g, ["3T", "9S"], player=0)
+    set_hand(g, ["2C", "3C", "4C", "5C", "6C", "7C"], player=1)
+    set_tavern_top(g, ["AH", "2H", "3H", "4H", "5H", "6H", "7H", "8H"])
+    gs.reveal_hand()
+    gs.hand.set_selection(["3T"])
+    assert "Chanter" in gs.message.text
+    _tap_button(app, "Play")
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "chanter_declare" and isinstance(gs.overlay, ChanterDeclareOverlay)
+    numbers = [b.title for b in ui.find(gs.overlay, lambda v: isinstance(v, ui.Button) and v.title.isdigit())]
+    assert numbers == [str(n) for n in range(0, len(g.tavern) + 1)]
+    assert ui.render(app).size[0] > 0
+    _tap_button(app, "3")
+    # Ana drew to 4 cards, Ben to 9: Ben must discard two; the phone goes to him first
+    assert g.decision["kind"] == "chanter_discard" and g.deciding == 1
+    assert isinstance(gs.overlay, DecisionOverlay) and gs.hand.cards == []
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert any("Ben: discard down to 7 cards" in t for t in texts) and any("must discard 2" in t for t in texts)
+    assert "Chanter: Ana declares 3" in gs.message_text
+    _tap_button(app, "Show my hand")
+    assert gs.overlay is None and len(gs.hand.cards) == 9 and gs.right_btn.title == "Discard 2" and not gs.right_btn.enabled
+    assert gs.left_btn.title == "Suggest" and gs.mid_btn.hidden
+    _tap_card(app, gs, "7C")
+    assert not gs.right_btn.enabled and "(1 selected)" in gs.message.text
+    _tap_card(app, gs, "6C")
+    assert gs.right_btn.enabled
+    _tap_button(app, "Suggest")
+    assert sorted(gs.hand.selected) == ["2C", "3C"]
+    _tap_button(app, "Discard 2")
+    assert g.decision is None and len(g.players[1].hand) == 7 and set(g.discard[:2]) == {"2C", "3C"}
+    assert g.phase == PHASE_SUFFER and g.active == 0 and "Ben discards 2♣ + 3♣" in gs.message_text
+    # back to Ana for her damage
+    from app.screens import HandoverOverlay
+    assert isinstance(gs.overlay, HandoverOverlay)
+    _tap_button(app, "Show my hand")
+    assert gs.right_btn.title == "Discard" and len(gs.hand.cards) == 4
+
+
+def test_mission7_zone_title_and_pilgrim_banish_pick_overlay(app):
+    from app.screens import PickOverlay
+    from helpers import set_mission_enemy
+    gs, g = _mission_attempt(app, 7)
+    set_mission_enemy(g, "WLJH", hp=100)
+    _empty_pilgrim_zone(g)
+    g.extra["pilgrim_deck"].remove("PIL3_1")
+    g.mission_zone = ["PIL3_1"]
+    set_hand(g, ["3H", "9S", "8S", "PIL4_1"])
+    g.extra["pilgrim_deck"].remove("PIL4_1") if "PIL4_1" in g.extra["pilgrim_deck"] else None
+    gs.refresh(after_action=False)
+    assert gs.zone.title == "Mission zone · 1 pilgrim, total 3 · %d in the pilgrim deck" % len(g.extra["pilgrim_deck"])
+    assert gs.hand.badges.get("PIL4_1") == "stuck" and gs.hand.views["PIL4_1"].dimmed
+    _tap_card(app, gs, "PIL4_1")
+    assert gs.hand.selected == []                       # a locked card cannot be selected
+    gs.hand.set_selection(["3H"])
+    assert "A pilgrim of the same strength may be banished first" in gs.message.text
+    _tap_button(app, "Play")
+    assert g.decision["kind"] == "pilgrim_banish" and isinstance(gs.overlay, PickOverlay)
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert "A pilgrim matches" in texts
+    assert ui.button(app, "Banish Follower (3)") and ui.button(app, "Keep the pilgrims")
+    assert ui.render(app).size[0] > 0
+    _tap_button(app, "Banish Follower (3)")
+    assert g.mission_zone == [] and "PIL3_1" in g.banished and g.decision is None and gs.overlay is None
+    assert "Follower (3) banished from the mission zone" in gs.message_text
+    assert gs.zone.title.startswith("Mission zone · 0 pilgrims, total 0")
+
+
+def test_mission9_pile_strip_rescue_flow_and_exact_kill_overlay(app):
+    from app import store
+    from app.screens import PileRescueOverlay, PileToReserveOverlay
+    from helpers import set_mission_enemy
+    gs, g = _mission_attempt(app, 9)
+    piles = g.extra["captured"]
+    assert not gs.zone.hidden and gs.zone.title == "Captured piles · 10 / 10 / 10"
+    assert [c.id for c in gs.zone.cards] == [p[0] for p in piles]
+    set_mission_enemy(g, "TTQH")
+    set_hand(g, ["9S", "4C", "3C", "5D", "6D"])          # pulls those cards out of the piles too
+    tops = [p[0] for p in piles]
+    sizes = [len(p) for p in piles]
+    gs.refresh(after_action=False)
+    assert gs.zone.title == "Captured piles · %d / %d / %d" % tuple(sizes)
+    gs.hand.set_selection(["9S"])
+    _tap_button(app, "Play")
+    assert g.phase == PHASE_SUFFER and g.pending_damage == 6
+    gs.hand.set_selection(["4C", "3C"])
+    _tap_button(app, "Discard")
+    # end of turn: the pile picker first
+    assert g.decision["kind"] == "pile_rescue" and isinstance(gs.overlay, PileRescueOverlay)
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert "End of turn" in texts
+    labels = [b.title for b in ui.find(gs.overlay, lambda v: isinstance(v, ui.Button) and v.title.startswith("Rescue"))]
+    assert labels == ["Rescue %s (pile %d, %d cards)" % (g.card(tops[k]).label(), k + 1, sizes[k]) for k in range(3)]
+    assert ui.button(app, "Rotate the piles") and ui.render(app).size[0] > 0
+    assert store.load_attempt(app.campaign.slot).decision["kind"] == "pile_rescue"
+    ui.tap(app, *ui.root_point(app, ui.button(app, labels[1])))
+    # then the hand: one card to banish
+    assert gs.overlay is None and gs.pile_choice == 1 and [c.id for c in gs.hand.cards] == ["5D", "6D"]
+    assert gs.right_btn.title == "Banish" and not gs.right_btn.enabled and gs.left_btn.title == "Back"
+    assert "Rescue %s from captured pile 2" % g.card(tops[1]).label() in gs.message.text
+    _tap_button(app, "Back")
+    assert isinstance(gs.overlay, PileRescueOverlay) and gs.pile_choice is None
+    ui.tap(app, *ui.root_point(app, ui.button(app, labels[1])))
+    _tap_card(app, gs, "5D")
+    assert gs.right_btn.enabled and "banishes 5♦" in gs.message.text
+    _tap_button(app, "Banish")
+    assert g.decision is None and g.banished[-1] == "5D" and g.discard[0] == tops[1] and len(piles[1]) == sizes[1] - 1
+    assert gs.pile_choice is None and g.turn == 2
+    assert gs.zone.title == "Captured piles · %d / %d / %d" % (sizes[0], sizes[1] - 1, sizes[2])
+    assert "5♦ banished; %s rescued from pile 2" % g.card(tops[1]).label() in gs.message_text
+    # an exact kill: the pile-to-reserve overlay
+    set_mission_enemy(g, "TTQD", hp=9)
+    set_hand(g, ["9S", "2C"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["9S"])
+    assert "defeats it exactly" in gs.message.text
+    _tap_button(app, "Play")
+    assert g.decision["kind"] == "pile_to_reserve" and isinstance(gs.overlay, PileToReserveOverlay)
+    tops = [p[0] for p in piles]
+    btn = ui.button(app, "%s (pile 1) on top of the reserve" % g.card(tops[0]).label())
+    assert ui.button(app, "Leave the piles") and ui.render(app).size[0] > 0
+    ui.tap(app, *ui.root_point(app, btn))
+    assert g.decision is None and g.tavern[0] == tops[0] and g.enemies_defeated == 1 and gs.overlay is None
+    assert gs.zone.title == "Captured piles · %d / %d / %d" % (len(piles[0]), len(piles[1]), len(piles[2]))
+
+
+def test_evergreen_mother_solo_pick_overlay_and_two_player_hand_banish(app):
+    from app.screens import DecisionOverlay, PickOverlay
+    from helpers import set_discard
+    app.new_campaign(1, ["Solo"])
+    camp = app.campaign
+    camp.relics.append("mother")
+    P.add_flag(camp.party, "7D", "corrupted")
+    app.save_campaign()
+    app.start_attempt()
+    gs = _game_screen(app)
+    g = app.game
+    set_enemy(g, "J", "H")
+    set_hand(g, ["7D", "9S", "8S"])
+    set_discard(g, ["4C", "2C"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["7D"])
+    assert "Evergreen Mother" in gs.message.text
+    _tap_button(app, "Play")
+    assert g.decision["kind"] == "mother_choice" and isinstance(gs.overlay, PickOverlay)
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert "Evergreen Mother" in texts
+    assert ui.button(app, "Banish 4♣, top of the discard pile") and ui.button(app, "Banish the top card of the reserve deck")
+    assert ui.render(app).size[0] > 0
+    _tap_button(app, "Banish 4♣, top of the discard pile")
+    assert g.banished == ["4C"] and g.decision is None and "7♦ is corrupted: 4♣ banished from the discard pile" in gs.message_text
+    # two players: the other player's hand, no pass
+    app.new_campaign(2, ["Ana", "Ben"])
+    camp = app.campaign
+    camp.relics.append("mother")
+    P.add_flag(camp.party, "7D", "corrupted")
+    app.save_campaign()
+    app.start_attempt()
+    gs = _game_screen(app)
+    g = app.game
+    set_enemy(g, "J", "H")
+    set_hand(g, ["7D", "9S"], player=0)
+    set_hand(g, ["5C", "2C"], player=1)
+    gs.reveal_hand()
+    gs.hand.set_selection(["7D"])
+    _tap_button(app, "Play")
+    assert g.decision["kind"] == "mother_banish" and g.deciding == 1 and isinstance(gs.overlay, DecisionOverlay)
+    texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
+    assert any("Ben: banish a card from hand" in t for t in texts)
+    _tap_button(app, "Show my hand")
+    assert [c.id for c in gs.hand.cards] == ["5C", "2C"] and gs.right_btn.title == "Banish" and not gs.right_btn.enabled
+    assert gs.left_btn.title == "No pass" and not gs.left_btn.enabled
+    _tap_card(app, gs, "2C")
+    assert gs.right_btn.enabled and "Ben banishes 2♣" in gs.message.text
+    _tap_button(app, "Banish")
+    assert g.banished == ["2C"] and "2C" not in g.players[1].hand and "5C" in g.players[1].hand and g.decision is None
+    assert "Ben banishes 2♣ from hand (Evergreen Mother)" in gs.message_text

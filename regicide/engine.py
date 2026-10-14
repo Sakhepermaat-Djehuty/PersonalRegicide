@@ -9,12 +9,16 @@ Design notes
   ``log``.
 * Rule variations (Legacy missions) are injected through ``rules.BaseRules`` hooks.
 * Mid-turn choices (Legacy: the Kinfolk Flute or Scarlet Whistle before an attack
-  resolves, the Mage's pick or the Reaver's reveal during its resolution, a mission zone
-  rescue, the clean-up order or Myla's team damage after a kill) pause the game in the
-  ``decide`` phase with a serialisable ``decision`` dict: the rules object produces the
-  decision, lists its legal actions and applies them; the engine stores it together with
-  the state needed to resume (``play_index``, and for a pause mid-resolution the suits
-  already done and the damage so far) and continues the paused attack afterwards.
+  resolves, the Mage's pick or the Reaver's reveal during its resolution, a Druid's
+  sorting of the discard pile or a Chanter's draw, a mission zone rescue, the clean-up
+  order or Myla's team damage after a kill, a mission's end-of-turn choice) pause the game
+  in the ``decide`` phase with a serialisable ``decision`` dict: the rules object produces
+  the decision, lists its legal actions and applies them; the engine stores it together
+  with the state needed to resume (``play_index``, and for a pause mid-resolution the
+  suits already done and the damage so far) and continues the paused attack afterwards.
+  An action list may contain a *template* (an action with ``needs``: the deciding player
+  fills in cards of their own choice, e.g. the Druid's four destinations); a submitted
+  action fills a template when its type (and player) match, and the rules validate it.
 * Pile convention: index 0 is the TOP of a face-down deck (tavern, castle) and the top
   of the discard pile.
 """
@@ -173,7 +177,16 @@ class Game:
         return [self.cards[c] for c in self.players[idx].hand]
 
     def hand_defence_value(self, player: Optional[int] = None) -> int:
-        return sum(c.defence_value for c in self.hand(player))
+        """What the hand can pay when suffering damage (locked cards pay nothing)."""
+        return sum(c.defence_value for c in self.payable_hand(player))
+
+    def hand_locked(self, card_id: str) -> bool:
+        """May this card never leave its holder's hand (see ``rules.hand_locked``)?"""
+        return self.rules.hand_locked(self, self.cards[card_id])
+
+    def payable_hand(self, player: Optional[int] = None) -> List[Card]:
+        """The hand cards that may be discarded to suffer damage (not the locked ones)."""
+        return [c for c in self.hand(player) if not self.rules.hand_locked(self, c)]
 
     @property
     def n_players(self) -> int:
@@ -188,7 +201,7 @@ class Game:
         return self.phase in (PHASE_WON, PHASE_LOST)
 
     def immune(self, suit: str, cards: Sequence[Card] = ()) -> bool:
-        if self.extra.get("jester_attack"):
+        if self.extra.get("jester_attack") and not self.rules.fixed_immunity(self, suit):
             return False  # Legacy: the attack formed with a claimed Jester ignores immunity
         return self.rules.immune(self, suit, cards)
 
@@ -208,6 +221,8 @@ class Game:
         for p in self.plays:
             if SPADES not in p.suits:
                 continue
+            if self.rules.fixed_immunity(self, SPADES):
+                continue   # Legacy mission 9: nothing ignores Myla's paladin immunity
             if p.jester or not self.immune(SPADES, [self.cards[c] for c in p.card_ids]):
                 total += p.value
         return total
@@ -230,8 +245,10 @@ class Game:
         return self.phase in (PHASE_PLAY, PHASE_SUFFER)
 
     def feign_death_available(self) -> bool:
+        """Feigning death discards the entire hand, so a locked card in it rules it out."""
         return (self.phase == PHASE_SUFFER and self.rules.feign_death_allowed(self)
-                and self.hand_defence_value() < self.pending_damage)
+                and self.hand_defence_value() < self.pending_damage
+                and len(self.payable_hand()) == len(self.active_player.hand))
 
     def check_play(self, card_ids: Sequence[str]) -> Tuple[bool, str]:
         if self.phase != PHASE_PLAY:
@@ -239,6 +256,8 @@ class Game:
         hand = self.rules.playable_ids(self)
         for cid in card_ids:
             if cid not in hand:
+                if cid in self.active_player.hand and self.hand_locked(cid):
+                    return False, "%s may never leave your hand." % self.cards[cid].label()
                 return False, "Card %s is not in hand." % cid
         kind, err = self.rules.validate_combo(self, [self.cards[c] for c in card_ids])
         if err:
@@ -365,7 +384,7 @@ class Game:
                 peeks.append(int(ev["count"]))
         # A kill may pause on the mission's enemy-defeated choice (which zone card to rescue,
         # the clean-up order): the enemy is down all the same.
-        pending_defeat = g.phase == PHASE_DECIDE and (g.decision or {}).get("resume") == "defeat"
+        pending_defeat = g.phase == PHASE_DECIDE and (g.decision or {}).get("resume") in ("defeat", "defeat_tail")
         defeated = any(ev["t"] == "defeat" for ev in events) or pending_defeat
         exact = any(ev["t"] == "defeat" and ev["exact"] for ev in events) or (
             pending_defeat and bool((g.decision or {}).get("exact")))
@@ -398,7 +417,7 @@ class Game:
 
         if kind == "jester":
             mode = self.rules.jester_mode(self)
-            self.rules.on_cards_played(self, cards)
+            self.rules.on_cards_played(self, cards, me)
             if mode == "claim":
                 # Legacy: someone claims the Jester and attacks now, ignoring immunity.
                 self._event("jester", player=me, mode="claim")
@@ -417,7 +436,7 @@ class Game:
                 self.phase = PHASE_CHOOSE_NEXT
             return
 
-        self.rules.on_cards_played(self, cards)
+        self.rules.on_cards_played(self, cards, me)
         decision = self.rules.after_attack_formed(self, play)
         if decision is not None:
             # Step 1 is done; someone else acts before step 2 (e.g. adds kinfolk cards).
@@ -441,8 +460,10 @@ class Game:
         self.last_events = []
         if self.phase != PHASE_DECIDE or self.decision is None:
             raise IllegalAction("No decision pending.")
+        legal = self.rules.decision_actions(self)
         wanted = _action_key(action)
-        if wanted not in [_action_key(a) for a in self.rules.decision_actions(self)]:
+        plain = [_action_key(a) for a in legal if "needs" not in a]
+        if wanted not in plain and not any(_fills_template(a, action) for a in legal):
             raise IllegalAction("That choice is not available.")
         self.rules.decide(self, action)
 
@@ -525,17 +546,31 @@ class Game:
         play.mage = play.mage or any(MAGE in c.suits for c in cards)
         self._event("add_to_play", player=player, cards=ids, play_index=play_index, value=play.value,
                     source=source)
-        self.rules.on_cards_played(self, [self.cards[c] for c in ids])
+        self.rules.on_cards_played(self, [self.cards[c] for c in ids], player)
         return play
 
     def resume_defeat(self) -> None:
-        """Leave the decide phase and finish the enemy-defeated steps the decision paused."""
+        """Leave the decide phase and finish the enemy-defeated steps the decision paused:
+        from the mission's enemy-defeated steps (``resume == "defeat"``) or, after the
+        clean-up, from revealing the next enemy (``resume == "defeat_tail"``)."""
         decision = self.decision
-        if decision is None or decision.get("resume") != "defeat":
+        if decision is None or decision.get("resume") not in ("defeat", "defeat_tail"):
             raise IllegalAction("No defeat is pending.")
         self.decision = None
         self.phase = PHASE_PLAY
+        if decision.get("resume") == "defeat_tail":
+            self._finish_defeat(dict(decision.get("plan") or {}))
+            return
         self._defeat_enemy(bool(decision.get("exact")), resumed=True)
+
+    def resume_end_turn(self) -> None:
+        """Leave the decide phase after a mission's end-of-turn choice: the next turn starts."""
+        decision = self.decision
+        if decision is None or decision.get("resume") != "end_turn":
+            raise IllegalAction("No end of turn is pending.")
+        self.decision = None
+        self.phase = PHASE_PLAY
+        self._next_turn()
 
     def resolve_pending_attack(self) -> None:
         """Leave the decide phase and resolve the attack the decision was about (step 2 on)."""
@@ -645,9 +680,9 @@ class Game:
             self._resolve_attack(len(self.plays) - 1)
             return
         p = self.active_player
-        old = list(p.hand)
+        old = [c for c in p.hand if not self.hand_locked(c)]
         self._discard_cards([self.cards[c] for c in old])
-        p.hand = []
+        p.hand = [c for c in p.hand if c not in old]
         drawn = []
         while len(p.hand) < self.config.max_hand and self.tavern:
             cid = self.tavern.pop(0)
@@ -673,6 +708,8 @@ class Game:
         for cid in ids:
             if cid not in hand:
                 raise IllegalAction("Card %s is not in hand." % cid)
+            if self.hand_locked(cid):
+                raise IllegalAction("%s may never leave your hand." % self.cards[cid].label())
         cards = [self.cards[c] for c in ids]
         total = sum(c.defence_value for c in cards)
         feign = False
@@ -818,6 +855,7 @@ class Game:
         # Legacy p.19: step 1 moves the enemy (and the mission zone) first, step 2 then puts
         # the played cards on top of the discard pile. The base game keeps its old order
         # (enemy on top), which changes nothing there.
+        self._reserve_to_discard(int(plan.get("reserve_to_discard", 0) or 0))
         if self.rules.played_on_top:
             self._move_defeated_enemy(enemy.card_id, plan)
             self._clear_zone(plan)
@@ -830,6 +868,23 @@ class Game:
         self.enemy = None
         if self.config.yield_reset_per_enemy:
             self.last_action = [None] * self.n_players
+        decision = self.rules.after_cleanup(self, exact, plan)
+        if decision is not None:
+            # The mission wants a choice once the piles are final (mission 8's exact-kill
+            # pick from the discard pile); ``resume_defeat`` then reveals the next enemy.
+            decision = dict(decision)
+            decision["exact"] = exact
+            decision["resume"] = "defeat_tail"
+            decision["plan"] = dict(plan)
+            self.decision = decision
+            self.phase = PHASE_DECIDE
+            self._event("decide", **decision)
+            return
+        self._finish_defeat(plan)
+
+    def _finish_defeat(self, plan: Dict[str, Any]) -> None:
+        """The end of the enemy-defeated steps: win, or reveal the next enemy (with
+        mission 5's carry-over damage) and start the same player's new turn."""
         if not self.castle:
             self._win()
             return
@@ -849,6 +904,21 @@ class Game:
         self.turn += 1
         self.phase = PHASE_PLAY
         self._start_turn()
+
+    def _reserve_to_discard(self, n: int) -> None:
+        """Legacy mission 7: ``n`` cards from the top of the reserve go to the discard pile
+        (fewer when the reserve runs out)."""
+        if n <= 0:
+            return
+        moved = []
+        while n > 0 and self.tavern:
+            cid = self.tavern.pop(0)
+            self.discard.insert(0, cid)
+            moved.append(cid)
+            n -= 1
+        self._event("reserve_discard", cards=moved, wanted=n + len(moved))
+        self._say("%d card%s from the top of the reserve deck go to the discard pile." % (
+            len(moved), "" if len(moved) == 1 else "s"))
 
     def _cleanup_played(self, played: List[Card], mage_ids: List[str], plan: Dict[str, Any]) -> None:
         if plan.get("played_to", "discard") == "discard":
@@ -929,9 +999,21 @@ class Game:
         self._lose("%s cannot suffer %d damage." % (self.active_player.name, self.pending_damage))
 
     def _end_turn(self) -> None:
-        self.rules.on_turn_end(self)
+        decision = self.rules.on_turn_end(self)
         if self.is_over:
             return
+        if decision is not None:
+            # The mission's end of turn needs a choice (mission 9: rescue a captured card
+            # or rotate the piles); ``resume_end_turn`` then starts the next turn.
+            decision = dict(decision)
+            decision["resume"] = "end_turn"
+            self.decision = decision
+            self.phase = PHASE_DECIDE
+            self._event("decide", **decision)
+            return
+        self._next_turn()
+
+    def _next_turn(self) -> None:
         self.active = (self.active + 1) % self.n_players
         self.turn += 1
         self.phase = PHASE_PLAY
@@ -1041,8 +1123,13 @@ class Game:
             ids.extend(p.card_ids)
         if self.enemy:
             ids.append(self.enemy.card_id)
-        if self.decision:
-            ids.extend(self.decision.get("revealed", []))  # a mage's peek, out of the reserve
+        d = self.decision
+        while d:
+            ids.extend(d.get("revealed", []))      # a mage's or reaver's reveal, out of the reserve
+            for dealt in d.get("dealt", []):       # a druid's deal, out of the discard pile
+                ids.extend(dealt)
+            d = d.get("resume_decision")           # a decision parked behind another one
+        ids.extend(self.rules.extra_card_ids(self))
         return ids
 
     def summary(self) -> str:
@@ -1064,13 +1151,24 @@ def _suit_sort_key(s: str) -> int:
     return order.index(s) if s in order else 99
 
 
-def _action_key(action: dict) -> Tuple[str, Tuple[str, ...], str]:
-    """What identifies a decision action: its type, the (order-free) cards it names and
-    the single card, option or count it picks."""
+def _action_key(action: dict) -> Tuple[str, Tuple[str, ...], str, str]:
+    """What identifies a decision action: its type, the (order-free) cards it names, the
+    single card, option or count it picks and the pile it names."""
     cards = action.get("card_ids") or action.get("cards") or []
     single = action.get("card")
     if single is None:
         single = action.get("option")
     if single is None:
         single = action.get("count", "")
-    return str(action.get("type")), tuple(sorted(str(c) for c in cards)), str(single)
+    return (str(action.get("type")), tuple(sorted(str(c) for c in cards)), str(single),
+            str(action.get("pile", "")))
+
+
+def _fills_template(template: dict, action: dict) -> bool:
+    """Does ``action`` fill in ``template`` (an action with ``needs``: the player names the
+    cards)? Type and player must match; the rules validate the cards themselves."""
+    if "needs" not in template or str(template.get("type")) != str(action.get("type")):
+        return False
+    if "player" in action and "player" in template and str(action["player"]) != str(template["player"]):
+        return False
+    return True

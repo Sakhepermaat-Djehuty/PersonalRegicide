@@ -23,7 +23,7 @@ def min_waste_discard(game: Game, player: Optional[int] = None) -> List[str]:
     if nothing covers the damage (the caller will lose anyway).
     """
     need = game.pending_damage
-    hand = game.hand(player)
+    hand = game.payable_hand(player)
     if need <= 0:
         return []
     n = len(hand)
@@ -66,9 +66,9 @@ def random_policy(game: Game, rng) -> dict:
         if game.hand_defence_value() < game.pending_damage:
             if game.can_use_solo_jester():
                 return {"type": "solo_jester"}  # the only way out (else the game would be lost)
-            return {"type": "suffer", "cards": [c.id for c in game.hand()]}
+            return {"type": "suffer", "cards": [c.id for c in game.hand()]}  # feign death
         # random legal cover: shuffle and take until covered
-        hand = list(game.hand())
+        hand = list(game.payable_hand())
         rng.shuffle(hand)
         ids: List[str] = []
         total = 0
@@ -78,7 +78,30 @@ def random_policy(game: Game, rng) -> dict:
             ids.append(c.id)
             total += c.defence_value
         return {"type": "suffer", "cards": ids}
-    return rng.choice(acts)
+    act = rng.choice(acts)
+    if "needs" in act:
+        return randomize_action(game, act, rng)
+    return act
+
+
+def randomize_action(game: Game, template: dict, rng) -> dict:
+    """Fill in a template action (one with ``needs``) at random: the Druid's four
+    destinations, a Chanter's or mission 8's discards (any number when ``needs`` is None)."""
+    pool = [str(c) for c in template.get("pick_from", [])]
+    needs = template.get("needs")
+    if template["type"] == "druid_assign":
+        k = min(int(needs or 0), len(pool))
+        cards = rng.sample(pool, k)
+        slots = rng.sample(list(template.get("slots") or ("banish", "hand", "top", "bottom")), k)
+        act = {"type": "druid_assign", "player": template.get("player")}
+        for slot, cid in zip(slots, cards):
+            act[slot] = cid
+        return act
+    if needs is None:
+        k = rng.randint(0, len(pool))
+    else:
+        k = min(int(needs), len(pool))
+    return {"type": template["type"], "player": template.get("player"), "cards": rng.sample(pool, k)}
 
 
 def evaluate(game: Game) -> float:
@@ -106,15 +129,25 @@ def simple_decision(g: Game) -> Optional[dict]:
     (Kinfolk Flute, Scarlet Whistle, Azure Emblem); a mage's mandatory pick and a reaver's
     pick take the strongest card; a reaver reveals one card; the clean-up top (mission 4)
     and the card moved to the zone (mission 6) are the weakest, the rescued zone card the
-    strongest; Myla's team damage is paid with the cheapest cover over every hand."""
+    strongest; Myla's team damage is paid with the cheapest cover over every hand. The
+    Druid keeps the strongest dealt cards (hand, top, bottom) and banishes the weakest or
+    a Jester / corrupted / locked card; the Chanter fills the attacker's hand and discards
+    the lowest cards; the Evergreen Mother takes the discard pile (solo) or the lowest card
+    (another hand); mission 7 banishes matching pilgrims and the strongest zone card on an
+    exact kill; mission 8 builds the zone (pilgrims first), banishes Jesters, pilgrims and
+    the lowest discards up to five and puts the strongest discard back on the reserve;
+    mission 9 rescues when a cheap hand card buys a clearly better one, else rotates."""
     acts = g.legal_actions()
     if not acts:
         return None
+    kind = (g.decision or {}).get("kind")
+    value = lambda a: g.cards[a["card"]].value  # noqa: E731
+    special = _mission_decision(g, kind, acts)
+    if special is not None:
+        return special
     skip = [a for a in acts if a.get("skip")]
     if skip:
         return skip[0]
-    kind = (g.decision or {}).get("kind")
-    value = lambda a: g.cards[a["card"]].value  # noqa: E731
     if kind in ("mage_peek", "reaver_pick"):
         return max(acts, key=value)
     if kind == "reaver_count":
@@ -126,6 +159,115 @@ def simple_decision(g: Game) -> Optional[dict]:
     if kind == "team_discard":
         return team_discard_choice(g, acts)
     return acts[0]
+
+
+NEW_KINDS = ("druid_assign", "chanter_declare", "chanter_discard", "mother_choice", "mother_banish",
+             "pilgrim_banish", "zone_banish", "zone_build", "discard_banish", "discard_pick",
+             "pile_rescue", "pile_to_reserve")
+
+
+def _bad_card(g: Game, cid: str) -> bool:
+    """A card worth banishing rather than keeping: a Jester, a corrupted card or one that
+    could never leave the hand (mission 7's pilgrims)."""
+    c = g.cards[cid]
+    return c.is_jester or c.has("corrupted") or c.has("pilgrim") or g.hand_locked(cid)
+
+
+def _mission_decision(g: Game, kind: Optional[str], acts: List[dict]) -> Optional[dict]:
+    """``simple_decision`` for the decision kinds of the Druid, the Chanter, the Evergreen
+    Mother and missions 7 to 9 (see there)."""
+    if kind not in NEW_KINDS:
+        return None
+    value = lambda a: g.cards[a["card"]].value  # noqa: E731
+    if kind == "druid_assign":
+        return druid_bot_action(g, acts[0])
+    if kind == "chanter_declare":
+        room = max(0, g.config.max_hand - len(g.active_player.hand))
+        counts = [int(a["count"]) for a in acts]
+        return next(a for a in acts if int(a["count"]) == min(room, max(counts)))
+    if kind == "chanter_discard":
+        t = acts[0]
+        lowest = sorted(t["pick_from"], key=lambda c: (g.cards[c].defence_value, g.cards[c].value))
+        return {"type": "chanter_discard", "player": t["player"], "cards": lowest[:int(t["needs"])]}
+    if kind == "mother_choice":
+        for a in acts:
+            if a.get("option") == "discard":
+                return a
+        return acts[0]
+    if kind == "mother_banish":
+        return min(acts, key=lambda a: (0 if _bad_card(g, a["card"]) else 1, value(a)))
+    if kind == "pilgrim_banish":
+        cards = [a for a in acts if a.get("card")]
+        return max(cards, key=value) if cards else acts[0]
+    if kind == "zone_banish":
+        cards = [a for a in acts if a.get("card")]
+        return max(cards, key=value) if cards else acts[0]
+    if kind == "zone_build":
+        cards = [a for a in acts if a.get("card")]
+        if not cards:
+            return acts[0]
+        pilgrims = [a for a in cards if g.cards[a["card"]].has("pilgrim")]
+        return (pilgrims or cards)[0]
+    if kind == "discard_banish":
+        t = [a for a in acts if "needs" in a]
+        if not t:
+            return acts[0]
+        pool = list(t[0]["pick_from"])
+        bad = [c for c in pool if g.cards[c].is_jester or g.cards[c].has("pilgrim")]
+        rest = sorted([c for c in pool if c not in bad], key=lambda c: g.cards[c].value)
+        picks = (bad + rest)[:5]
+        if not picks:
+            return [a for a in acts if a.get("skip")][0]
+        return {"type": "discard_banish", "player": t[0]["player"], "cards": picks}
+    if kind == "discard_pick":
+        cards = [a for a in acts if a.get("card") and not g.cards[a["card"]].has("pilgrim") and not g.cards[a["card"]].is_jester]
+        if cards:
+            return max(cards, key=value)
+        return [a for a in acts if a.get("skip")][0]
+    if kind == "pile_rescue":
+        rescues = [a for a in acts if a["type"] == "pile_rescue"]
+        rotate = [a for a in acts if a.get("skip")][0]
+        if not rescues or len(g.players[int(rescues[0]["player"])].hand) < 3:
+            return rotate
+        piles = g.extra.get("captured", [])
+
+        def gain(a):
+            top = g.cards[piles[int(a["pile"])][0]].value
+            return top - g.cards[a["card"]].value
+        best = max(rescues, key=lambda a: (gain(a), -value(a)))
+        return best if gain(best) >= 3 else rotate
+    if kind == "pile_to_reserve":
+        piles = g.extra.get("captured", [])
+        moves = [a for a in acts if a["type"] == "pile_to_reserve"]
+        if moves:
+            return max(moves, key=lambda a: g.cards[piles[int(a["pile"])][0]].value)
+        return acts[0]
+    return None
+
+
+def druid_bot_action(g: Game, template: dict) -> dict:
+    """Fill the Druid's template: the strongest dealt card to hand, the next on top of the
+    reserve, the next under it and the weakest banished; a Jester, corrupted or locked
+    card is banished first. With fewer than four cards the destinations are taken in
+    the order hand, top, bottom, banish (banish first for a bad card)."""
+    pool = [str(c) for c in template.get("pick_from", [])]
+    k = min(int(template.get("needs") or 0), len(pool))
+    bad = sorted([c for c in pool if _bad_card(g, c)], key=lambda c: g.cards[c].value)
+    good = sorted([c for c in pool if not _bad_card(g, c)], key=lambda c: -g.cards[c].value)
+    act = {"type": "druid_assign", "player": template.get("player")}
+    slots = ["hand", "top", "bottom", "banish"]
+    if bad and k:
+        act["banish"] = bad.pop(0)
+        slots.remove("banish")
+        k -= 1
+    picks = (good + bad)[:k]
+    if len(picks) == 4:
+        order = ["hand", "top", "bottom", "banish"]
+    else:
+        order = slots[:len(picks)]
+    for slot, cid in zip(order, picks):
+        act[slot] = cid
+    return act
 
 
 def team_discard_choice(g: Game, acts: List[dict]) -> dict:
@@ -197,7 +339,7 @@ def greedy_policy(game: Game, rng=None) -> dict:
         if game.hand_defence_value() < game.pending_damage:
             if game.can_use_solo_jester():
                 return {"type": "solo_jester"}
-            return {"type": "suffer", "cards": [c.id for c in game.hand()]}  # feign death or lose
+            return {"type": "suffer", "cards": [c.id for c in game.hand()]}  # feign death (else lost already)
         if game.can_use_solo_jester():
             # Refreshing before paying is worth it when the hand would be gutted.
             after = _simulate_turn(game, {"type": "suffer", "cards": min_waste_discard(game)})
@@ -252,7 +394,7 @@ def decision_policy(game: Game) -> dict:
         return max(picks, key=lambda a: _mage_pick_key(game, a))
     if kind == "emblem_keep":
         return max(acts, key=lambda a: (evaluate(_simulate_turn(game, a)), 1 if a.get("skip") else 0))
-    if kind in ("reaver_count", "reaver_pick", "cleanup_top", "zone_move", "zone_rescue", "team_discard"):
+    if kind in ("reaver_count", "reaver_pick", "cleanup_top", "zone_move", "zone_rescue", "team_discard") or kind in NEW_KINDS:
         act = simple_decision(game)
         if act is not None:
             return act

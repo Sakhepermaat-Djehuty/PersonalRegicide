@@ -1,6 +1,6 @@
 """Mission definitions: enemies, setup, and reward steps.
 
-Missions 1 to 6 are playable in this build; the others carry their public description
+Missions 1 to 9 are playable in this build; the others carry their public description
 so the campaign screen can show what is coming once revealed (their rule sets are not
 registered yet, so starting one fails).
 """
@@ -242,7 +242,7 @@ MISSIONS: List[Dict[str, Any]] = [
                      "Azure Emblem. Choose Bronze (8 Cleric), Snow (8 Bard) or Shadow (8 Warrior) to gain the "
                      "Guardian class. Runo (3, Guardian) stays; the other three Guardians leave."},
     {"number": 7, "title": "Tales of Rebirth", "fan_title": "The Pilgrimage", "location": "Well of Tears",
-     "rules_id": "legacy_m7", "playable": False, "verified": True,
+     "rules_id": "legacy_m7", "playable": True, "verified": True,
      "summary": "Four Druids join for the mission. Shoal (10/20), Deep (15/30) and Abyssal (20/40) pondkin, "
                 "one of each class. Pack P's pilgrims form a face-down deck in the mission zone; at the start "
                 "of every turn one is turned face up. A card entering play may banish one pilgrim of the "
@@ -253,7 +253,7 @@ MISSIONS: List[Dict[str, Any]] = [
                      "Druid) stays and the other three Druids leave. Choose Glamelyn (4 Bard), Herbod (4 "
                      "Warrior) or Dhonatir (4 Paladin) to gain the Druid class."},
     {"number": 8, "title": "Winds of Chaos", "fan_title": "The Troll Bridge", "location": "Heaven's Edge",
-     "rules_id": "legacy_m8", "playable": False, "verified": True,
+     "rules_id": "legacy_m8", "playable": True, "verified": True,
      "summary": "Four Chanters join for the mission. The pilgrim puppy starts in the mission zone and the "
                 "other pilgrims are shuffled into the reserve. Six Trolls (10/20) then six Wyverns (25/50), "
                 "each immune to two classes. Non-pilgrim cards in the zone add their strength to the "
@@ -266,7 +266,7 @@ MISSIONS: List[Dict[str, Any]] = [
                      "(2 Warrior) or Wicket (2 Paladin) to gain the Chanter class. The puppy goes back in "
                      "the box."},
     {"number": 9, "title": "Hope From Ashes", "fan_title": "The Rescue", "location": "Twinseed Temple",
-     "rules_id": "legacy_m9", "playable": False, "verified": True,
+     "rules_id": "legacy_m9", "playable": True, "verified": True,
      "summary": "Gøran, your beast, Jesters and mercenaries are set aside; thirty of the remaining party "
                 "cards are dealt into three captured piles in the mission zone, top cards face up; the "
                 "pilgrims and the set-aside cards are shuffled into the rest of the reserve. Four "

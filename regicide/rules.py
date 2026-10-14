@@ -125,7 +125,23 @@ class BaseRules:
 
     def playable_ids(self, game: "Game") -> List[str]:
         """Card ids the active player may include in a play (hand, plus e.g. a flute)."""
-        return list(game.active_player.hand)
+        return [cid for cid in game.active_player.hand if not self.hand_locked(game, game.cards[cid])]
+
+    def hand_locked(self, game: "Game", card: Card) -> bool:
+        """May this card never leave its holder's hand (Legacy mission 7's pilgrims)? A
+        locked card cannot be played, discarded to suffer damage (so it blocks feigning
+        death and pays nothing), banished or moved by any effect that takes a card from a
+        hand; it still counts against the hand limit."""
+        return False
+
+    def fixed_immunity(self, game: "Game", suit: str) -> bool:
+        """Is the enemy's immunity to ``suit`` one that nothing can ignore (Legacy mission
+        9's Myla): not a corrupted or restored card, not a claimed Jester's attack?"""
+        return False
+
+    def extra_card_ids(self, game: "Game") -> List[str]:
+        """Card ids the rules keep outside the engine's piles (a mission's own decks)."""
+        return []
 
     def remove_played(self, game: "Game", card_id: str) -> None:
         """Take a card out of wherever playable_ids() offered it from."""
@@ -230,11 +246,23 @@ class BaseRules:
     def on_turn_start(self, game: "Game") -> None:
         pass
 
-    def on_turn_end(self, game: "Game") -> None:
+    def on_turn_end(self, game: "Game") -> Optional[Dict[str, Any]]:
+        """End-of-turn effects. May return a serialisable decision dict (with a ``player``)
+        to ask something before the next turn starts (Legacy mission 9); the rules'
+        ``decide`` then ends with ``game.resume_end_turn()``."""
+        return None
+
+    def on_cards_played(self, game: "Game", cards: Sequence[Card], player: Optional[int] = None) -> None:
+        """``cards`` just entered play from ``player``'s hand (or from a pile on that
+        player's behalf): corrupted / restored effects and mission reactions."""
         pass
 
-    def on_cards_played(self, game: "Game", cards: Sequence[Card]) -> None:
-        pass
+    def after_cleanup(self, game: "Game", exact: bool, plan: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Called after a defeated enemy and the played cards have been cleaned up and
+        before the next enemy is revealed. Return a decision dict (with a ``player``) to
+        ask the current player something first (Legacy mission 8's exact-kill pick from the
+        discard pile); the rules' ``decide`` must then end with ``game.resume_defeat()``."""
+        return None
 
     def resolve_power(self, game: "Game", suit: str, value: int, cards: Sequence[Card],
                       damage: Optional[int] = None) -> Any:
