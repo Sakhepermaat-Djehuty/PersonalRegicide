@@ -464,6 +464,10 @@ class Game:
         self.last_events = []
         if self.phase != PHASE_DECIDE or self.decision is None:
             raise IllegalAction("No decision pending.")
+        if action.get("forecast"):
+            # Forecast-only options (a druid deal returned unseen, a mage adding nothing) are
+            # applied on copies by ``forecast_decision``; a player never takes them.
+            raise IllegalAction("That choice is not available.")
         legal = self.rules.decision_actions(self)
         wanted = _action_key(action)
         plain = [_action_key(a) for a in legal if "needs" not in a]
@@ -673,6 +677,9 @@ class Game:
             raise IllegalAction("You may not yield now." if self.n_players > 1
                                 else "You cannot yield in a solo game.")
         self.last_action[self.active] = "yielded"
+        # A claimer who yields forms no attack: the Jester's "ignores immunity" is spent
+        # (rulebook p.20: paladins played after the Jester attack do not ignore immunity).
+        self.extra.pop("jester_attack", None)
         self._event("yield", player=self.active)
         self._say("%s yields." % self.active_player.name)
         self._enter_suffer()
@@ -694,7 +701,9 @@ class Game:
             self.solo_jesters_used += 1
             played = card.with_changes(suits=(suit,), value=8)
             self.cards[jid] = played
-            self.plays.append(Play(self.active, [jid], 8, (suit,)))
+            # ``jester=True``: the attack ignores immunity and a paladin Jester keeps its
+            # strength reduction even against a paladin-immune enemy (rulebook p.20).
+            self.plays.append(Play(self.active, [jid], 8, (suit,), jester=True))
             self.last_action[self.active] = "played"
             self.extra["jester_attack"] = True
             self._event("play", player=self.active, cards=[jid], value=8, kind="jester_attack")
@@ -742,6 +751,16 @@ class Game:
                 feign = True
             else:
                 raise IllegalAction("Those cards cover %d damage; %d is needed." % (total, self.pending_damage))
+        elif self.rules.sequential_discard(self):
+            # Rulebook p.18: "discard cards one at a time ... you may not keep discarding
+            # once the damage is satisfied". The cards are discarded in the order given, so
+            # the total before the last one must still be below the damage ([9, 10] for 10
+            # is legal, [10, A] is not); the last card discarded ends on top of the pile.
+            running = 0
+            for c in cards[:-1]:
+                running += c.defence_value
+                if running >= self.pending_damage:
+                    raise IllegalAction("Discard one card at a time: the damage is covered before %s." % cards[-1].label())
         elif self.config.strict_minimal_discard:
             for c in cards:
                 if total - c.defence_value >= self.pending_damage:
@@ -903,15 +922,12 @@ class Game:
         assert enemy is not None
         if not resumed:
             decision = self.rules.before_defeat(self, exact)
+            if self.is_over:
+                return   # the mission's enemy-defeated step lost the game (mission 6's team damage)
             if decision is not None:
                 # The mission's enemy-defeated steps need a choice first (e.g. which mission
                 # zone card to rescue). The defeat continues via ``resume_defeat``.
-                decision = dict(decision)
-                decision["exact"] = exact
-                decision["resume"] = "defeat"
-                self.decision = decision
-                self.phase = PHASE_DECIDE
-                self._event("decide", **decision)
+                self._pause_defeat(decision, exact)
                 return
         plan = self.rules.defeat_plan(self, exact)
         played = [self.cards[c] for p in self.plays for c in p.card_ids]
@@ -933,6 +949,15 @@ class Game:
             last_ids = [c.id for c in played if c.id in self.plays[-1].card_ids]
             played = [c for c in played if c.id not in last_ids]
             mage_ids = [c for c in mage_ids if c not in last_ids]
+        # Rulebook p.19: the played cards go on the discard pile "in any order you wish" (and
+        # a mage attack is banished in the player's order, mission 5). The rules ask only when
+        # the top of the pile matters; ``resume_defeat`` comes back here (``resumed``) and the
+        # rules see the recorded choice.
+        to_discard = [c.id for c in played if c.id not in mage_ids] if plan.get("played_to", "discard") == "discard" else []
+        decision = self.rules.before_cleanup(self, exact, plan, to_discard, list(mage_ids))
+        if decision is not None:
+            self._pause_defeat(decision, exact)
+            return
         self._event("defeat", enemy=enemy.card_id, exact=exact, plan=plan, mage_banished=mage_ids)
         self._say("%s is defeated%s" % (enemy.name, (" with exact damage!" + (
             " It joins the tavern deck." if plan.get("enemy_to") == "tavern_top" else "")) if exact else "."))
@@ -971,6 +996,15 @@ class Game:
             self._event("decide", **decision)
             return
         self._finish_defeat(plan)
+
+    def _pause_defeat(self, decision: Dict[str, Any], exact: bool) -> None:
+        """Park the enemy-defeated steps behind a decision; ``resume_defeat`` continues them."""
+        decision = dict(decision)
+        decision["exact"] = exact
+        decision["resume"] = "defeat"
+        self.decision = decision
+        self.phase = PHASE_DECIDE
+        self._event("decide", **decision)
 
     def _finish_defeat(self, plan: Dict[str, Any]) -> None:
         """The end of the enemy-defeated steps: win, or reveal the next enemy (with
@@ -1015,7 +1049,7 @@ class Game:
     def _cleanup_played(self, played: List[Card], mage_ids: List[str], plan: Dict[str, Any]) -> None:
         if plan.get("played_to", "discard") == "discard":
             self._discard_cards([c for c in played if c.id not in mage_ids])
-            self.banish_cards([c.id for c in played if c.id in mage_ids])
+            self.banish_cards(self.rules.order_for_banish(self, [c.id for c in played if c.id in mage_ids]))
             if mage_ids:
                 self._say("The mage attack is banished: %s." % " + ".join(self.cards[c].label() for c in mage_ids))
         elif plan["played_to"] == "banish":
@@ -1108,6 +1142,7 @@ class Game:
         self._lose("%s cannot suffer %d damage." % (self.active_player.name, self.pending_damage))
 
     def _end_turn(self) -> None:
+        self.extra.pop("jester_attack", None)   # a claimed Jester's turn ends without an attack
         decision = self.rules.on_turn_end(self)
         if self.is_over:
             return
@@ -1134,6 +1169,7 @@ class Game:
         self.phase = PHASE_PLAY
         self.pending_damage = 0
         self.extra.pop("guardian", None)   # a Guardian's protection lasts for its turn only
+        self.extra.pop("jester_attack", None)   # and a claimed Jester's "ignores immunity" too
         self._event("turn", player=self.active, turn=self.turn)
         decision = self.rules.on_turn_start(self)
         if self.is_over:

@@ -78,6 +78,11 @@ def restored_ids(party: Sequence[CardDict]) -> List[str]:
 
 TEMPORARY_IDS = ("3R", "7R", "9R", "5G", "7G", "9G", "3U", "5U", "9U", "3T", "5T", "7T")
 
+# Named special characters that pack C never corrupts (owner's decision): Gøran (both
+# cards), Myla, the High Arcana, Esme and Ash. Gøran carries no flag before his renewal
+# and gains class stickers from mission 5 on, so the id list keeps him out as well.
+SPECIAL_IDS = ("GOR8", "GOR8E", "MYLA7", "ARC25", "ESME6E", "B_ASH")
+
 
 def corruption_candidates(party: Sequence[CardDict]) -> List[str]:
     """Party cards that may be corrupted now.
@@ -97,7 +102,7 @@ def corruption_candidates(party: Sequence[CardDict]) -> List[str]:
         flags = c.get("flags", [])
         if c["rank"] not in ("2", "3", "4", "5", "6", "7", "8", "9") or c["rank"] in used_ranks:
             continue
-        if not c.get("suits") or str(c["id"]) in TEMPORARY_IDS:
+        if not c.get("suits") or str(c["id"]) in TEMPORARY_IDS or str(c["id"]) in SPECIAL_IDS:
             continue
         if any(f in flags for f in ("corrupted", "restored", "evergreen", "beast", "pilgrim", "mercenary")):
             continue

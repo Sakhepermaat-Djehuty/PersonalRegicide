@@ -32,7 +32,7 @@ class GameConfig:
     open_hands: bool = False               # UI hint only: one person drives all seats
     solo_can_yield: bool = False           # unofficial variant
     yield_reset_per_enemy: bool = False    # unofficial variant: forget yields on a new enemy
-    strict_minimal_discard: bool = False   # unofficial variant: no surplus cards when paying
+    strict_minimal_discard: bool = False   # base game, unofficial variant: no surplus cards when paying
     rules_id: str = "base"
     extra: Dict[str, Any] = field(default_factory=dict)  # mission / variant parameters
 
@@ -221,6 +221,27 @@ class BaseRules:
             return bool(game.config.solo_can_yield) and game.last_action[0] != "yielded"
         return not all(game.last_action[i] == "yielded" for i in range(game.n_players) if i != me)
 
+    def sequential_discard(self, game: "Game") -> bool:
+        """Must damage be paid one card at a time (rulebook p.18: "you may not keep
+        discarding once the damage is satisfied")? ``Game.suffer`` then validates the cards
+        in the order given: the total before the last card must be below the damage. The
+        base game accepts surplus unless ``config.strict_minimal_discard`` is set; Legacy
+        always applies the sequential rule."""
+        return False
+
+    def discard_top_matters(self, game: "Game") -> bool:
+        """Does the TOP card of the discard pile change the game right now (Legacy mission
+        4's enemy bonus, the solo Scarlet Whistle, ...)? When it does, the player is asked
+        which card ends on top whenever two or more cards go to the pile at once (the
+        clean-up, a mage's unchosen cards); otherwise the default order is used."""
+        return False
+
+    def banished_top_matters(self, game: "Game") -> bool:
+        """Does the TOP card of the banished pile change the game (Legacy missions 5, 11 and
+        12 feed it into the mission zone)? When it does, the player orders the cards a
+        reaver or a mage attack banishes together."""
+        return False
+
     def extra_plays(self, game: "Game", hand: Sequence[Card]) -> List[List[str]]:
         """Additional legal plays beyond singles / companions / sets (Legacy: beasts...)."""
         return []
@@ -244,6 +265,17 @@ class BaseRules:
         Return a serialisable decision dict (with a ``player``) to ask the current player
         something first (e.g. which mission zone card to rescue); the rules' ``decide``
         must then end with ``game.resume_defeat()``. None continues at once."""
+        return None
+
+    def before_cleanup(self, game: "Game", exact: bool, plan: Dict[str, Any], discard_ids: Sequence[str],
+                       banish_ids: Sequence[str]) -> Optional[Dict[str, Any]]:
+        """Called once the mission's enemy-defeated choices are made and before the played
+        cards are cleaned up: ``discard_ids`` go on top of the discard pile, ``banish_ids``
+        (a mage attack) on the banished pile. Return a decision dict (with a ``player``) to
+        ask about their order (Legacy: which card ends on top); the rules' ``decide`` must
+        then end with ``game.resume_defeat()``, which asks here again, so the rules must
+        record the choice where this hook can see it (``order_for_discard`` and
+        ``order_for_banish`` then apply it). None cleans up at once."""
         return None
 
     def immune_suits(self, game: "Game") -> Tuple[str, ...]:
@@ -321,6 +353,10 @@ class BaseRules:
     def order_for_discard(self, game: "Game", cards: List[Card]) -> List[Card]:
         """Order in which a batch of cards is put on the discard pile (last = on top)."""
         return cards
+
+    def order_for_banish(self, game: "Game", ids: List[str]) -> List[str]:
+        """Order in which a mage attack's cards are banished at clean-up (last = on top)."""
+        return list(ids)
 
     def on_enemy_revealed(self, game: "Game") -> None:
         pass

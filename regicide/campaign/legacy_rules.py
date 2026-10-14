@@ -89,6 +89,7 @@ class LegacyRules(BaseRules):
 
     def extra_card_ids(self, game) -> List[str]:
         ids = list(game.extra.get("pilgrim_deck", []))
+        ids.extend(game.extra.get("flute", []))           # the solo Kinfolk Flute's stored cards
         for pile in game.extra.get("captured", []):
             ids.extend(pile)
         ids.extend(game.extra.get("beast_deck", []))     # mission 11's face-down beast deck
@@ -140,11 +141,53 @@ class LegacyRules(BaseRules):
     def feign_death_allowed(self, game) -> bool:
         return len(game.active_player.hand) >= game.config.max_hand
 
+    def sequential_discard(self, game) -> bool:
+        """Rulebook p.18: damage is paid one card at a time, never past the damage."""
+        return True
+
+    def discard_top_matters(self, game) -> bool:
+        """Solo, the Scarlet Whistle takes the top card of the discard pile into an attack,
+        so the player chooses what ends on top (missions 4, 10 and 11 and some Evergreen
+        banes make the top card count towards the enemy as well, see their rules)."""
+        return self._whistle(game) and game.config.players == 1
+
+    def banished_top_matters(self, game) -> bool:
+        return False
+
     @staticmethod
     def strength(card: Card) -> int:
         """A card's strength on its own: the 2/5 mercenary counts 2, a beast 0 (rulebook
         p.21: alone, in hand, in the discard pile or the mission zone a beast is 0)."""
         return 2 if card.has("twofive") else card.value
+
+    @staticmethod
+    def _card_in_play(game, card_id: str) -> bool:
+        return any(card_id in p.card_ids for p in game.plays)
+
+    def in_play_strength(self, game, card: Card) -> int:
+        """A card's strength while it is in play: a 2/5 played alone keeps the value its
+        player declared when it entered the playmat (rulebook p.25), otherwise ``strength``."""
+        if card.has("twofive") and self._card_in_play(game, card.id):
+            declared = (game.extra.get("declared_value") or {}).get(card.id)
+            if declared is not None:
+                return int(declared)
+        return self.strength(card)
+
+    def card_suits(self, game, card: Card) -> Tuple[str, ...]:
+        """A Wild Animal mercenary (flag ``choosable``, rulebook p.25) has the class its
+        player declared when it entered the playmat, for as long as it is in play; anywhere
+        else it is classless."""
+        if card.has("choosable"):
+            declared = (game.extra.get("declared") or {}).get(card.id)
+            if declared and self._card_in_play(game, card.id):
+                return (str(declared),)
+            return ()
+        return tuple(card.suits)
+
+    def on_enemy_revealed(self, game) -> None:
+        # the plays are cleared before the next enemy appears: the declarations are spent
+        game.extra.pop("declared", None)
+        game.extra.pop("declared_value", None)
 
     def zone_strength(self, game) -> int:
         """Combined strength of the mission zone (missions 5 and 6)."""
@@ -172,9 +215,14 @@ class LegacyRules(BaseRules):
         add later come after it)."""
         others = [c for c in cards if not c.has("beast")]
         beasts = len(cards) - len(others)
-        total = sum(self.strength(c) for c in others)
+        # a 2/5 keeps its declared value only while it is the attack's single card; in a
+        # kinfolk set (or with a companion) it counts the set's strength, 2
+        if len(others) == 1:
+            total = self.in_play_strength(game, others[0])
+        else:
+            total = sum(self.strength(c) for c in others)
         if beasts and others:
-            total += beasts * self.strength(others[0])
+            total += beasts * (self.in_play_strength(game, others[0]) if len(others) == 1 else self.strength(others[0]))
         return total
 
     def extra_plays(self, game, hand: Sequence[Card]) -> List[List[str]]:
@@ -223,13 +271,28 @@ class LegacyRules(BaseRules):
             if game.extra.get("flute_turn") != game.turn:
                 flute = game.extra.get("flute", [])
                 here = self.strength(game.cards[flute[0]]) if flute else None
-                for cid in game.active_player.hand:
+                suffering = game.phase == "suffer"
+                defence = game.hand_defence_value() if suffering else 0
+                # any 2 to 5 may go there, named characters (Oaken, Tolman, the 2/5s...)
+                # included; mission 7's pilgrims are kept out by the hand lock alone
+                for cid in self.unlocked_hand(game, game.active):
                     c = game.cards[cid]
                     v = self.strength(c)
-                    if 2 <= v <= 5 and c.is_number and (here is None or v == here) and not c.name:
-                        acts.append({"type": "special", "name": "flute_store", "card": cid,
-                                     "label": "Store %s on the Kinfolk Flute" % c.label()})
+                    if not (2 <= v <= 5 and c.is_number and (here is None or v == here)):
+                        continue
+                    if suffering and not self._payable_without(game, c, defence):
+                        continue   # storing it would leave the damage unpayable: the mission would be lost
+                    acts.append({"type": "special", "name": "flute_store", "card": cid,
+                                 "label": "Store %s on the Kinfolk Flute" % c.label()})
         return acts
+
+    def _payable_without(self, game, card: Card, defence: int) -> bool:
+        """Could the active player still pay the pending damage without ``card`` in hand
+        (by value, or by feigning death with the rest)?"""
+        if defence - card.defence_value >= game.pending_damage:
+            return True
+        rest = [c for c in game.active_player.hand if c != card.id]
+        return len(rest) >= game.config.max_hand and not any(self.hand_locked(game, game.cards[c]) for c in rest)
 
     def do_special(self, game, action: Dict[str, Any]) -> None:
         if action.get("name") == "flute_store":
@@ -245,6 +308,8 @@ class LegacyRules(BaseRules):
             game._say("%s stores %s on the Kinfolk Flute." % (game.active_player.name, game.cards[cid].label()))
             if game.phase == "play":
                 game._check_can_act()
+            else:
+                game._check_can_suffer()
             return
         raise NotImplementedError(action)
 
