@@ -1,4 +1,4 @@
-"""Pack E: Evergreen mode (confirmed from the owner's cards; parts 1 and 2 of 3 so far).
+"""Pack E: Evergreen mode (confirmed from the owner's cards, all three parts).
 
 Evergreen rules card: "Evergreen mode allows you to play Regicide Legacy over and over
 again using your party deck from the end of Mission 12. Use the Evergreen cards in this
@@ -114,7 +114,42 @@ BANES: List[Dict[str, Any]] = [
              "location cleanup rule for where the enemy normally goes when defeated."},
 ]
 
-BOONS: List[Dict[str, Any]] = []   # part 3 of the pack
+# Boons are numbered 24 to 35: 24 to 29 grey (setup), 30 to 35 yellow (rule changes).
+BOONS: List[Dict[str, Any]] = [
+    {"n": 24, "name": "This Is Noble, Sir", "tier": "grey", "when": "setup",
+     "text": "Spend 5 coins on mercenaries (from pack M) and add them to your reserve deck."},
+    {"n": 25, "name": "There Are Two of Them!", "tier": "grey", "when": "setup",
+     "text": "Add Gøran the Evergreen to your reserve deck (from mission box 10)."},
+    {"n": 26, "name": "Call for Help", "tier": "grey", "when": "setup",
+     "text": "Add all four of Gøran's Beasts to your reserve deck (instead of just one as usual)."},
+    {"n": 27, "name": "Too Easy!", "tier": "grey", "when": "special",
+     "text": "The hand size limit is increased by 1."},
+    {"n": 28, "name": "Best Friend", "tier": "grey", "when": "setup",
+     "text": "Add the puppy (from mission box 8) to the reserve deck. When you play the puppy it has all four base "
+             "classes for this attack (cleric, bard, warrior, paladin)."},
+    {"n": 29, "name": "Second Breakfast", "tier": "grey", "when": "setup",
+     "text": "Add Oaken (3 reaver), Tolman (3 druid) and Roslyn (3 chanter) to the reserve deck (from mission "
+             "boxes 5, 7 and 8 respectively)."},
+    {"n": 30, "name": "Squad of Siblings", "tier": "yellow", "when": "special",
+     "text": "Immediately after you form an attack you may move one card from the mission zone to the discard "
+             "pile if it has the same strength as a card in your attack."},
+    {"n": 31, "name": "Selfless Rescue", "tier": "yellow", "when": "special",
+     "text": "Immediately after discarding a card to satisfy damage, if it matches the strength of a card in the "
+             "mission zone you may move that card from the mission zone to the discard pile."},
+    {"n": 32, "name": "Precision Strike", "tier": "yellow", "when": "enemy_defeated",
+     "text": "If exact damage was dealt, put any card from the mission zone into your hand or put the top card of "
+             "the discard pile into your hand."},
+    {"n": 33, "name": "Restored Arrows", "tier": "yellow", "when": "enemy_defeated",
+     "text": "If exact damage was dealt, you may put any one card from the banished pile to the bottom of the "
+             "reserve deck."},
+    {"n": 34, "name": "An Alliance", "tier": "yellow", "when": "special",
+     "text": "Increase the Kinfolk Attack strength limit from 10 to 12 (for example you may now form Kinfolk Attacks "
+             "with two 6s or with three 4s)."},
+    {"n": 35, "name": "A Close Call", "tier": "yellow", "when": "special",
+     "text": "When you satisfy damage for the exact amount you suffered (not including team damage or when damage "
+             "is 0), place the discarded cards on the bottom of the reserve deck instead of the discard pile, then "
+             "search the discard pile and put a card from it on top of the reserve deck."},
+]
 
 
 def by_tier(cards: List[Dict[str, Any]], tier: str) -> List[Dict[str, Any]]:
@@ -124,8 +159,7 @@ def by_tier(cards: List[Dict[str, Any]], tier: str) -> List[Dict[str, Any]]:
 def draw_setup(rng: random.Random, extra_red: bool = False, extra_bane: bool = False) -> Dict[str, Any]:
     """A random Evergreen mission per the rules card: one location, two grey banes (or one
     grey and a second red with ``extra_red``), one yellow and one red bane, one grey and
-    one yellow boon; ``extra_bane`` adds one more bane of any tier. Tiers that have no
-    cards yet (parts 2 and 3 of the pack) are simply left out."""
+    one yellow boon; ``extra_bane`` adds one more bane of any tier."""
     def pick(cards: List[Dict[str, Any]], n: int, used: List[int]) -> List[Dict[str, Any]]:
         pool = [c for c in cards if c["n"] not in used]
         out = rng.sample(pool, min(n, len(pool)))

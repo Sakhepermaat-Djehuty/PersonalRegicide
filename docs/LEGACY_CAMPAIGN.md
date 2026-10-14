@@ -1145,7 +1145,7 @@ Numbers are attack / health.
     Corrupted cards never enter the reserve (bottom of the banished pile). Reward: open
     pack E; the campaign is complete.
 
-## Evergreen mode (pack E; part 1 of the owner's photos)
+## Evergreen mode (pack E; confirmed, transcribed from the owner's photos)
 
 The pack's own name for the mode is **Evergreen mode**. The owner wants it offered from
 the game menu of a finished campaign as an "Evergreen mission" button.
@@ -1220,16 +1220,40 @@ Shapeshift (enemies are immune to the classes of the top discard); 20 Fused Bone
 attack containing a card of strength 8 or more, discard a hand card if you can); 22 The
 Fiery Crucible (start of turn: top reserve card into the discard pile); 23 Choose Your
 Poison (end of turn: discard a hand card, or the top reserve card goes into the mission
-zone). The boons are in part 3.
+zone).
+
+**Boon cards (12, numbered 24 to 35; back: a banner over green hills, "Boon").** Grey
+(setup), 24 to 29: 24 This Is Noble, Sir (spend 5 coins on mercenaries from pack M and
+add them to the reserve deck); 25 There Are Two of Them! (add Gøran the Evergreen, from
+mission box 10, to the reserve deck); 26 Call for Help (add all four of Gøran's Beasts
+to the reserve deck instead of one); 27 Too Easy! (the hand size limit is increased by
+1); 28 Best Friend (add the puppy from mission box 8 to the reserve deck; when played it
+has all four base classes for that attack); 29 Second Breakfast (add Oaken, 3 reaver,
+Tolman, 3 druid, and Roslyn, 3 chanter, to the reserve deck). Yellow (rule changes), 30
+to 35: 30 Squad of Siblings (immediately after forming an attack you may move one
+mission zone card of the same strength as a card in the attack to the discard pile); 31
+Selfless Rescue (immediately after discarding a card to satisfy damage, if it matches
+the strength of a mission zone card you may move that card to the discard pile); 32
+Precision Strike (exact kill: put any mission zone card, or the top discard, into your
+hand); 33 Restored Arrows (exact kill: you may put any one banished card on the bottom
+of the reserve deck); 34 An Alliance (the Kinfolk Attack strength limit rises from 10 to
+12, so two 6s or three 4s are legal); 35 A Close Call (when you satisfy damage for the
+exact amount suffered, not team damage and not 0, the discarded cards go to the bottom
+of the reserve deck instead of the discard pile, then put any discard pile card on top
+of the reserve deck).
+
+**Names learned here:** Gøran's Beasts (Call for Help): a griffin, a boar, a moose and a
+tortoise-shelled panther. Roslyn is the 3 chanter, Tolman the 3 druid, Oaken the 3
+reaver (already recorded).
 
 **Races by strength (from Solstice and the mission cards):** gnomes 2, halflings 3,
 dwarves 4, avions 5, humans 6, elves 7, feltrix 8, drakonids 9, Deccari 10; the party
 holds five 10s (the four basic classes and the mage).
 
-**Engine status:** the pack's text is in `regicide/campaign/evergreen.py` with a random
-setup generator; the game menu of a finished campaign shows a disabled "Evergreen
-mission" button until the rest of the pack is read and the location and bane rules are
-built on the mission engine.
+**Engine status:** the whole pack is transcribed in `regicide/campaign/evergreen.py`
+with a random setup generator; the game menu of a finished campaign shows a disabled
+"Evergreen mission" button until the location, bane and boon rules are built on the
+mission engine (after missions 4 to 12).
 
 ## Verification checklist for the owner (gate G2 in PLAN.md)
 
@@ -1240,7 +1264,7 @@ perfect-kill variant, what joins and leaves the party, and the reward pack conte
 Globally confirm: whether a solo player may yield in Legacy (the base reading forbids it;
 the fan engine allows it unless the previous action was a yield; the solo rules on p.26
 do not mention yielding), whether unspent coins are lost when a mission is won, the
-boons of pack E. Already confirmed from the cards: every
+nothing else: pack E is complete. Already confirmed from the cards: every
 mission, every relic on both sides, the class-ability text and resolution order, the
 coin and mercenary rules and costs, the Jester claim rules, the 2/5 and Wild Animal
 declarations, pack C's corruption procedure, pack F (the ten mages) and pack P.
