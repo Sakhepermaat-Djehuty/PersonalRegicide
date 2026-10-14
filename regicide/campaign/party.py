@@ -72,6 +72,10 @@ def corrupted_ids(party: Sequence[CardDict]) -> List[str]:
     return [str(c["id"]) for c in party if "corrupted" in c.get("flags", [])]
 
 
+def restored_ids(party: Sequence[CardDict]) -> List[str]:
+    return [str(c["id"]) for c in party if "restored" in c.get("flags", [])]
+
+
 def corruption_candidates(party: Sequence[CardDict]) -> List[str]:
     """Party cards that may be corrupted now (the reward card says "corrupt a character
     in your party": the player chooses).

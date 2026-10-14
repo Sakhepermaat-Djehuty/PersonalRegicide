@@ -880,6 +880,56 @@ discard pile is a beast or a classless card it grants strength but no immunity.
 "Mission setup" screen) and the reward are in; the mission rules (beast deck and its
 four effects, pile-top strength and immunity, exact-kill skip) are to be built.
 
+## Mission 12, Decay to Growth (confirmed, transcribed from the owner's photos)
+
+**Location card:** Throne of Corruption (a red throne under a chandelier among black
+roots, QR code; the map on the back is the Caverns of Decay piece again).
+
+**Setup cards.** "Take all the corrupted party members, remove their corrupted sleeve
+and replace them with restored sleeves. These cards are no longer corrupted. Sleeve
+Esme (6, Evergreen) with a restored sleeve." "Put the corrupted Evergreen Mother relic in
+the mission 12 box. Acquire the new restored Evergreen Mother relic." Both sides of the
+restored relic read: "Restored cards can never enter the banished pile. If they would,
+instead put them on the bottom of the reserve deck."
+
+**Enemy stats card:** Queens 15 / 30 (four, one per class), Kings 20 / 40 (four, one
+per class), then the High Arcana 25 / 120 (dark gem icon, no class).
+
+**Mission rules card (front).** *Start of turn:* place the top card of the banished
+pile into the mission zone. Each enemy has additional strength equal to the combined
+strength of cards in the mission zone. Each enemy has immunity to the classes of the
+cards in the mission zone. *Enemy defeated:* banish all cards in the mission zone (in
+any order), then banish the enemy, then banish the discard pile (without changing the
+order). If the enemy was dealt exact damage, do not place the top card of the banished
+pile into the mission zone at the start of the next turn. The "Rules continued" side was
+not photographed; the summary card carries its one extra rule.
+
+**Rules summary card:** Start of turn: put the top of the banished pile into the
+mission zone. Cards in the mission zone grant strength and immunity to the enemy.
+Corrupted cards (purple icon) can't enter the reserve: put them on the bottom of the
+banished pile. Enemy defeated: banish the mission zone, the enemy and the entire discard
+pile; exact kill: skip the start of turn effect next turn.
+
+**Story cards:** intro ("How fortuitous", the underground throne room, the eight
+hobbled royals), outcome (the High Arcana keels over, the Rootmarsh, a new dawn) and the
+epilogue ("Many moons pass... 'I need your help.' 'Always.' Herbod grabs his axe. Open
+pack E."); texts in the private lore overlay only.
+
+**Rewards:** none for the party. "Open pack E": the campaign is complete and Eternal
+mode begins.
+
+**Notes.** The royals are corrupted (the intro and the summary's corrupted-card rule),
+so a restored card's effect that would return a banished royal under the reserve sends
+it to the bottom of the banished pile instead. The restored party cards each return the
+top banished card under the reserve when played (rulebook p.15) and never enter the
+banished pile (the relic), so the whole-discard-pile banish at each kill is the
+mission's pressure.
+
+**Engine status:** data, setup steps (restore all, relic swap) and the pack E flag are
+in; the mission rules (banished-top into the zone, zone strength and immunity, banish
+zone + enemy + discard pile, exact-kill skip, the restored relic and the corrupted-card
+rule) are to be built. All twelve missions' cards are now transcribed.
+
 ## Permanent mechanics (as transcribed)
 
 * **Corrupted cards**: a party card can become corrupted (it gets a corrupted sleeve).
@@ -908,8 +958,9 @@ four effects, pile-top strength and immunity, exact-kill skip) are to be built.
     corrupted card enters play you may banish the top card of the discard pile instead
     of the reserve deck (if the discard pile is not empty). 2+ players: another player
     must banish a card from hand instead of the reserve deck; if all other hands are
-    empty nothing is banished. Replaced in M12 by Evergreen Mother, restored: restored
-    cards that would be banished go under the reserve deck instead. VERIFY.
+    empty nothing is banished. Replaced at the start of M12 by the Evergreen Mother,
+    restored relic (**confirmed, both sides the same**): restored cards can never enter
+    the banished pile; if they would, put them on the bottom of the reserve deck.
 * **New suits / classes** (each has 3/5/7/9 cards that join temporarily, one stays):
   * ★ Mages (M3, permanent A–10★ added): reveal N cards from the tavern, pick one to add
     to the combo (its suits and value join), discard the rest; a picked Mage chains.
@@ -1051,12 +1102,16 @@ Numbers are attack / health.
     the strength of, the top cards of the discard and banished piles (beasts grant no
     immunity). Enemy defeated: banish it; exact kill: no beast revealed next turn.
     Reward: the reborn Evergreen, Esme (6, Evergreen); the beasts return to the box.
-12. **Decay to Growth** (fan name: The Final Stand; Throne of Corruption) — all corrupted cards become restored; Evergreen Mother
-    restored. 4 Q 15/30, 4 K 20/40, then the High Arcana 25/120. Enemy attack + zone
-    total; immune to every suit in the zone. Start of turn: top banished card to the
-    zone. Kill: banish the zone (your order), the enemy and the whole discard pile;
-    perfect kill skips the next placement. Win = campaign complete; the E box unlocks
-    endless mode (a generator: location card + bad cards + good cards per game).
+12. **Decay to Growth** (Throne of Corruption; fan name: The Final Stand) —
+    **confirmed:** at setup every corrupted party member and Esme become restored, and
+    the restored Evergreen Mother replaces the corrupt one (restored cards never enter
+    the banished pile: bottom of the reserve instead). 4 Queens 15/30 and 4 Kings
+    20/40, one per class, then the High Arcana 25/120 (no class); all corrupted. Start
+    of turn: top banished card into the mission zone; the zone adds strength and grants
+    immunity to its classes. Enemy defeated: banish the zone (any order), the enemy,
+    then the whole discard pile in order; exact kill: skip the next start of turn.
+    Corrupted cards never enter the reserve (bottom of the banished pile). Reward: open
+    pack E; the campaign is complete.
 
 ## Eternal mode ("E" box)
 

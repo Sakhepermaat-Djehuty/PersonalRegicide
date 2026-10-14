@@ -155,6 +155,23 @@ def _caverns_castle(rng: random.Random) -> List[dict]:
     return tier + [boss]
 
 
+def _throne_castle(rng: random.Random) -> List[dict]:
+    """Mission 12's enemy stat card: four Queens 15/30 and four Kings 20/40, one of each
+    class per tier, then the High Arcana 25/120 (dark gem icon: no class). The royals are
+    corrupted (the summary's corrupted-card rule applies to them): a corrupted card can
+    never enter the reserve deck and goes to the bottom of the banished pile instead."""
+    tiers = []
+    for rank, name, atk, hp in (("Q", "Queen", 15, 30), ("K", "King", 20, 40)):
+        tier = [{"id": "TH%s%s" % (rank, s), "rank": rank, "suits": [s], "value": RANK_VALUE[rank],
+                 "name": "%s %s" % (CLASS_NAME[s], name), "attack": atk, "health": hp, "flags": ["corrupted"]}
+                for s in BASIC_SUITS]
+        rng.shuffle(tier)
+        tiers.append(tier)
+    boss = {"id": "TH_ARCANA", "rank": "K", "suits": [], "value": 25, "name": "High Arcana",
+            "attack": 25, "health": 120, "flags": ["corrupted"]}
+    return tiers[0] + tiers[1] + [boss]
+
+
 def _hydra_castle(rng: random.Random) -> List[dict]:
     hydras = []
     for i, (a, b) in enumerate(itertools.combinations(BASIC_SUITS, 2)):
@@ -284,9 +301,15 @@ MISSIONS: List[Dict[str, Any]] = [
      "rewards_text": "The reborn Evergreen joins the party: Esme (6, Evergreen: all four classes, ignores "
                      "immunity). Gøran's beasts return to the box beside the party."},
     {"number": 12, "title": "Decay to Growth", "fan_title": "The Final Stand", "location": "Throne of Corruption",
-     "rules_id": "legacy_m12", "playable": False, "verified": False,
-     "summary": "Four Queens, four Kings and the High Arcana (25/120). Corrupted cards are restored.",
-     "rewards_text": "The campaign ends; Eternal mode unlocks."},
+     "rules_id": "legacy_m12", "playable": False, "verified": True,
+     "summary": "Esme's light restores every corrupted party member (and Esme herself): restored cards "
+                "ignore immunity and return the top banished card under the reserve when played, and the "
+                "restored Evergreen Mother keeps them out of the banished pile. Four Queens (15/30), four "
+                "Kings (20/40), then the High Arcana (25/120). Start of turn: the top banished card goes "
+                "into the mission zone; the zone adds its strength to the enemy and grants immunity to its "
+                "classes. Enemy defeated: banish the zone, the enemy and the whole discard pile; on exact "
+                "damage the next start of turn is skipped. Corrupted cards never enter the reserve.",
+     "rewards_text": "The High Arcana is dead. Open pack E: the campaign is complete and Eternal mode begins."},
 ]
 
 
@@ -320,6 +343,8 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
         castle = _ruins_castle(camp)
     elif number == 11:
         castle = _caverns_castle(rng)
+    elif number == 12:
+        castle = _throne_castle(rng)
     else:
         raise NotImplementedError("Mission %d is not implemented yet (see PLAN.md stage ladder)." % number)
     banished_start: List[dict] = []
@@ -427,6 +452,18 @@ def start_steps(camp, number: int) -> List[Step]:
         options = ["6C"] if "6C" in corrupted else corrupted
         steps.append({"kind": "choice_rip", "phase": "setup", "options": options,
                       "label": "A member of the Eternal Vine dies at the machine: rip up one corrupted character"})
+    if number == 12:
+        # Setup cards (confirmed): "Take all the corrupted party members, remove their
+        # corrupted sleeve and replace them with restored sleeves. These cards are no longer
+        # corrupted. Sleeve Esme (6, Evergreen) with a restored sleeve." and "Put the corrupted
+        # Evergreen Mother relic in the mission 12 box. Acquire the new restored Evergreen
+        # Mother relic."
+        if P.corrupted_ids(camp.party) or (P.find(camp.party, ESME_REBORN["id"]) is not None
+                                           and "restored" not in P.find(camp.party, ESME_REBORN["id"]).get("flags", [])):
+            steps.append({"kind": "restore_all", "label": "Esme's light burns the corruption away: the party is restored"})
+        if "mother" in camp.relics or "mother_restored" not in camp.relics:
+            steps.append({"kind": "relic_swap", "old": "mother", "new": "mother_restored",
+                          "label": "The Evergreen Mother blooms once more: the restored relic replaces the corrupt one"})
     return steps
 
 
@@ -605,6 +642,10 @@ def reward_steps(camp, number: int, rng: random.Random) -> List[Step]:
         # immunity. The mission rules add: Gøran's beasts return to the box by the party.
         steps.append({"kind": "add_card", "card": ESME_REBORN,
                       "label": "The reborn Evergreen touches down: Esme (6, Evergreen) joins the party"})
+    elif number == 12:
+        # Outcome cards (confirmed): the High Arcana is dead; "Open pack E" (Eternal mode).
+        steps.append({"kind": "set_flag", "flag": "pack_e_opened", "value": True,
+                      "label": "A new dawn is here. Open pack E: Eternal mode"})
     return steps
 
 
@@ -744,6 +785,28 @@ def apply_step(camp, step: Step, rng: random.Random, option: Optional[str] = Non
         target = rng.choice(pool)
         P.add_suit(camp.party, target, "M")
         return "%s takes up the mages' studies: gains the Mage class." % P.to_card(P.find(camp.party, target)).label()
+    if kind == "restore_all":
+        changed = []
+        for c in camp.party:
+            flags = list(c.get("flags", []))
+            if "corrupted" in flags:
+                flags.remove("corrupted")
+                if "restored" not in flags:
+                    flags.append("restored")
+                c["flags"] = flags
+                changed.append(P.to_card(c).label())
+            elif c["id"] == ESME_REBORN["id"] and "restored" not in flags:
+                flags.append("restored")
+                c["flags"] = flags
+                changed.append(P.to_card(c).label())
+        camp.corrupted = []
+        return "Restored: %s." % ", ".join(changed) if changed else "Nobody needed restoring."
+    if kind == "relic_swap":
+        if step["old"] in camp.relics:
+            camp.relics.remove(step["old"])
+        if step["new"] not in camp.relics:
+            camp.relics.append(step["new"])
+        return str(step.get("label", "Relic %s replaces %s." % (step["new"], step["old"])))
     if kind == "choice_rip":
         options = [str(x) for x in step.get("options", [])]
         if not options:

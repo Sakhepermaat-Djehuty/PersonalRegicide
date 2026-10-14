@@ -1187,3 +1187,36 @@ def test_mission11_rip_up_choice_beast_deck_and_reborn_evergreen():
         P.add_flag(c2.party, cid, "corrupted")
         c2.corrupted.append(cid)
     assert c2.prepare_mission() and sorted(c2.pending_choice()["options"]) == ["2S", "3H"]
+
+
+def test_mission12_setup_restores_the_party_and_swaps_the_mother_relic():
+    c = CampaignState.new(1, ["Solo"], seed=140)
+    c.mission = 12
+    c.completed = list(range(1, 12))
+    P.add_card(c.party, dict(M.ESME_REBORN))
+    P.add_card(c.party, dict(M.ASH))
+    c.relics += ["flute", "whistle", "emblem", "mother"]
+    for cid in ("2S", "3H", "4D", "5C", "7S", "8H", "9D"):
+        P.add_flag(c.party, cid, "corrupted")
+        c.corrupted.append(cid)
+    rng = random.Random(9)
+    steps = M.start_steps(c, 12)
+    assert [s["kind"] for s in steps] == ["restore_all", "relic_swap"]
+    for s in steps:
+        M.apply_step(c, s, rng)
+    assert P.corrupted_ids(c.party) == [] and c.corrupted == []
+    assert sorted(P.restored_ids(c.party)) == ["2S", "3H", "4D", "5C", "7S", "8H", "9D", "ESME6E"]
+    assert "mother" not in c.relics and "mother_restored" in c.relics and "flute" in c.relics
+    assert M.start_steps(c, 12) == []
+    extra = M.build_setup(c, 12, rng)
+    enemies = extra["castle"]
+    assert [e["name"].split()[-1] for e in enemies] == ["Queen"] * 4 + ["King"] * 4 + ["Arcana"]
+    assert (enemies[0]["attack"], enemies[0]["health"]) == (15, 30)
+    assert (enemies[4]["attack"], enemies[4]["health"]) == (20, 40)
+    assert (enemies[-1]["attack"], enemies[-1]["health"], enemies[-1]["suits"]) == (25, 120, [])
+    assert all("corrupted" in e["flags"] for e in enemies)
+    assert sorted(e["suits"][0] for e in enemies[:4]) == ["C", "D", "H", "S"]
+    steps = M.reward_steps(c, 12, rng)
+    assert [s["kind"] for s in steps] == ["set_flag"]
+    M.apply_step(c, steps[0], rng)
+    assert c.flags["pack_e_opened"] is True
