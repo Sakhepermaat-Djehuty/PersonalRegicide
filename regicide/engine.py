@@ -162,11 +162,34 @@ class Game:
             for _ in range(config.max_hand):
                 if g.tavern:
                     p.hand.append(g.tavern.pop(0))
+        g._guarantee_opening_draw()
         g._reveal_next_enemy()
         g._say("Game start: %d player%s, hand size %d." % (
             config.players, "" if config.players == 1 else "s", config.max_hand))
         g._start_turn()
         return g
+
+    def _guarantee_opening_draw(self) -> None:
+        """Owner's hidden house rule: every opening hand holds a card that can draw, a
+        Diamond (a Bard in Legacy; a multi-class card with the Diamond counts). A hand
+        without one swaps a random card of its own with the first such card in the reserve
+        deck, the rest of the reserve keeping its order; nothing changes when the hand has
+        one already or the reserve has none. Not announced in the log."""
+        if not self.config.opening_diamond:
+            return
+
+        def draws(cid: str) -> bool:
+            c = self.cards[cid]
+            return "D" in c.suits and not c.is_jester
+
+        for p in self.players:
+            if not p.hand or any(draws(c) for c in p.hand):
+                continue
+            at = next((i for i, c in enumerate(self.tavern) if draws(c)), None)
+            if at is None:
+                continue
+            j = self.rng.randrange(len(p.hand))
+            p.hand[j], self.tavern[at] = self.tavern[at], p.hand[j]
 
     # ---------------------------------------------------------------- queries
     def card(self, card_id: str) -> Card:

@@ -33,6 +33,7 @@ class GameConfig:
     solo_can_yield: bool = False           # unofficial variant
     yield_reset_per_enemy: bool = False    # unofficial variant: forget yields on a new enemy
     strict_minimal_discard: bool = False   # base game, unofficial variant: no surplus cards when paying
+    opening_diamond: bool = True           # owner's hidden house rule: every opening hand can draw
     rules_id: str = "base"
     extra: Dict[str, Any] = field(default_factory=dict)  # mission / variant parameters
 
@@ -67,7 +68,7 @@ class GameConfig:
             "jesters": self.jesters, "jester_may_choose_self": self.jester_may_choose_self,
             "open_hands": self.open_hands, "rules_id": self.rules_id, "extra": dict(self.extra),
             "solo_can_yield": self.solo_can_yield, "yield_reset_per_enemy": self.yield_reset_per_enemy,
-            "strict_minimal_discard": self.strict_minimal_discard,
+            "strict_minimal_discard": self.strict_minimal_discard, "opening_diamond": self.opening_diamond,
         }
 
     @staticmethod
@@ -81,6 +82,7 @@ class GameConfig:
             solo_can_yield=bool(d.get("solo_can_yield", False)),
             yield_reset_per_enemy=bool(d.get("yield_reset_per_enemy", False)),
             strict_minimal_discard=bool(d.get("strict_minimal_discard", False)),
+            opening_diamond=bool(d.get("opening_diamond", True)),
         )
 
 

@@ -173,3 +173,10 @@ seats), `solo_can_yield` (some fan engines allow it; the official reading forbid
 `yield_reset_per_enemy` (forget who yielded when a new enemy appears), and
 `strict_minimal_discard` (reject a damage payment that contains a card it does not
 need). They are listed so the UI can offer them honestly labelled.
+
+**Owner's hidden house rule (on by default, every mode):** every opening hand holds a
+card that can draw, a Diamond (a Bard in Legacy; a multi-class card with the Diamond
+counts), because a game dealt without one cannot recover. A hand dealt without one
+swaps a random card of its own with the first Diamond in the reserve (tavern) deck,
+the rest of the deck keeping its order; deals that already have one are unchanged.
+It is not announced in the game. `GameConfig.opening_diamond=False` turns it off.
