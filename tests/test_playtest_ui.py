@@ -535,10 +535,9 @@ def _piles_game(app):
     return gs, g
 
 
-def test_the_piles_show_the_discard_and_banished_piles_in_order_and_the_reserve_shuffled(app):
+def test_the_piles_show_the_discard_and_banished_piles_in_order_and_the_reserve_like_the_deck_list(app):
     import json
-    import random
-    from app.screens import PilesOverlay
+    from app.screens import PilesOverlay, deck_list_key
     gs, g = _piles_game(app)
     before = json.dumps(g.to_dict(), sort_keys=True)
     # a tap on the status line opens the piles, the discard pile first
@@ -552,12 +551,20 @@ def test_the_piles_show_the_discard_and_banished_piles_in_order_and_the_reserve_
     assert "In order, the top card first." in _texts(ov) and ui.render(app).size[0] > 0
     assert not any(ui.label_truncated(v) for v in ui.find(ov, lambda v: isinstance(v, ui.Label)))
     height = ov.panel.frame[3]
-    # the reserve: every card, in a shuffled order that is not the deck's
+    # the reserve: every card, sorted like the deck list (class, then strength), not in the deck's order
     seg.selected_index = 1
     seg.action(seg)
     shown = [v.card.id for v in sorted(ov.card_views.values(), key=lambda v: (v.y, v.x))]
     assert sorted(shown) == sorted(g.tavern) and shown != g.tavern
-    assert any("its order stays hidden" in t for t in _texts(ov)) and not any(v.badge for v in ov.card_views.values())
+    keys = [deck_list_key(g.card(c)) for c in shown]
+    assert keys == sorted(keys) and shown == sorted(g.tavern, key=lambda c: (deck_list_key(g.card(c)), c))
+    assert any("sorted like the deck list" in t for t in _texts(ov)) and not any(v.badge for v in ov.card_views.values())
+    # the same cards in another order show the same way: the view gives nothing away
+    order = list(g.tavern)
+    g.tavern.reverse()
+    ov._switch("reserve")
+    assert [v.card.id for v in sorted(ov.card_views.values(), key=lambda v: (v.y, v.x))] == shown
+    g.tavern[:] = order
     assert ov.panel.frame[3] == height                     # switching piles does not move the panel
     # the banished pile, the top (last banished) first
     seg.selected_index = 2
@@ -568,12 +575,10 @@ def test_the_piles_show_the_discard_and_banished_piles_in_order_and_the_reserve_
     assert json.dumps(g.to_dict(), sort_keys=True) == before
     _tap(app, "Back")
     assert gs.overlay is None
-    # the in-game menu has it too; a fixed shuffle for the same deck gives the same view
+    # the in-game menu has it too
     _tap(app, "Menu")
     _tap(app, "Discard and reserve piles")
     assert isinstance(gs.overlay, PilesOverlay)
-    a = PilesOverlay(gs, "reserve", rng=random.Random(5)).reserve_view
-    assert a == PilesOverlay(gs, "reserve", rng=random.Random(5)).reserve_view and sorted(a) == sorted(g.tavern)
 
 
 def test_the_piles_during_a_decision_and_in_the_base_game(app):

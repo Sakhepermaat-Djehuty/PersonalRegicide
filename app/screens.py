@@ -2402,22 +2402,24 @@ class LogOverlay(Overlay):
         ]
 
 
+def deck_list_key(card: Card) -> tuple:
+    """The order cards are listed in the deck list (and the piles viewer's reserve): by
+    their first class (classless cards, a Jester among them, last), then by strength."""
+    return (card.suits[0] if card.suits else "Z", card.value)
+
+
 class PilesOverlay(Overlay):
     """The piles at a glance: the discard pile and the banished pile in order, the top card
-    first, and the reserve (tavern) deck in a shuffled order, which shows what is left
-    without giving its order away. One pile at a time, picked with a segmented control;
-    the shuffle is made once, when the overlay opens, with its own random generator (the
-    game's is never touched)."""
+    first, and the reserve (tavern) deck sorted like the deck list (by class, then
+    strength; equal-looking cards by id), which shows what is left without giving its
+    order away. One pile at a time, picked with a segmented control."""
 
     columns = 5
     peekable = False   # not a choice: it closes with its own button
 
-    def __init__(self, screen: "GameScreen", pile: str = "discard", rng: Optional[random.Random] = None, **kw) -> None:
+    def __init__(self, screen: "GameScreen", pile: str = "discard", **kw) -> None:
         super().__init__(screen, **kw)
         self.pile = pile
-        order = list(screen.game.tavern)
-        (rng or random.Random()).shuffle(order)
-        self.reserve_view = order
 
     def piles(self, g: Game) -> List[tuple]:
         """(key, segment title) of the piles to show."""
@@ -2432,10 +2434,10 @@ class PilesOverlay(Overlay):
         """(card ids in the order shown, the line under the control, a badge per id)."""
         legacy = bool(getattr(g.rules, "legacy", False))
         if self.pile == "reserve":
-            ids = [c for c in self.reserve_view if c in g.tavern]
+            ids = sorted(g.tavern, key=lambda c: (deck_list_key(g.card(c)), c))
             name = "reserve deck" if legacy else "tavern deck"
             note = ("The %s is empty." % name if not ids else
-                    "What is left in the %s, shuffled: its order stays hidden." % name)
+                    "What is left in the %s, sorted like the deck list: its order stays hidden." % name)
             return ids, note, {}
         if self.pile == "banished":
             ids = list(reversed(g.banished))          # the last banished is on top
@@ -3416,7 +3418,7 @@ class PartyScreen(Screen):
                 self.beast_note.frame = (0, yy, tw, self.beast_note.height)
                 sv.add_subview(self.beast_note)
                 yy += self.beast_note.height + 6
-        cards = sorted(camp.party_cards(), key=lambda c: (c.suits[0] if c.suits else "Z", c.value))
+        cards = sorted(camp.party_cards(), key=deck_list_key)
         yy = heading("Party · %d cards" % len(cards), yy)
         yy = card_row(cards, yy)
         sv.content_size = (tw, yy + 20)
