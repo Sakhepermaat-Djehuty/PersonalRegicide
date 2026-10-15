@@ -780,8 +780,9 @@ def strip_game_names(game) -> int:
 def drop_stray_puppy(game) -> bool:
     """Mission 7 attempts saved before the fix dealt the pilgrim ace into pack P's pilgrim
     deck (it belongs to mission 8's box): take it out of the game wherever it waits (the
-    pilgrim deck, the mission zone, a pile or a hand). An ace already in play is left until
-    the attempt ends. Returns whether the game changed."""
+    pilgrim deck, the mission zone, a pile or a hand), with a line in the game log. An ace
+    in play, or named by a pending choice, is left alone; it goes the next time the
+    attempt is loaded after it has left play. Returns whether the game changed."""
     if str(getattr(game.config, "rules_id", "")) != "legacy_m7" or PUPPY["id"] not in game.cards:
         return False
     cid = PUPPY["id"]
@@ -802,6 +803,7 @@ def drop_stray_puppy(game) -> bool:
     extra = game.config.extra
     if isinstance(extra.get("pilgrims"), list):
         extra["pilgrims"] = [c for c in extra["pilgrims"] if str(c.get("id")) != cid]
+    game._say("The pilgrim ace goes back in mission 8's box: it is not part of pack P.")
     return True
 
 

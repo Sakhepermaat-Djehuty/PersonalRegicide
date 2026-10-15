@@ -761,7 +761,9 @@ Follower 3, Servant 4, Acolyte 6, an elf 7), and no ace. The puppy, the animal p
 ace, is not part of pack P: it comes in mission 8's box, which places it in the mission
 zone (and Evergreen boon 28 brings it back). Mission 7 attempts saved while the app
 wrongly dealt the ace into the pilgrim deck lose it when they are loaded
-(`missions.drop_stray_puppy`; an ace already in play stays until the attempt ends).
+(`missions.drop_stray_puppy`, with a line in the game log; an ace in play, or named by a
+pending choice, is left alone and goes the next time the attempt is loaded after it has
+left play).
 
 **Story cards:** intro (the driftwood village, the metal spider, trapped pilgrims, the
 pondkin) and outcome (Gøran reborn on the island, the afflicted refuse the cure, on to
@@ -922,7 +924,8 @@ overlay only.
 **Notes.** "No stickers" for the mage student: the app excludes cards with a class
 sticker; pack C showed corruption is a sleeve, so a corrupted card may be chosen. The
 outcome card says the pilgrims depart; no reward card returns pack P, so the app keeps
-the pilgrims in the pack (mission 8's puppy and Evergreen boons use it again).
+the pilgrims in the pack (Evergreen's Lake uses the 24 again; the puppy is not in pack P
+but in mission 8's box, which Evergreen boon 28 uses).
 
 **Engine status:** mission 9 is playable (`Mission9Rules`). Setup: Gøran, the chosen
 beast (and Ash), the Jesters and the mercenaries are set aside; the rest of the reserve is

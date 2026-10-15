@@ -2958,6 +2958,7 @@ def test_mission7_attempts_saved_with_the_ace_in_the_pilgrim_deck_lose_it_on_loa
     old = Game.from_dict(json.loads(json.dumps(g.to_dict())))
     assert M.drop_stray_puppy(old) and "PILA" not in old.cards and "PILA" not in old.extra["pilgrim_deck"]
     assert len(old.extra["pilgrim_deck"]) == 23 and all(d["id"] != "PILA" for d in old.config.extra["pilgrims"])
+    assert old.log[-1] == "The pilgrim ace goes back in mission 8's box: it is not part of pack P."
     _ids_everywhere(old)
     assert not M.drop_stray_puppy(old)                       # once only
     # wherever it waits: the zone, a hand, the discard pile
