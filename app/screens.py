@@ -538,6 +538,11 @@ class GameScreen(Screen):
         self.rules_pending = False   # show the mission's rules card before play starts
         self.message_text = ""
         self.status = make_label("", (0, 0, 10, 10), 13, False, T.MUTED)
+        # a tap on the status line ("Reserve 54 · Discard 17") opens the piles
+        self.piles_btn = ui.Button(frame=(0, 0, 10, 10))
+        self.piles_btn.title = ""
+        self.piles_btn.background_color = None
+        self.piles_btn.action = lambda s: self._show_piles()
         self.menu_btn = make_button("Menu", self._menu, (0, 0, 70, 30), False, 14)
         self.enemy = EnemyPanel()
         self.strip = CardStrip()
@@ -555,7 +560,7 @@ class GameScreen(Screen):
         self.toast.background_color = T.ACCENT
         self.toast.corner_radius = 8
         self.toast.hidden = True
-        for v in (self.status, self.menu_btn, self.enemy, self.strip, self.zone, self.message, self.hand,
+        for v in (self.status, self.piles_btn, self.menu_btn, self.enemy, self.strip, self.zone, self.message, self.hand,
                   self.left_btn, self.mid_btn, self.right_btn, self.special_btn, self.toast):
             self.add_subview(v)
 
@@ -567,6 +572,7 @@ class GameScreen(Screen):
         m = T.MARGIN
         y = T.TOP_INSET
         self.status.frame = (m, y, w - 2 * m - 80, 30)
+        self.piles_btn.frame = self.status.frame
         self.menu_btn.frame = (w - m - 70, y, 70, 30)
         y += 36
         eh = 128
@@ -1105,6 +1111,9 @@ class GameScreen(Screen):
 
     def _menu(self, sender) -> None:
         self._show_overlay(GameMenuOverlay(self))
+
+    def _show_piles(self, pile: str = "discard") -> None:
+        self._show_overlay(PilesOverlay(self, pile))
 
     # ------------------------------------------------------------------ overlays
     def _show_overlay(self, v: ui.View) -> None:
@@ -2004,6 +2013,7 @@ class GameMenuOverlay(Overlay):
         if app.in_campaign:
             items.append(make_button("Mission rules", lambda s: self.screen._show_overlay(RulesOverlay(self.screen)),
                                      (0, 0, 10, 46), False))
+        items.append(make_button("Discard and reserve piles", lambda s: self.screen._show_piles(), (0, 0, 10, 46), False))
         items.append(make_button("Game log", lambda s: self.screen._show_overlay(LogOverlay(self.screen)), (0, 0, 10, 46), False))
         items.append(make_button("Save and go to menu", lambda s: (app.autosave(), app.show(MenuScreen(app))), (0, 0, 10, 46), False))
         if app.in_campaign:
@@ -2314,6 +2324,93 @@ class LogOverlay(Overlay):
             self.text(text, 12, align=ui.ALIGN_LEFT),
             make_button("Back", lambda s: self.screen.refresh(after_action=False), (0, 0, 10, 44)),
         ]
+
+
+class PilesOverlay(Overlay):
+    """The piles at a glance: the discard pile and the banished pile in order, the top card
+    first, and the reserve (tavern) deck in a shuffled order, which shows what is left
+    without giving its order away. One pile at a time, picked with a segmented control;
+    the shuffle is made once, when the overlay opens, with its own random generator (the
+    game's is never touched)."""
+
+    columns = 5
+
+    def __init__(self, screen: "GameScreen", pile: str = "discard", rng: Optional[random.Random] = None, **kw) -> None:
+        super().__init__(screen, **kw)
+        self.pile = pile
+        order = list(screen.game.tavern)
+        (rng or random.Random()).shuffle(order)
+        self.reserve_view = order
+
+    def piles(self, g: Game) -> List[tuple]:
+        """(key, segment title) of the piles to show."""
+        legacy = bool(getattr(g.rules, "legacy", False))
+        out = [("discard", "Discard %d" % len(g.discard)),
+               ("reserve", "%s %d" % ("Reserve" if legacy else "Tavern", len(g.tavern)))]
+        if legacy or g.banished:
+            out.append(("banished", "Banished %d" % len(g.banished)))
+        return out
+
+    def pile_cards(self, g: Game) -> tuple:
+        """(card ids in the order shown, the line under the control, a badge per id)."""
+        legacy = bool(getattr(g.rules, "legacy", False))
+        if self.pile == "reserve":
+            ids = [c for c in self.reserve_view if c in g.tavern]
+            name = "reserve deck" if legacy else "tavern deck"
+            note = ("The %s is empty." % name if not ids else
+                    "What is left in the %s, shuffled: its order stays hidden." % name)
+            return ids, note, {}
+        if self.pile == "banished":
+            ids = list(reversed(g.banished))          # the last banished is on top
+            note = "The banished pile is empty." if not ids else "In order, the top card first."
+        else:
+            ids = list(g.discard)                     # the first is the top card
+            note = "The discard pile is empty." if not ids else "In order, the top card first."
+        return ids, note, ({ids[0]: "top"} if ids else {})
+
+    def build(self) -> List[ui.View]:
+        g = self.screen.game
+        piles = self.piles(g)
+        keys = [k for k, _ in piles]
+        if self.pile not in keys:
+            self.pile = "discard"
+        seg = ui.SegmentedControl(frame=(0, 0, 10, 32))
+        seg.segments = [t for _, t in piles]
+        seg.selected_index = keys.index(self.pile)
+        seg.action = lambda s: self._switch(keys[s.selected_index])
+        ids, note, badges = self.pile_cards(g)
+        pw = self.text_width()
+        cols = self.columns
+        gap = 5.0
+        cw = (pw - gap * (cols - 1)) / cols
+        ch = cw * 1.42
+        rows = (len(ids) + cols - 1) // cols
+        need = rows * (ch + gap)
+        note_label = self.text(note, 12, color=T.MUTED, min_height=34)
+        # the grid takes the room the screen has left and scrolls past it; it is as tall for
+        # every pile (the biggest one's height), so switching piles does not move the panel
+        room = self.height - T.TOP_INSET - T.BOTTOM_INSET - 36 - 32 - note_label.height - 44 - 5 * 12 - 28
+        biggest = max(len(g.discard), len(g.tavern), len(g.banished), 1)
+        tallest = ((biggest + cols - 1) // cols) * (ch + gap)
+        sv = ui.ScrollView(frame=(0, 0, pw, max(ch + gap, min(tallest, room))))
+        sv.content_size = (pw, need + 4)
+        self.card_views = {}
+        for i, cid in enumerate(ids):
+            r, c = divmod(i, cols)
+            v = CardView(g.card(cid))
+            v.small = True
+            v.touch_enabled = False
+            v.badge = badges.get(cid, "")
+            v.frame = (c * (cw + gap), r * (ch + gap), cw, ch)
+            sv.add_subview(v)
+            self.card_views[cid] = v
+        self.grid = sv
+        return [make_label("Piles", (0, 0, 10, 36), 20, True, T.ACCENT, ui.ALIGN_CENTER), seg, note_label, sv,
+                make_button("Back", lambda s: self.screen.refresh(after_action=False), (0, 0, 10, 44))]
+
+    def _switch(self, pile: str) -> None:
+        self.pile = pile
+        self.layout()
 
 
 class ClassChoiceOverlay(Overlay):

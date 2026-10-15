@@ -27,7 +27,10 @@ gold coins down the right side; a tap opens its card to hire it or, after a fail
 it. Card pop-ups (a relic, a mercenary, a reward, the rules card) are drawn like the
 game's playing cards: name and icon on top, the text below. A mission's rules card pops up
 the first time it loads (Settings can turn that off) and is in the in-game Menu and the
-game menu too.
+game menu too. In a game, a tap on the status line ("Reserve 54 · Discard 17"), or
+"Discard and reserve piles" in the in-game Menu, shows the piles: the discard pile and the
+banished pile in order (the top card first) and the reserve deck shuffled (what is left,
+never its order).
 
 ## What the client offers
 

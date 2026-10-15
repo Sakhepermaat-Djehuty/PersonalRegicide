@@ -511,3 +511,95 @@ def test_hiring_keeps_the_mercenary_camp_scrolled_where_it_was(app):
         assert 0 <= ms.grid.content_offset[1] <= ms.grid.content_size[1] - ms.grid.height
     finally:
         ui.set_screen_size(390, 844)
+
+
+def _piles_game(app):
+    """A mission 4 attempt with cards in all three piles."""
+    app.settings["rules_card"] = False
+    _tap(app, "New game")
+    _tap(app, "Start")
+    app.campaign.mission, app.campaign.completed = 4, [1, 2, 3]
+    for d in M.MAGE_DECK:
+        P.add_card(app.campaign.party, dict(d))
+    app.save_campaign()
+    app.start_attempt()
+    gs, g = app.current, app.game
+    while g.decision is not None:
+        g.decide(g.legal_actions()[0])
+    moved = g.tavern[:7]
+    del g.tavern[:7]
+    g.discard[:0] = moved                         # discard[0] is the top card
+    g.banished.extend(g.tavern[:3])               # banished[-1] is the top card
+    del g.tavern[:3]
+    gs.refresh(after_action=False)
+    return gs, g
+
+
+def test_the_piles_show_the_discard_and_banished_piles_in_order_and_the_reserve_shuffled(app):
+    import json
+    import random
+    from app.screens import PilesOverlay
+    gs, g = _piles_game(app)
+    before = json.dumps(g.to_dict(), sort_keys=True)
+    # a tap on the status line opens the piles, the discard pile first
+    ui.tap(app, *ui.root_point(app, gs.piles_btn))
+    ov = gs.overlay
+    assert isinstance(ov, PilesOverlay) and ov.pile == "discard"
+    seg = ui.find(ov, lambda v: isinstance(v, ui.SegmentedControl))[0]
+    assert seg.segments == ["Discard %d" % len(g.discard), "Reserve %d" % len(g.tavern), "Banished 3"]
+    shown = [v.card.id for v in sorted(ov.card_views.values(), key=lambda v: (v.y, v.x))]
+    assert shown == g.discard and ov.card_views[g.discard[0]].badge == "top"
+    assert "In order, the top card first." in _texts(ov) and ui.render(app).size[0] > 0
+    assert not any(ui.label_truncated(v) for v in ui.find(ov, lambda v: isinstance(v, ui.Label)))
+    height = ov.panel.frame[3]
+    # the reserve: every card, in a shuffled order that is not the deck's
+    seg.selected_index = 1
+    seg.action(seg)
+    shown = [v.card.id for v in sorted(ov.card_views.values(), key=lambda v: (v.y, v.x))]
+    assert sorted(shown) == sorted(g.tavern) and shown != g.tavern
+    assert any("its order stays hidden" in t for t in _texts(ov)) and not any(v.badge for v in ov.card_views.values())
+    assert ov.panel.frame[3] == height                     # switching piles does not move the panel
+    # the banished pile, the top (last banished) first
+    seg.selected_index = 2
+    seg.action(seg)
+    shown = [v.card.id for v in sorted(ov.card_views.values(), key=lambda v: (v.y, v.x))]
+    assert shown == list(reversed(g.banished)) and ov.card_views[g.banished[-1]].badge == "top"
+    # looking changes nothing in the game, not even its random state
+    assert json.dumps(g.to_dict(), sort_keys=True) == before
+    _tap(app, "Back")
+    assert gs.overlay is None
+    # the in-game menu has it too; a fixed shuffle for the same deck gives the same view
+    _tap(app, "Menu")
+    _tap(app, "Discard and reserve piles")
+    assert isinstance(gs.overlay, PilesOverlay)
+    a = PilesOverlay(gs, "reserve", rng=random.Random(5)).reserve_view
+    assert a == PilesOverlay(gs, "reserve", rng=random.Random(5)).reserve_view and sorted(a) == sorted(g.tavern)
+
+
+def test_the_piles_during_a_decision_and_in_the_base_game(app):
+    from app.screens import GameScreen, PilesOverlay, QuickPlayScreen
+    from regicide.rules import GameConfig
+    gs, g = _piles_game(app)
+    # a decision is waiting: Back from the piles returns to it
+    from helpers import set_hand, set_mission_enemy, set_tavern_top
+    set_mission_enemy(g, "LABJD", hp=100)
+    set_hand(g, ["3M", "9S", "8S"])
+    set_tavern_top(g, ["4C", "10H", "2D"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["3M"])
+    _tap(app, "Play")
+    assert g.decision["kind"] == "mage_peek"
+    decision_overlay = type(gs.overlay)
+    gs._show_piles("reserve")
+    shown = set(gs.overlay.card_views)
+    assert shown == set(g.tavern) and not shown & set(g.decision["revealed"])   # the mage's cards are out
+    _tap(app, "Back")
+    assert type(gs.overlay) is decision_overlay
+    # base Regicide: a tavern deck, no banished pile until something is banished
+    app.start_game(GameConfig(players=1), seed=3)
+    gs = app.current
+    assert isinstance(gs, GameScreen)
+    ui.tap(app, *ui.root_point(app, gs.piles_btn))
+    seg = ui.find(gs.overlay, lambda v: isinstance(v, ui.SegmentedControl))[0]
+    assert seg.segments == ["Discard 0", "Tavern %d" % len(app.game.tavern)]
+    assert "The discard pile is empty." in _texts(gs.overlay)
