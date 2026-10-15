@@ -535,6 +535,9 @@ class GameScreen(Screen):
         self.team_seat: Optional[int] = None   # mission 6 team damage: whose hand is shown
         self.pile_choice: Optional[int] = None  # mission 9 end of turn: the captured pile to rescue from
         self.overlay: Optional[ui.View] = None
+        # what Back returns to from the game menu, the piles, the log or the rules card:
+        # the choice box that was up (its picks intact), or the bare table (its selection intact)
+        self.return_overlay: Optional[ui.View] = None
         self.rules_pending = False   # show the mission's rules card before play starts
         self.message_text = ""
         self.status = make_label("", (0, 0, 10, 10), 13, False, T.MUTED)
@@ -604,6 +607,7 @@ class GameScreen(Screen):
 
     # ------------------------------------------------------------------ refresh
     def refresh(self, after_action: bool = True) -> None:
+        self.return_overlay = None
         g = self.game = self.app.game  # type: ignore[assignment]
         # (mission 10's face-up enemy deck shows its next enemy in the enemy panel)
         self.status.text = status_text(g, self.status.width)
@@ -1110,10 +1114,29 @@ class GameScreen(Screen):
         self._act(lambda: g.decide(action))
 
     def _menu(self, sender) -> None:
+        self._remember_place()
         self._show_overlay(GameMenuOverlay(self))
 
-    def _show_piles(self, pile: str = "discard") -> None:
-        self._show_overlay(PilesOverlay(self, pile))
+    def _show_piles(self, pile: Optional[str] = None) -> None:
+        """The piles viewer, on the discard pile (the reserve while nothing is discarded)."""
+        self._remember_place()
+        self._show_overlay(PilesOverlay(self, pile or ("discard" if self.game.discard else "reserve")))
+
+    def _remember_place(self) -> None:
+        """Before a menu or a viewer opens over the table or a choice box, remember where Back
+        goes (a menu opened from a viewer keeps the place remembered first)."""
+        if not isinstance(self.overlay, (GameMenuOverlay, PilesOverlay, LogOverlay, RulesOverlay)):
+            self.return_overlay = self.overlay
+
+    def _back_to_game(self) -> None:
+        """Close a menu or viewer: show the choice box that was up again (the same one, picks
+        and all) or the bare table, untouched (the hand keeps its selection and tap order).
+        Nothing in the game changed while it was open, so nothing is rebuilt."""
+        prev, self.return_overlay = self.return_overlay, None
+        if prev is not None and prev is not self.overlay:
+            self._show_overlay(prev)
+        else:
+            self._hide_overlay()
 
     # ------------------------------------------------------------------ overlays
     def _show_overlay(self, v: ui.View) -> None:
@@ -2079,7 +2102,7 @@ class GameMenuOverlay(Overlay):
         app = self.screen.app
         items: List[ui.View] = [
             make_label("Game menu", (0, 0, 10, 32), 20, True, T.TEXT, ui.ALIGN_CENTER),
-            make_button("Resume", lambda s: self.screen.refresh(after_action=False), (0, 0, 10, 46)),
+            make_button("Resume", lambda s: self.screen._back_to_game(), (0, 0, 10, 46)),
         ]
         if app.undo_stack:
             items.append(make_button("Undo last action", self._undo, (0, 0, 10, 46), False))
@@ -2180,6 +2203,9 @@ class RulesOverlay(Overlay):
 
     def _close(self, sender) -> None:
         app = self.screen.app
+        if not self.screen.rules_pending:
+            self.screen._back_to_game()      # opened from the in-game menu
+            return
         if self.screen.rules_pending and app.campaign is not None and not app.campaign.finished:
             seen = app.campaign.flags.setdefault("rules_seen", [])
             if app.campaign.mission not in seen:
@@ -2398,7 +2424,7 @@ class LogOverlay(Overlay):
         return [
             make_label("Game log", (0, 0, 10, 30), 18, True, T.TEXT, ui.ALIGN_CENTER),
             self.text(text, 12, align=ui.ALIGN_LEFT),
-            make_button("Back", lambda s: self.screen.refresh(after_action=False), (0, 0, 10, 44)),
+            make_button("Back", lambda s: self.screen._back_to_game(), (0, 0, 10, 44)),
         ]
 
 
@@ -2421,11 +2447,23 @@ class PilesOverlay(Overlay):
         super().__init__(screen, **kw)
         self.pile = pile
 
+    def hidden_hands(self, g: Game) -> bool:
+        """Pass-and-play with hidden hands: listing the reserve alone would give the other
+        players' hands away (every other card is public or in the player's own hand), so the
+        reserve is shown together with those hands, as the cards this player has not seen."""
+        return g.n_players > 1 and not g.config.open_hands
+
+    def unseen(self, g: Game) -> List[str]:
+        """The reserve, plus every hand but the one shown (all hands while none is shown)."""
+        me = self.screen.shown_player
+        return list(g.tavern) + [c for i, p in enumerate(g.players) if i != me for c in p.hand]
+
     def piles(self, g: Game) -> List[tuple]:
         """(key, segment title) of the piles to show."""
         legacy = bool(getattr(g.rules, "legacy", False))
-        out = [("discard", "Discard %d" % len(g.discard)),
-               ("reserve", "%s %d" % ("Reserve" if legacy else "Tavern", len(g.tavern)))]
+        reserve = ("Unseen %d" % len(self.unseen(g)) if self.hidden_hands(g)
+                   else "%s %d" % ("Reserve" if legacy else "Tavern", len(g.tavern)))
+        out = [("discard", "Discard %d" % len(g.discard)), ("reserve", reserve)]
         if legacy or g.banished:
             out.append(("banished", "Banished %d" % len(g.banished)))
         return out
@@ -2434,8 +2472,14 @@ class PilesOverlay(Overlay):
         """(card ids in the order shown, the line under the control, a badge per id)."""
         legacy = bool(getattr(g.rules, "legacy", False))
         if self.pile == "reserve":
-            ids = sorted(g.tavern, key=lambda c: (deck_list_key(g.card(c)), c))
             name = "reserve deck" if legacy else "tavern deck"
+            if self.hidden_hands(g):
+                ids = sorted(self.unseen(g), key=lambda c: (deck_list_key(g.card(c)), c))
+                note = ("Nothing you have not seen." if not ids else
+                        "The cards you have not seen: the %s and the other players' hands together, sorted like "
+                        "the deck list." % name)
+                return ids, note, {}
+            ids = sorted(g.tavern, key=lambda c: (deck_list_key(g.card(c)), c))
             note = ("The %s is empty." % name if not ids else
                     "What is left in the %s, sorted like the deck list: its order stays hidden." % name)
             return ids, note, {}
@@ -2469,7 +2513,7 @@ class PilesOverlay(Overlay):
         # the grid takes the room the screen has left and scrolls past it; it is as tall for
         # every pile (the biggest one's height), so switching piles does not move the panel
         room = self.height - T.TOP_INSET - T.BOTTOM_INSET - 36 - 32 - note_label.height - 44 - 5 * 12 - 28
-        biggest = max(len(g.discard), len(g.tavern), len(g.banished), 1)
+        biggest = max(len(g.discard), len(self.unseen(g)) if self.hidden_hands(g) else len(g.tavern), len(g.banished), 1)
         tallest = ((biggest + cols - 1) // cols) * (ch + gap)
         sv = ui.ScrollView(frame=(0, 0, pw, max(ch + gap, min(tallest, room))))
         sv.content_size = (pw, need + 4)
@@ -2485,7 +2529,7 @@ class PilesOverlay(Overlay):
             self.card_views[cid] = v
         self.grid = sv
         return [make_label("Piles", (0, 0, 10, 36), 20, True, T.ACCENT, ui.ALIGN_CENTER), seg, note_label, sv,
-                make_button("Back", lambda s: self.screen.refresh(after_action=False), (0, 0, 10, 44))]
+                make_button("Back", lambda s: self.screen._back_to_game(), (0, 0, 10, 44))]
 
     def _switch(self, pile: str) -> None:
         self.pile = pile

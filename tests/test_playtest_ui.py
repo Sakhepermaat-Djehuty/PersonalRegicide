@@ -594,19 +594,22 @@ def test_the_piles_during_a_decision_and_in_the_base_game(app):
     gs.hand.set_selection(["3M"])
     _tap(app, "Play")
     assert g.decision["kind"] == "mage_peek"
-    decision_overlay = type(gs.overlay)
+    decision_overlay = gs.overlay
     gs._show_piles("reserve")
     shown = set(gs.overlay.card_views)
     assert shown == set(g.tavern) and not shown & set(g.decision["revealed"])   # the mage's cards are out
     _tap(app, "Back")
-    assert type(gs.overlay) is decision_overlay
-    # base Regicide: a tavern deck, no banished pile until something is banished
+    assert gs.overlay is decision_overlay                  # the same choice box comes back
+    # base Regicide: a tavern deck, no banished pile until something is banished; with
+    # nothing discarded yet the viewer opens on the tavern deck
     app.start_game(GameConfig(players=1), seed=3)
     gs = app.current
     assert isinstance(gs, GameScreen)
     ui.tap(app, *ui.root_point(app, gs.piles_btn))
     seg = ui.find(gs.overlay, lambda v: isinstance(v, ui.SegmentedControl))[0]
-    assert seg.segments == ["Discard 0", "Tavern %d" % len(app.game.tavern)]
+    assert seg.segments == ["Discard 0", "Tavern %d" % len(app.game.tavern)] and gs.overlay.pile == "reserve"
+    seg.selected_index = 0
+    seg.action(seg)
     assert "The discard pile is empty." in _texts(gs.overlay)
 
 
@@ -653,3 +656,73 @@ def test_choice_boxes_offer_hold_to_view_the_game(app):
     for cls in (GameMenuOverlay, LogOverlay, PilesOverlay):
         gs._show_overlay(cls(gs))
         assert gs.overlay.peek_btn is None and not ui.find(gs.overlay, lambda v: isinstance(v, widgets.PeekButton))
+
+
+
+def test_back_from_the_piles_keeps_the_selection_and_the_choice_in_progress(app):
+    from app.screens import GameMenuOverlay, OrderOverlay, PilesOverlay
+    from helpers import set_discard, set_hand, set_mission_enemy, set_tavern_top
+    gs, g = _piles_game(app)
+    # the bare table: the cards selected (and their order) are still selected after Back
+    gs.hand.set_selection([g.players[0].hand[2], g.players[0].hand[0]])
+    picked = list(gs.hand.selected)
+    message = gs.message.text
+    ui.tap(app, *ui.root_point(app, gs.piles_btn))
+    assert isinstance(gs.overlay, PilesOverlay)
+    _tap(app, "Back")
+    assert gs.overlay is None and gs.hand.selected == picked and gs.message.text == message
+    # the same through the menu, and the menu's Resume
+    _tap(app, "Menu")
+    _tap(app, "Discard and reserve piles")
+    _tap(app, "Back")
+    assert gs.overlay is None and gs.hand.selected == picked
+    _tap(app, "Menu")
+    _tap(app, "Resume")
+    assert gs.overlay is None and gs.hand.selected == picked
+    # a choice box: its picks survive a look at the piles through its Game menu
+    set_mission_enemy(g, "LABJD", hp=100)
+    set_discard(g, ["2S"])
+    set_hand(g, ["3M", "9S", "8S", "AS"])
+    set_tavern_top(g, ["4C", "10H", "2D"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["3M"])
+    _tap(app, "Play")
+    _tap(app, "Add 4♣ to the attack")
+    box = gs.overlay
+    assert isinstance(box, OrderOverlay)
+    ui.tap(app, *ui.root_point(app, box.card_views["10H"]))
+    assert box.picked == ["10H"]
+    _tap(app, "Game menu")
+    assert isinstance(gs.overlay, GameMenuOverlay)
+    _tap(app, "Discard and reserve piles")
+    assert gs.overlay.pile == "discard" and gs.overlay.card_views[g.discard[0]].badge == "top"
+    _tap(app, "Back")
+    assert gs.overlay is box and box.picked == ["10H"] and box.card_views["10H"].badge == "1"
+    _tap(app, "Game menu")
+    _tap(app, "Game log")
+    _tap(app, "Back")
+    assert gs.overlay is box and box.picked == ["10H"]
+
+
+def test_with_hidden_hands_the_reserve_is_shown_with_the_other_hands(app):
+    from app.screens import PilesOverlay
+    from regicide.rules import GameConfig
+    app.start_game(GameConfig(players=2, open_hands=False), seed=7)
+    gs, g = app.current, app.game
+    gs.reveal_hand()
+    me = gs.shown_player
+    gs._show_piles("reserve")
+    ov = gs.overlay
+    other = [c for i, p in enumerate(g.players) if i != me for c in p.hand]
+    seg = ui.find(ov, lambda v: isinstance(v, ui.SegmentedControl))[0]
+    assert seg.segments[1] == "Unseen %d" % (len(g.tavern) + len(other))
+    # the reserve and the other hand, mixed and sorted: no telling which card is where
+    assert sorted(ov.card_views) == sorted(list(g.tavern) + other)
+    assert any("the other players' hands together" in t for t in _texts(ov))
+    assert not set(ov.card_views) & set(g.players[me].hand)
+    # open hands (and solo): the reserve alone
+    app.start_game(GameConfig(players=2, open_hands=True), seed=7)
+    gs, g = app.current, app.game
+    gs._show_piles("reserve")
+    assert sorted(gs.overlay.card_views) == sorted(g.tavern)
+    assert ui.find(gs.overlay, lambda v: isinstance(v, ui.SegmentedControl))[0].segments[1] == "Tavern %d" % len(g.tavern)
