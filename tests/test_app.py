@@ -270,10 +270,31 @@ def test_campaign_loss_opens_mercenary_camp(app):
     assert all(v.shaded and not v.selected for v in ms.card_views.values())
     assert [ms.card_views[m].coins for m in ("merc_12H", "merc_25D", "merc_19_1", "merc_ace_1", "merc_jester_1")] == [1, 1, 3, 3, 5]
     assert ui.render(app).size[0] > 0
+    # every mercenary has its card: its name, icons and what it is
+    from app.widgets import PlayingCardFace, card_color
+    from regicide.campaign.mercenaries import MERCENARIES
+    for merc in MERCENARIES:
+        popup = _merc_card(app, merc["id"])
+        face = ui.find(popup, lambda v: isinstance(v, PlayingCardFace))[0]
+        assert merc["name"] in _texts(face) and any("Cost: %d coin" % merc["cost"] in t for t in _texts(face))
+        if merc["id"] == "merc_ace_1":
+            # the Wild Animal: all four class icons, its rank alone in the corner, a neutral edge
+            assert _texts(face)[:4] == ["♥", "♦", "♣", "♠"] and [t for t, _ in face.corner] == ["A"]
+            assert face.edge == card_color(P.to_card(merc["card"])) and any("Wild Animal" in t for t in _texts(face))
+        ui.tap(app, 4, app.height - 4)                  # a tap beside the card closes it
+        assert not ui.find(app, lambda v: isinstance(v, CardPopup))
     # a Jester costs 5: its card says so and Hire is off
     popup = _merc_card(app, "merc_jester_1")
-    assert not ui.find(popup, lambda v: isinstance(v, ui.Button) and v.title == "Hire for 5 coins" and v.enabled)
+    hire = [v for v in ui.find(popup, lambda v: isinstance(v, ui.Button)) if v.title == "Hire for 5 coins"]
+    assert len(hire) == 1 and not hire[0].enabled
+    ui.tap(app, *ui.root_point(app, hire[0]))
+    assert app.campaign.mercenaries == [] and app.campaign.coins == 1
     assert any("not enough coins (1)" in t for t in _texts(popup))
+    # a tap on the card, or in the gap above its buttons, leaves it open
+    face = popup.face
+    ui.tap(app, *ui.root_point(app, face))
+    ui.tap(app, face.x + 20, face.y + face.height + 6)
+    assert ui.find(app, lambda v: isinstance(v, CardPopup))
     _tap_button(app, "Close")
     assert not ui.find(app, lambda v: isinstance(v, CardPopup))
     popup = _merc_card(app, "merc_12H")
@@ -288,10 +309,19 @@ def test_campaign_loss_opens_mercenary_camp(app):
     _tap_button(app, "Swap")
     ms = app.current
     assert ms.swapping == "merc_12H" and ui.button(app, "Cancel")
+    # only the mercenaries that can be taken have the gold border; the others fade
     assert ms.card_views["merc_12D"].selected and not ms.card_views["merc_19_1"].selected
+    assert not ms.card_views["merc_12H"].selected and ms.card_views["merc_12H"].badge == "swap"
+    assert ms.card_views["merc_19_1"].alpha < 1 and ms.card_views["merc_25D"].alpha == 1
     # cancel returns to the camp with nothing changed
     _tap_button(app, "Cancel")
     assert app.campaign.mercenaries == ["merc_12H"] and app.current.swapping is None
+    # so does a tap on the card being swapped
+    popup = _merc_card(app, "merc_12H")
+    assert "Hired · until mission 1 is won" in _texts(popup)
+    _tap_button(app, "Swap")
+    ui.tap(app, *ui.root_point(app, app.current.card_views["merc_12H"]))
+    assert app.current.swapping is None and not ui.find(app, lambda v: isinstance(v, CardPopup))
     _merc_card(app, "merc_12H")
     _tap_button(app, "Swap")
     # a mercenary of another cost cannot be taken
@@ -1404,6 +1434,20 @@ def test_evergreen_screen_draw_redraw_options_mercenaries_start_and_continue(app
     assert any(x.startswith("M") and g.cards[x].has("mercenary") for x in g.cards) and len(g.discard) == 30
     assert not gs.zone.hidden and gs.zone.title.startswith("Mission zone (the Shrine)")
     assert camp.evergreen["attempts"] == 1 and ui.render(app).size[0] > 0
+    # the rules card names the drawn setup, E in its corner
+    from app.screens import PartyScreen, rules_card
+    from app.widgets import CardView
+    from app import theme as T
+    head, subtitle, body, corner = rules_card(camp, g)
+    setup = camp.evergreen_setup()
+    assert head == "Evergreen mission: the %s" % setup["location"]["name"] and corner == [("E", T.CARD_INK_MUTED)]
+    assert all(("Bane %d, %s" % (b["n"], b["name"])) in body for b in setup["banes"])
+    assert all(("Boon %d, %s" % (b["n"], b["name"])) in body for b in setup["boons"])
+    # the deck list shows boon 24's mercenary; hiring waits while the attempt runs
+    app.show(PartyScreen(app))
+    assert any(v.card.id == "M12H" for v in ui.find(app, lambda v: isinstance(v, CardView)))
+    b = [v for v in ui.find(app, lambda v: isinstance(v, ui.Button)) if v.title.startswith("Mercenaries")]
+    assert [v.title for v in b] == ["Mercenaries (after this attempt)"] and not b[0].enabled
     # continue from both menus
     app.show(CampaignScreen(app))
     assert ui.button(app, "Continue attempt")

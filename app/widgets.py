@@ -268,9 +268,18 @@ class CardView(ui.View):
         col = card_color(c)
         if c.is_jester:
             jw = w - self.coin_room()      # a mercenary Jester's coins take the right edge
-            ui.draw_string("J", (ox, oy + h * 0.12, jw, h * 0.4), (T.FONT_BOLD, h * 0.34), col, ui.ALIGN_CENTER)
-            ui.draw_string("JESTER", (ox, oy + h * 0.62, jw, h * 0.3), (T.FONT_BOLD, max(8, min(h * 0.12, jw * 0.16))), col,
-                           ui.ALIGN_CENTER)
+            band = ((max(9.0, h * 0.24) if self.small else max(12.0, h * 0.13)) if self.badge else 0.0)
+            hh = h - band                  # a tag ("swap", "flute") takes a band along the bottom
+            ui.draw_string("J", (ox, oy + hh * 0.12, jw, hh * 0.4), (T.FONT_BOLD, hh * 0.34), col, ui.ALIGN_CENTER)
+            ui.draw_string("JESTER", (ox, oy + hh * 0.62, jw, hh * 0.3), (T.FONT_BOLD, max(8, min(hh * 0.12, jw * 0.16))),
+                           col, ui.ALIGN_CENTER)
+            if self.badge:
+                text = str(self.badge)
+                fs = max(7.0, min(band * 0.62, (w - 2) / (0.62 * max(1, len(text)))))
+                ui.set_color(T.ACCENT)
+                ui.Path.rounded_rect(ox + 1, oy + h - band - 1, w - 2, band, 3).fill()
+                ui.draw_string(text, (ox + 1, oy + h - band - 1 + (band - fs * 1.2) / 2.0, w - 2, fs * 1.3),
+                               (T.FONT_BOLD, fs), T.BG, ui.ALIGN_CENTER)
             return
         # Themeless faces: rank and class like a playing card. A beast is a plain "B" with
         # its class; a classless card (a pilgrim, a 19) shows its rank large in the middle.
@@ -421,6 +430,14 @@ class PlayingCardFace(ui.View):
         self.edge = edge or T.CARD_BORDER
         self.corner = list(corner or [])
         self.background_color = None
+
+    # A tap on the card (its labels pass their touches up to it) stops here: on the phone
+    # an unhandled touch travels on to the pop-up behind, which closes on a tap beside the card.
+    def touch_began(self, touch) -> None:
+        pass
+
+    def touch_ended(self, touch) -> None:
+        pass
 
     def draw(self) -> None:
         w, h = self.width, self.height

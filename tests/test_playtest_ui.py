@@ -89,6 +89,9 @@ def test_rules_card_shows_once_when_a_mission_first_loads_and_from_the_menus(app
     assert ui.render(app).size[0] > 0
     _tap(app, "Got it")
     assert not ui.find(app, lambda v: isinstance(v, CardPopup)) and isinstance(app.current, CampaignScreen)
+    _tap(app, "Mission rules")
+    ui.tap(app, 4, app.height - 4)
+    assert not ui.find(app, lambda v: isinstance(v, CardPopup))
 
 
 def test_the_rules_card_setting_turns_the_pop_up_off(app):
@@ -237,6 +240,58 @@ def test_deck_list_beasts_follow_the_setup_rules(app):
     assert camp.beast == "B_H" and ps.beast_views["B_H"].selected
 
 
+@pytest.mark.parametrize("step, title", [
+    ({"kind": "choice_suit", "suit": "G", "options": ["8H", "8D", "8C"], "label": "Guardian sticker"}, "a Guardian sticker"),
+    ({"kind": "choice_mage_student", "options": ["4", "8"], "label": "A new student"}, "a new mage"),
+    ({"kind": "choice_corrupt", "options": ["5H"], "label": "Corrupt a character"}, "corruption"),
+    ({"kind": "choice_rip", "options": ["5H"], "label": "The Eternal Vine"}, "the Eternal Vine"),
+    ({"kind": "choice_classes", "cards": ["5H", "6D"], "label": "Class stickers"}, "class stickers"),
+])
+def test_every_reward_kind_opens_a_playing_card_with_its_icon(app, step, title):
+    from app.screens import CampaignScreen, CardPopup, choice_icon
+    _tap(app, "New game")
+    _tap(app, "Start")
+    app.campaign.pending = [dict(step)]
+    app.save_campaign()
+    app.show(CampaignScreen(app))
+    _tap(app, "Reward: %s" % title)
+    popup = ui.find(app, lambda v: isinstance(v, CardPopup))[0]
+    face = ui.find(popup, lambda v: isinstance(v, widgets.PlayingCardFace))[0]
+    assert _texts(face)[0] == choice_icon(step)[0][0] and "Reward" in _texts(face)
+    assert step["label"] in " ".join(_texts(face)) and ui.render(app).size[0] > 0
+    ui.tap(app, 4, app.height - 4)                     # a reward waits for Choose or Later
+    assert ui.find(app, lambda v: isinstance(v, CardPopup))
+
+
+def test_a_fresh_campaigns_deck_list_has_no_beasts_and_no_camp(app):
+    from app.screens import PartyScreen
+    _tap(app, "New game")
+    _tap(app, "Start")
+    app.show(PartyScreen(app))
+    texts = _texts(app)
+    assert not app.current.beast_views and not any(t.startswith("Gøran") for t in texts)
+    assert "Mercenaries" not in texts and not any(t.startswith("Mercenaries") for t in texts)
+    assert not any(b.title.startswith("Mercenary camp") for b in ui.find(app, lambda v: isinstance(v, ui.Button)))
+
+
+def test_the_beast_note_has_room_for_every_text_it_can_show(app):
+    from app.screens import PartyScreen
+    for w in (320, 375, 390, 430):
+        ui.set_screen_size(w, 844)
+        _tap(app, "New game") if not app.campaign else None
+        if app.campaign is None:
+            _tap(app, "Start")
+        camp = app.campaign
+        camp.flags["beasts"] = True
+        camp.set_beast(None)
+        app.show(PartyScreen(app))
+        ps = app.current
+        for bid in ("B_S", "B_S", "B_H"):                 # take, drop, take
+            ui.tap(app, *ui.root_point(app, ps.beast_views[bid]))
+            assert not ui.label_truncated(ps.beast_note), (w, ps.beast_note.text)
+    ui.set_screen_size(390, 844)
+
+
 def test_the_game_menu_names_a_reward_briefly_and_a_card_explains_it(app):
     from app.screens import CampaignScreen, CardPopup, ChoiceScreen
     _tap(app, "New game")
@@ -358,6 +413,60 @@ def test_mercenary_coins_stay_bright_on_a_shaded_card():
         ui.set_color = real_set_color
 
 
+def test_coins_sit_in_the_same_place_on_every_mercenary_below_the_corner_icons():
+    W, H = 86.0, 122.0
+    d, pad = widgets.coin_metrics(W, H)
+    ovals = []
+    real = ui.Path.oval
+    ui.Path.oval = staticmethod(lambda x, y, w, h: (ovals.append((x, y, w, h)), real(x, y, w, h))[1])
+    try:
+        cols = {}
+        for mid, n in (("merc_ace_1", 3), ("merc_jester_1", 5), ("merc_12H", 1), ("merc_19_1", 3), ("merc_25C", 1)):
+            card = [m for m in MERCENARIES if m["id"] == mid][0]["card"]
+            del ovals[:]
+            v = CardView(P.to_card(card), frame=(0, 0, W, H))
+            v.coins, v.shaded = n, True
+            ui.render(v)
+            coins = [o for o in ovals if abs(o[2] - d) < 1e-6]
+            assert len(coins) == n and all(abs(o[0] - (W - pad - d)) < 1e-6 for o in coins), mid
+            cols[mid] = coins
+        first = set(round(c[0][1], 3) for c in cols.values())
+        assert len(first) == 1                                     # the same place on every card
+        top = first.pop()
+        # below the Wild Animal's top-right class icon (its row ends at pad/2 + 0.16 H x 1.3)
+        assert top >= 2.5 + 0.16 * H * 1.3
+        # five coins stay clear of the bottom; the Wild Animal's three end above its ♠ corner
+        assert max(o[1] + o[3] for o in cols["merc_jester_1"]) <= H - pad
+        spade_top = H - 2.5 - 0.16 * H * 1.25
+        assert max(o[1] + o[3] for o in cols["merc_ace_1"]) <= spade_top
+    finally:
+        ui.Path.oval = real
+
+
+def test_a_mercenary_jesters_text_makes_room_for_its_coins():
+    calls = []
+    real = ui.draw_string
+    ui.draw_string = lambda text, rect=None, font=None, color=None, *a, **kw: (calls.append((text, rect)), real(text, rect, font, color, *a, **kw))[1]
+    try:
+        card = [m for m in MERCENARIES if m["id"] == "merc_jester_1"][0]["card"]
+        v = CardView(P.to_card(card), frame=(0, 0, 86, 122))
+        v.coins = 5
+        ui.render(v)
+        widths = dict((t, r[2]) for t, r in calls if t in ("J", "JESTER"))
+        d, pad = widgets.coin_metrics(86, 122)
+        assert widths["J"] == widths["JESTER"] == 86 - v.coin_room() and widths["J"] <= 86 - pad - d
+        del calls[:]
+        v.coins = 0
+        ui.render(v)
+        assert dict((t, r[2]) for t, r in calls if t in ("J", "JESTER"))["J"] == 86
+        del calls[:]
+        v.coins, v.badge = 5, "swap"                                # a tag draws on a Jester too
+        ui.render(v)
+        assert "swap" in [t for t, _ in calls]
+    finally:
+        ui.draw_string = real
+
+
 def test_evergreen_boon_26_shows_all_four_beasts_and_boon_24_hires_from_the_deck_list(app):
     from app.screens import MercenaryScreen, PartyScreen
     _tap(app, "New game")
@@ -375,3 +484,30 @@ def test_evergreen_boon_26_shows_all_four_beasts_and_boon_24_hires_from_the_deck
     _tap(app, "Mercenaries (5 coins left)")
     assert isinstance(app.current, MercenaryScreen) and app.current.evergreen and app.current.back == "deck"
     assert ui.render(app).size[0] > 0
+
+
+def test_hiring_keeps_the_mercenary_camp_scrolled_where_it_was(app):
+    from app.screens import CardPopup, MercenaryScreen
+    ui.set_screen_size(320, 568)
+    try:
+        _tap(app, "New game")
+        _tap(app, "Start")
+        camp = app.campaign
+        camp.m_box_opened, camp.coins = True, 9
+        app.save_campaign()
+        app.frame = (0, 0, 320, 568)                       # a small phone: the grid scrolls
+        app.show(MercenaryScreen(app))
+        ms = app.current
+        room = ms.grid.content_size[1] - ms.grid.height
+        assert room > 60, room
+        ms.grid.content_offset = (0, 60)
+        ui.tap(app, *ui.root_point(app, ms.card_views["merc_jester_1"]))
+        _tap(app, "Hire for 5 coins")
+        assert camp.mercenaries == ["merc_jester_1"] and not ui.find(app, lambda v: isinstance(v, CardPopup))
+        assert ms.grid.content_offset[1] == 60 and ms.card_views["merc_jester_1"].selected
+        # a bigger offset than the grid allows is clamped
+        ms.grid.content_offset = (0, 5000)
+        ms._begin_swap("merc_jester_1")
+        assert 0 <= ms.grid.content_offset[1] <= ms.grid.content_size[1] - ms.grid.height
+    finally:
+        ui.set_screen_size(390, 844)

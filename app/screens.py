@@ -2267,7 +2267,10 @@ class CardPopup(ui.View):
             return
         x, y = touch.location
         f = self.face
-        if f is None or not (f.x <= x <= f.x + f.width and f.y <= y <= f.y + f.height):
+        # the card and the buttons under it, gaps included, count as on the card: a near
+        # miss of a button (or a tap on a greyed-out one) never closes the pop-up
+        bottom = max([f.y + f.height] + [v.y + v.height for v in self.subviews if isinstance(v, ui.Button)]) if f else 0
+        if f is None or not (f.x <= x <= f.x + f.width and f.y <= y <= bottom):
             self.close()
 
     def close(self) -> None:
@@ -2697,6 +2700,7 @@ class MercenaryScreen(Screen):
             return
         from regicide.campaign.mercenaries import MERCENARIES, by_id
         coins, hired = camp._purse(self._scope())
+        offset = getattr(self, "scroll_offset", (0, 0))
         self.add_subview(make_label("Coins: %d" % coins, (m, y, tw, 24), 16, True, T.ACCENT))
         y += 26
         if self.evergreen:
@@ -2733,7 +2737,8 @@ class MercenaryScreen(Screen):
             v.frame = (col * (cw + gap), r * (ch + gap), cw, ch)
             v.coins = int(merc["cost"])
             v.shaded = mid not in hired
-            v.selected = mid in hired or mid in candidates
+            # gold border: the hired mercenaries, or while swapping only the ones that can be taken
+            v.selected = (mid in candidates) if self.swapping is not None else (mid in hired)
             if self.swapping is not None and mid != self.swapping and mid not in candidates:
                 v.alpha = 0.4
             if mid == self.swapping:
@@ -2741,7 +2746,11 @@ class MercenaryScreen(Screen):
             sv.add_subview(v)
             self.card_views[mid] = v
         rows = (len(MERCENARIES) + cols - 1) // cols
-        sv.content_size = (tw, rows * (ch + gap) + 20)
+        content_h = rows * (ch + gap) + 20
+        sv.content_size = (tw, content_h)
+        # a hire or a swap rebuilds the grid: keep the cards where they were on screen
+        sv.content_offset = (0, max(0.0, min(float(offset[1]), content_h - sv.height)))
+        self.grid = sv
         self.add_subview(sv)
 
     def _tapped(self, mid: str) -> None:
@@ -2755,6 +2764,8 @@ class MercenaryScreen(Screen):
         merc = by_id(mid)
         card = P.to_card(merc["card"])
         icon, corner = mercenary_icon(card)
+        from .widgets import card_color
+        edge = card_color(card)          # the card's own colour (a Wild Animal's is neutral)
         cost = int(merc["cost"])
         text = mercenary_text(merc, card, self.evergreen)
         close = lambda s: popup.close()  # noqa: E731
@@ -2780,10 +2791,18 @@ class MercenaryScreen(Screen):
             buttons = [("Hire for %d coin%s" % (cost, "" if cost == 1 else "s"), lambda s: self._hire(mid), True, afford),
                        ("Close", close, False)]
             subtitle = "In the box" if afford else "In the box · not enough coins (%d)" % coins
-        popup = CardPopup(str(merc["name"]), text, buttons, icon=icon, corner=corner, subtitle=subtitle, dismissable=True)
+        popup = CardPopup(str(merc["name"]), text, buttons, icon=icon, edge=edge, corner=corner, subtitle=subtitle,
+                          dismissable=True)
         show_card_popup(self, popup)
 
+    def _keep_scroll(self) -> None:
+        """Remember the grid's scroll position before the screen is rebuilt."""
+        grid = getattr(self, "grid", None)
+        if grid is not None:
+            self.scroll_offset = tuple(grid.content_offset)
+
     def _hire(self, mid: str) -> None:
+        self._keep_scroll()
         try:
             self.app.campaign.hire(mid, self._scope())
         except ValueError as e:
@@ -2794,14 +2813,17 @@ class MercenaryScreen(Screen):
         self.layout()
 
     def _begin_swap(self, mid: str) -> None:
+        self._keep_scroll()
         self.swapping = mid
         self.layout()
 
     def _cancel_swap(self) -> None:
+        self._keep_scroll()
         self.swapping = None
         self.layout()
 
     def _swap(self, new_id: str) -> None:
+        self._keep_scroll()
         try:
             self.app.campaign.swap(self.swapping, new_id)
         except ValueError as e:
@@ -3168,8 +3190,11 @@ class PartyScreen(Screen):
                     yy = card_row([P.to_card(merc_by_id(mid)["card"]) for mid in mercs], yy)
                 if boon24:
                     coins = int((camp.evergreen or {}).get("coins", 0))
-                    b = make_button("Mercenaries (%d coin%s left)" % (coins, "" if coins == 1 else "s"),
-                                    lambda s: app.show(MercenaryScreen(app, evergreen=True)), ((tw - bw) / 2, yy, bw, 44), False)
+                    title = ("Mercenaries (%d coin%s left)" % (coins, "" if coins == 1 else "s") if not in_progress
+                             else "Mercenaries (after this attempt)")
+                    b = make_button(title, lambda s: app.show(MercenaryScreen(app, evergreen=True)),
+                                    ((tw - bw) / 2, yy, bw, 44), False)
+                    fit_title(b)
                     set_enabled(b, not in_progress, False)
                     sv.add_subview(b)
                     yy += 52
@@ -3208,7 +3233,10 @@ class PartyScreen(Screen):
                 for v in shown:
                     v.selected = v.card.id == camp.beast
                     self.beast_views[v.card.id] = v
-                self.beast_note = fit_label(self._beast_text(in_progress), tw, 12, False, T.MUTED, ui.ALIGN_LEFT)
+                # sized for its longest text: a tap changes it in place, nothing below moves
+                tallest = max(text_size(t, tw, 12)[1] for t in self._beast_texts(in_progress))
+                self.beast_note = fit_label(self._beast_text(in_progress), tw, 12, False, T.MUTED, ui.ALIGN_LEFT,
+                                            float(tallest) + 4)
                 self.beast_note.frame = (0, yy, tw, self.beast_note.height)
                 sv.add_subview(self.beast_note)
                 yy += self.beast_note.height + 6
@@ -3218,10 +3246,16 @@ class PartyScreen(Screen):
         sv.content_size = (tw, yy + 20)
         self.add_subview(sv)
 
-    def _beast_text(self, in_progress: bool) -> str:
+    def _beast_texts(self, in_progress: bool) -> List[str]:
+        """Every text the beast note can show (with each beast chosen, and with none)."""
+        from regicide.campaign import missions as M
+        return [self._beast_text(in_progress, b["id"]) for b in M.BEASTS] + [self._beast_text(in_progress, "")]
+
+    def _beast_text(self, in_progress: bool, beast_id: Optional[str] = None) -> str:
         from regicide.campaign import missions as M
         camp = self.app.campaign
-        beast = M.beast_by_id(camp.beast) if camp.beast else None
+        bid = camp.beast if beast_id is None else beast_id
+        beast = M.beast_by_id(bid) if bid else None
         chosen = P.to_card(dict(beast)).label() if beast is not None else ""
         if in_progress:
             return ("%s is in this attempt's reserve; change it after the attempt." % chosen if chosen
