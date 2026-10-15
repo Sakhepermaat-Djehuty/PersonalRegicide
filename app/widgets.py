@@ -144,6 +144,7 @@ def draw_tree(x: float, y: float, w: float, h: float, color: str) -> None:
 # "classic" lays numbered cards out like playing cards (a 7 shows seven icons, the number
 # and icon in two corners, the lower half turned) and gives a royal a big letter.
 FACE_STYLE = "simple"
+CLASSIC_MIN_WIDTH = 54.0   # narrower cards (a 320-pt phone's hand) keep the simple face: too small to read
 
 # pip positions (x, y in 0..1 of the pip area), the standard playing-card layouts
 _PL, _PR = 0.18, 0.82
@@ -363,7 +364,8 @@ class CardView(ui.View):
         suits = list(c.suits)
         pips = face_pips(c)
         caption = card_caption(c)
-        kind = classic_kind(c) if (FACE_STYLE == "classic" and not self.small) else ""
+        kind = (classic_kind(c) if (FACE_STYLE == "classic" and not self.small and W >= CLASSIC_MIN_WIDTH)
+                else "")
         if kind:
             self._draw_classic(c, kind, rank, pips, col, ox, oy, w, h)
             return
@@ -425,7 +427,7 @@ class CardView(ui.View):
         a royal. A tag ("stuck", "flute") takes a band along the bottom as on the simple face."""
         band = max(12.0, h * 0.13) if self.badge else 0.0
         hh = h - band
-        iw = w * 0.3                                  # the corner index's column
+        iw = w * (0.22 if kind == "royal" else 0.3)   # the corner index's column (a royal's letter is narrow)
         rs = w * (0.2 if len(rank) > 1 else 0.23)     # its rank (a 10 a little smaller)
         ps = w * 0.17                                 # its class icons
         icons = pips[:3]
@@ -435,21 +437,26 @@ class CardView(ui.View):
             for i, s in enumerate(icons):
                 draw_symbol(s, x + iw / 2.0, y + w * 0.04 + rs * 1.2 + ps * 0.62 + i * ps * 1.05, ps, col)
 
-        index(ox, oy)
+        pad = max(2.0, w * 0.04)                      # clear of the card's border and the selection's
+        index(ox + pad, oy)
         tall = w * 0.04 + rs * 1.2 + ps * 1.05 * len(icons) + ps * 0.2
-        with turned(ox + w - iw / 2.0, oy + hh - tall / 2.0) as ok:
+        with turned(ox + w - pad - iw / 2.0, oy + hh - tall / 2.0) as ok:
             if ok:
                 index(-iw / 2.0, -tall / 2.0)
             else:
-                index(ox + w - iw, oy + hh - tall)
+                index(ox + w - pad - iw, oy + hh - tall)
         if kind == "royal":
-            frame = ui.Path.rounded_rect(ox + w * 0.22, oy + hh * 0.16, w * 0.56, hh * 0.68, 4)
+            # the frame between the two corner columns, the letter and the royal's value in it
+            fx, fw = ox + pad + iw + 1, w - 2 * (pad + iw + 1)
+            frame = ui.Path.rounded_rect(fx, oy + hh * 0.12, fw, hh * 0.76, 4)
             frame.line_width = 1
             ui.set_color(col)
             frame.stroke()
-            size = min(w * 0.5, hh * 0.5)
-            ui.draw_string(rank, (ox, oy + hh / 2.0 - size * 0.65, w, size * 1.3), (T.FONT_BOLD, size), col,
+            size = min(fw * 0.8, hh * 0.42)
+            ui.draw_string(rank, (fx, oy + hh * 0.44 - size * 0.65, fw, size * 1.3), (T.FONT_BOLD, size), col,
                            ui.ALIGN_CENTER)
+            vs = max(8.0, hh * 0.09)
+            ui.draw_string("%d" % c.value, (fx, oy + hh * 0.7, fw, vs * 1.3), (T.FONT_BOLD, vs), col, ui.ALIGN_CENTER)
         else:
             sym = pips[0] if pips else ""
             n = 1 if rank == "A" else int(rank)
@@ -808,9 +815,12 @@ class HandGrid(ui.View):
         self.set_selection([])
 
     def refresh_dim(self) -> None:
+        # only the cards whose state changes are redrawn (every tap comes through here)
         for c, v in ((c, self.views[c.id]) for c in self.cards):
-            v.dimmed = not self.selectable(c)
-            v.set_needs_display()
+            dim = not self.selectable(c)
+            if v.dimmed != dim:
+                v.dimmed = dim
+                v.set_needs_display()
 
 
 class CardStrip(ui.View):

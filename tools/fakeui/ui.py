@@ -150,7 +150,7 @@ class _Ctx:
         self.clip = clip
         self.color = (0, 0, 0, 255)
         self.ctm = Transform()      # the view's user space -> its own coordinates (concat_ctm)
-        self.saved: List[Transform] = []
+        self.saved: List[tuple] = []  # GState: (transform, colour)
 
 
 _ctx_stack: List[_Ctx] = []
@@ -304,10 +304,12 @@ def _draw_string_turned(c, text, rect, font, color, alignment, line_break_mode) 
     current transform's angle and pasted where the rect's centre lands."""
     import math
     x, y, w, h = rect
+    mw, mh = measure_string(text, 0, font)
     if not w or not h:
-        w = w or measure_string(text, 0, font)[0]
-        h = h or measure_string(text, 0, font)[1]
-    pad = 4
+        w = w or mw
+        h = h or mh
+    # room for text wider or taller than its rect, which the phone draws past the rect too
+    pad = 4 + int(math.ceil(max(0.0, mw - w, mh - h) * SCALE))
     W, H = int(math.ceil(w * SCALE)) + 2 * pad, int(math.ceil(h * SCALE)) + 2 * pad
     scratch = PILImage.new("RGBA", (W, H), (0, 0, 0, 0))
     sc = _Ctx(scratch, ImageDraw.Draw(scratch), pad / float(SCALE), pad / float(SCALE), (0, 0, w, h))
@@ -351,12 +353,15 @@ class GState:
 
     def __enter__(self):
         c = _ctx()
-        c.saved.append(c.ctm)
+        c.saved.append((c.ctm, c.color))
         return self
 
     def __exit__(self, *a):
         c = _ctx()
-        c.ctm = c.saved.pop() if c.saved else Transform()
+        if c.saved:
+            c.ctm, c.color = c.saved.pop()
+        else:
+            c.ctm = Transform()
         return False
 
 

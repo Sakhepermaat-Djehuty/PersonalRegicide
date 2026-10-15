@@ -917,7 +917,8 @@ def test_classic_card_faces_lay_numbered_cards_out_like_playing_cards(app):
         assert [c for c in calls if c[0] == "♠" and abs(c[2][1] - 43) < 0.01]
         del calls[:]
         ui.render(CardView(card({"id": "KH", "rank": "K", "suits": ["H"], "value": 20}), frame=(0, 0, 86, 122)))
-        assert [c for c in calls if c[0] == "K" and c[2][1] >= 40]
+        corner = max(c[2][1] for c in calls if c[0] == "K" and c[1][2] < 30)
+        assert [c for c in calls if c[0] == "K" and c[2][1] > corner * 1.3]   # a big K in the middle
         # small cards (the deck list's rows) and cards above 10 keep the simple face
         small = CardView(card({"id": "7H", "rank": "7", "suits": ["H"], "value": 7}), frame=(0, 0, 50, 71))
         small.small = True
@@ -955,3 +956,62 @@ def test_the_classic_faces_setting(app, tmp_path):
         assert widgets.FACE_STYLE == "simple"
     finally:
         widgets.FACE_STYLE = "simple"
+
+
+def test_classic_faces_review_fixes():
+    calls = []
+    real = ui.draw_string
+    ui.draw_string = lambda text, rect=None, font=None, color=None, *a, **kw: (calls.append((text, rect)), real(text, rect, font, color, *a, **kw))[1]
+    card = lambda d: P.to_card(dict(d, flags=d.get("flags", [])))   # noqa: E731
+    widgets.FACE_STYLE = "classic"
+    try:
+        seven = card({"id": "7H", "rank": "7", "suits": ["H"], "value": 7})
+        # a hand card on a 320-pt phone (about 41 pt wide) keeps the simple face
+        ui.render(CardView(seven, frame=(0, 0, 41.5, 59)))
+        assert [t for t, _ in calls].count("♥") == 2
+        del calls[:]
+        ui.render(CardView(seven, frame=(0, 0, 86, 122)))
+        assert [t for t, _ in calls].count("♥") == 9
+        # a royal: its value printed, its letter inside a frame clear of the corner columns
+        del calls[:]
+        ui.render(CardView(card({"id": "QD", "rank": "Q", "suits": ["D"], "value": 15}), frame=(0, 0, 86, 122)))
+        assert "15" in [t for t, _ in calls]
+        iw = 86 * 0.22
+        corner_q = [r for t, r in calls if t == "Q" and abs(r[2] - iw) < 0.01]
+        big_q = [r for t, r in calls if t == "Q" and abs(r[2] - iw) >= 0.01]
+        assert len(corner_q) == 2 and len(big_q) == 1
+        assert big_q[0][0] >= max(2.0, 86 * 0.04) + iw          # the letter's box starts right of the corner column
+        assert big_q[0][0] + big_q[0][2] <= 86 - max(2.0, 86 * 0.04) - iw
+        # the top-left corner index sits inside the card's border (the turned one is drawn
+        # about its own centre, in turned coordinates)
+        assert [r for r in corner_q if r[0] >= 0][0][0] >= 2.0
+    finally:
+        ui.draw_string = real
+        widgets.FACE_STYLE = "simple"
+
+
+def test_a_tap_redraws_only_the_cards_that_change():
+    from app.widgets import HandGrid
+    from regicide.cards import Card
+    grid = HandGrid(frame=(0, 0, 360, 300))
+    cards = [P.to_card({"id": "%dH" % v, "rank": str(v), "suits": ["H"], "value": v, "flags": []}) for v in (2, 3, 4)]
+    grid.set_cards(cards)
+    redrawn = []
+    for v in grid.views.values():
+        v.set_needs_display = (lambda cid: lambda: redrawn.append(cid))(v.card.id)
+    grid.refresh_dim()
+    assert redrawn == []                                   # nothing changed: nothing redrawn
+    grid.selectable = lambda c: c.id != "3H"
+    grid.refresh_dim()
+    assert redrawn == ["3H"] and grid.views["3H"].dimmed
+
+
+def test_the_test_ui_gstate_restores_the_colour_too():
+    class V(ui.View):
+        def draw(self):
+            ui.set_color("red")
+            with ui.GState():
+                ui.set_color("blue")
+            ui.Path.rect(0, 0, 10, 10).fill()
+    img = ui.render(V(frame=(0, 0, 20, 20)))
+    assert img.getpixel((5, 5))[:3] == (255, 0, 0)
