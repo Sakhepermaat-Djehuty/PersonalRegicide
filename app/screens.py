@@ -600,8 +600,9 @@ class GameScreen(Screen):
         below = self.app.settings.get("played_below", True)
         strip_h = 64
         zone = not self.zone.hidden
-        # on a short screen the mission zone and the played cards share a row
-        shared = zone and h < 760
+        # on a short screen the mission zone and the played cards share a row (when the
+        # zone's title still fits in two lines at half the width)
+        shared = self._strips_shared()
         full = w - 2 * m
 
         def strips(top: float) -> None:
@@ -637,6 +638,14 @@ class GameScreen(Screen):
             if hasattr(self.overlay, "layout"):
                 self.overlay.layout()
 
+    def _strips_shared(self) -> bool:
+        """Do the mission zone and the played cards share a row (a short screen)?"""
+        if self.zone.hidden or self.height >= 760:
+            return False
+        half = (self.width - 2 * T.MARGIN - 8) / 2.0
+        _, th = text_size(self.zone.title, max(1.0, half - 8), CardStrip.TITLE_FONT)
+        return th <= CardStrip.LINE * 2.4
+
     def on_show(self) -> None:
         self.refresh(after_action=False)
 
@@ -652,8 +661,13 @@ class GameScreen(Screen):
         self.hand.warned = set()
         self.hand.can_start = lambda c: False
         uses_zone = bool(g.mission_zone) or getattr(g.rules, "uses_mission_zone", False)
-        if uses_zone != (not self.zone.hidden):
-            self.zone.hidden = not uses_zone
+        before = (self.zone.hidden, self._strips_shared())
+        self.zone.hidden = not uses_zone
+        if uses_zone:
+            zone_cards, title = zone_caption(g)
+            self.zone.set_cards(zone_cards, title)
+            self.zone.set_needs_display()
+        if (self.zone.hidden, self._strips_shared()) != before:
             self.layout()
         # in the order the cards entered play (the clean-up's default order); beside the
         # mission zone on a short screen, a short title
@@ -663,10 +677,6 @@ class GameScreen(Screen):
             title = "Played"
         self.strip.set_cards(played, title)
         self.strip.set_needs_display()
-        if uses_zone:
-            zone_cards, title = zone_caption(g)
-            self.zone.set_cards(zone_cards, title)
-            self.zone.set_needs_display()
         if g.is_over:
             self._table_under_box(None if self._hand_hidden() else self.shown_player)
             if self.app.in_campaign:
@@ -824,15 +834,17 @@ class GameScreen(Screen):
         warn, paying = False, None
         if g.phase == PHASE_PLAY:
             # Greyed: a card that no legal play has together with the cards selected so far.
-            # A card the solo Kinfolk Flute stores only joins a kinfolk set already begun.
-            # A greyed card that is a legal play on its own starts a new selection.
+            # A card the solo Kinfolk Flute stores only joins a kinfolk set already begun,
+            # unless the flute's cards make a set on their own. A greyed card that is a
+            # legal play on its own (or begins such a flute set) starts a new selection.
             hand_ids = set(g.active_player.hand)
             plays = [set(p) for p in g.legal_plays()]
             chosen = set(sel)
             fits = [p for p in plays if chosen <= p]
+            flute_only = set(c for p in plays if not (p & hand_ids) for c in p)
             self.hand.selectable = lambda c: c.id in chosen or (
-                (c.id in hand_ids or bool(chosen)) and any(c.id in p for p in fits))
-            self.hand.can_start = lambda c: c.id in hand_ids and set([c.id]) in plays
+                (c.id in hand_ids or bool(chosen) or c.id in flute_only) and any(c.id in p for p in fits))
+            self.hand.can_start = lambda c: set([c.id]) in plays or c.id in flute_only
             self.left_btn.title = "Yield"
             set_enabled(self.left_btn, g.can_yield(), False)
             if g.n_players == 1:
@@ -3840,6 +3852,9 @@ def describe_preview(g: Game, pv: dict) -> str:
             to_deck = g.enemy is not None and g.rules.defeat_plan(g, True).get("enemy_to") == "tavern_top"
             tail = " exactly!" + (" (goes to the %s)" % ("reserve" if legacy else "tavern") if to_deck else "")
         s += " — defeats it%s" % tail
+    elif pv.get("phase_after") in (PHASE_PLAY, PHASE_CHOOSE_NEXT):
+        # no damage to suffer this turn (a Guardian's power, a shield that covers it all)
+        s += " (%d left), nothing to suffer" % pv["enemy_hp_after"]
     else:
         s += " (%d left), then suffer %d" % (pv["enemy_hp_after"], pv["enemy_attack_after"])
     if parts:

@@ -754,8 +754,11 @@ class TableHeader(ui.View):
                 note, note_col = "covered", T.OK
             elif paid:
                 note = "%d to go" % (need - paid)
-        elif pv and not pv.get("defeats") and pv.get("enemy_attack_after", atk) != atk:
-            note = "→ %d" % pv["enemy_attack_after"]
+        elif pv and not pv.get("defeats"):
+            # what is left to suffer: nothing when the turn ends without it (a Guardian)
+            after = 0 if pv.get("phase_after") in ("play", "choose_next") else pv.get("enemy_attack_after", atk)
+            if after != atk:
+                note = "→ %d" % after
         block(0, label, "%d" % atk, T.TEXT, note, note_col, extra)
         # the health: what is left, and with the selection what would be
         hp = max(0, e.hp)

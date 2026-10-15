@@ -217,3 +217,92 @@ def test_the_played_cards_sit_under_the_hand_and_everything_fits(app, size):
     gs.layout()
     assert strip.y + strip.height <= hand.y
     assert ui.render(app).size[0] > 0
+
+
+def _drawn_text(view):
+    """The strings a view draws."""
+    calls = []
+    real = ui.draw_string
+
+    def spy(text, rect=(0, 0, 0, 0), font=None, *a, **k):
+        calls.append(str(text))
+    ui.draw_string = spy
+    try:
+        ui.render(view)
+    finally:
+        ui.draw_string = real
+    return calls
+
+
+def test_a_set_made_only_of_flute_cards_can_be_tapped_even_with_an_empty_hand(app):
+    gs, g = _flute_mission(app)
+    set_hand(g, ["9D", "7C", "8S"])
+    for c in ("3C", "3H"):
+        _pull(g, c)
+    g.extra["flute"] = ["3C", "3H"]
+    gs.refresh(after_action=False)
+    assert ["3C", "3H"] in g.legal_plays()
+    assert not gs.hand.views["3C"].shaded
+    gs.hand._tapped(gs.hand.views["3C"])
+    assert gs.hand.selected == ["3C"] and not gs.hand.views["3H"].shaded
+    gs.hand._tapped(gs.hand.views["3H"])
+    assert gs.hand.selected == ["3C", "3H"] and gs.right_btn.enabled
+    # with no hand card left the flute pair is the only play: it must stay reachable
+    set_hand(g, [])
+    g.solo_jesters = 0
+    gs.refresh(after_action=False)
+    gs.hand._tapped(gs.hand.views["3C"])
+    gs.hand._tapped(gs.hand.views["3H"])
+    assert gs.hand.selected == ["3C", "3H"] and gs.right_btn.enabled
+
+
+def test_a_guardian_play_shows_nothing_left_to_suffer(app):
+    from app.screens import describe_preview
+    app.new_campaign(1, ["Solo"])
+    camp = app.campaign
+    camp.mission, camp.completed = 6, list(range(1, 6))
+    P.add_card(camp.party, dict(M.GORAN))
+    camp.flags["beasts"] = True
+    for d in list(M.MAGE_DECK) + list(M.GUARDIANS):
+        if P.find(camp.party, str(d["id"])) is None:
+            P.add_card(camp.party, dict(d))
+    app.save_campaign()
+    app.start_attempt()
+    g, gs = app.game, app.current
+    while g.decision is not None:
+        g.decide(g.legal_actions()[0])
+    set_hand(g, ["3G", "9D", "4C"])
+    g.mission_zone[:] = []
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["3G"])
+    pv = gs.enemy.projection
+    assert pv["phase_after"] == PHASE_PLAY and g.enemy_attack > 0
+    assert "→ 0" in _drawn_text(gs.enemy)
+    assert "nothing to suffer" in describe_preview(g, pv) and "then suffer" not in gs.forecast
+    gs.hand.set_selection(["9D"])                        # an ordinary play: the attack still comes
+    assert "then suffer %d" % g.enemy_attack in gs.forecast
+
+
+def test_a_short_screen_shares_the_row_only_when_the_zone_title_fits(app):
+    from app.screens import GameScreen
+    from app.widgets import CardStrip, text_size
+    ui.set_screen_size(375, 667)
+    gs, g = _flute_mission(app, 7)
+    app.frame = gs.frame = (0, 0, 375, 667)
+    gs.layout()
+    gs.refresh(after_action=False)
+    zone, strip = gs.zone, gs.strip
+    lines = text_size(zone.title, zone.width - 8, CardStrip.TITLE_FONT)[1]
+    assert lines <= CardStrip.LINE * 2.4                # whatever the layout, the title fits
+    if gs._strips_shared():
+        assert zone.y == strip.y
+    else:
+        assert zone.y + zone.height <= gs.message.y and zone.width > strip.width / 2
+    # a long title at half width stacks the zone above the message, a short one shares
+    long_title = "Mission zone · 1 pilgrim, total 3 · 23 in the pilgrim deck"
+    zone.set_cards([], long_title)
+    gs.layout()
+    assert not gs._strips_shared() and zone.y + zone.height <= gs.message.y
+    zone.set_cards([], "Mission zone (empty)")
+    gs.layout()
+    assert gs._strips_shared() and zone.y == strip.y
