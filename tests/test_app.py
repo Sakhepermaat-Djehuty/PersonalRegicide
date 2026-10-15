@@ -241,7 +241,22 @@ def test_campaign_flow_win_then_mission2(app):
     assert any(v.badge == "flute" for v in gs.hand.views.values())
 
 
+def _texts(view):
+    return [v.text for v in ui.find(view, lambda v: isinstance(v, ui.Label))]
+
+
+def _merc_card(app, mid):
+    """Tap a mercenary's card in the camp; returns its card pop-up."""
+    from app.screens import CardPopup
+    v = app.current.card_views[mid]
+    ui.tap(app, *ui.root_point(app, v))
+    popups = ui.find(app, lambda x: isinstance(x, CardPopup))
+    assert len(popups) == 1
+    return popups[0]
+
+
 def test_campaign_loss_opens_mercenary_camp(app):
+    from app.screens import CardPopup, MercenaryScreen
     app.new_campaign(1, ["Solo"])
     app.start_attempt()
     gs = _game_screen(app)
@@ -249,25 +264,42 @@ def test_campaign_loss_opens_mercenary_camp(app):
     gs.refresh(after_action=False)
     assert app.campaign.coins == 1 and app.campaign.m_box_opened
     _tap_button(app, "Mercenary camp")
-    hires = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Hire" and v.enabled)]
-    assert hires
-    ui.tap(app, *ui.root_point(app, hires[0]))
-    assert len(app.campaign.mercenaries) == 1 and app.campaign.coins == 0
-    hired = app.campaign.mercenaries[0]
+    ms = app.current
+    assert isinstance(ms, MercenaryScreen) and len(ms.card_views) == 14
+    # every mercenary is a card, shaded while in the box, with its cost in coins
+    assert all(v.shaded and not v.selected for v in ms.card_views.values())
+    assert [ms.card_views[m].coins for m in ("merc_12H", "merc_25D", "merc_19_1", "merc_ace_1", "merc_jester_1")] == [1, 1, 3, 3, 5]
+    assert ui.render(app).size[0] > 0
+    # a Jester costs 5: its card says so and Hire is off
+    popup = _merc_card(app, "merc_jester_1")
+    assert not ui.find(popup, lambda v: isinstance(v, ui.Button) and v.title == "Hire for 5 coins" and v.enabled)
+    assert any("not enough coins (1)" in t for t in _texts(popup))
+    _tap_button(app, "Close")
+    assert not ui.find(app, lambda v: isinstance(v, CardPopup))
+    popup = _merc_card(app, "merc_12H")
+    assert "12 Cleric" in _texts(popup) and any("Cost: 1 coin." in t for t in _texts(popup))
+    assert ui.render(app).size[0] > 0
+    _tap_button(app, "Hire for 1 coin")
+    assert app.campaign.mercenaries == ["merc_12H"] and app.campaign.coins == 0
+    ms = app.current
+    assert not ms.card_views["merc_12H"].shaded and ms.card_views["merc_12H"].selected
     # after a failure the hired mercenary may be swapped for another of the same cost
+    _merc_card(app, "merc_12H")
     _tap_button(app, "Swap")
-    assert ui.button(app, "Cancel")
-    assert not ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Hire")
+    ms = app.current
+    assert ms.swapping == "merc_12H" and ui.button(app, "Cancel")
+    assert ms.card_views["merc_12D"].selected and not ms.card_views["merc_19_1"].selected
     # cancel returns to the camp with nothing changed
     _tap_button(app, "Cancel")
-    assert app.campaign.mercenaries == [hired] and app.current.swapping is None
-    assert ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Hire")
+    assert app.campaign.mercenaries == ["merc_12H"] and app.current.swapping is None
+    _merc_card(app, "merc_12H")
     _tap_button(app, "Swap")
-    takes = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Take")]
-    assert takes
-    ui.tap(app, *ui.root_point(app, takes[0]))
-    assert len(app.campaign.mercenaries) == 1 and app.campaign.mercenaries[0] != hired
-    assert app.campaign.coins == 0
+    # a mercenary of another cost cannot be taken
+    ui.tap(app, *ui.root_point(app, app.current.card_views["merc_19_1"]))
+    assert not ui.find(app, lambda v: isinstance(v, CardPopup)) and app.current.swapping == "merc_12H"
+    _merc_card(app, "merc_25D")
+    _tap_button(app, "Take it in place of 12 Cleric")
+    assert app.campaign.mercenaries == ["merc_25D"] and app.campaign.coins == 0 and app.current.swapping is None
     _tap_button(app, "‹ Back")
     assert ui.button(app, "Retry mission (attempt 2)")
     _tap_button(app, "Retry mission (attempt 2)")
@@ -529,11 +561,17 @@ def test_swap_button_only_when_a_same_cost_alternative_exists(app):
     camp.hire("merc_jester_2")  # both cost-5 mercenaries hired: nothing to swap them for
     camp.hire("merc_12H")
     app.show(MercenaryScreen(app))
-    swaps = ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Swap")
-    assert len(swaps) == 1
+
+    def swaps(mid):
+        popup = _merc_card(app, mid)
+        found = ui.find(popup, lambda v: isinstance(v, ui.Button) and v.title == "Swap")
+        popup.close()
+        return len(found)
+
+    assert swaps("merc_jester_1") == 0 and swaps("merc_12H") == 1
     camp.swaps_allowed = False  # swaps close once an attempt starts
     app.show(MercenaryScreen(app))
-    assert not ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Swap")
+    assert swaps("merc_12H") == 0
 
 
 def test_mission3_zone_strip_and_exact_kill_pick_overlay(app):
@@ -838,10 +876,13 @@ def test_scarlet_whistle_solo_pick_overlay_and_the_beast_choice(app):
     camp.flags["beasts"] = True
     app.save_campaign()
     app.show(CampaignScreen(app))
-    # the campaign screen offers Gøran's beasts for the next attempt
-    assert ui.button(app, "None") and ui.button(app, "♣ Warrior")
-    _tap_button(app, "♣ Warrior")
-    assert camp.beast == "B_C"
+    # the deck list shows Gøran's four beasts: a tap takes one on the next attempt
+    _tap_button(app, "Deck list")
+    ps = app.current
+    assert sorted(ps.beast_views) == ["B_C", "B_D", "B_H", "B_S"] and not any(v.selected for v in ps.beast_views.values())
+    ui.tap(app, *ui.root_point(app, ps.beast_views["B_C"]))
+    assert camp.beast == "B_C" and [b for b, v in ps.beast_views.items() if v.selected] == ["B_C"]
+    _tap_button(app, "‹ Back")
     _tap_button(app, "Next mission: start")
     gs = _game_screen(app)
     g = app.game
@@ -1346,11 +1387,13 @@ def test_evergreen_screen_draw_redraw_options_mercenaries_start_and_continue(app
     app.show(EvergreenScreen(app))
     _tap_button(app, "Mercenaries (5 coins left)")
     assert isinstance(app.current, MercenaryScreen) and app.current.evergreen
-    hires = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Hire" and v.enabled)]
-    assert len(hires) == 14
-    ui.tap(app, *ui.root_point(app, hires[0]))
-    assert camp.evergreen["coins"] == 4 and len(camp.evergreen["mercenaries"]) == 1 and camp.mercenaries == [] and camp.coins == 0
-    assert not ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Swap")
+    assert len(app.current.card_views) == 14 and all(v.shaded for v in app.current.card_views.values())
+    _merc_card(app, "merc_12H")
+    _tap_button(app, "Hire for 1 coin")
+    assert camp.evergreen["coins"] == 4 and camp.evergreen["mercenaries"] == ["merc_12H"] and camp.mercenaries == [] and camp.coins == 0
+    popup = _merc_card(app, "merc_12H")                 # no swaps in Evergreen mode
+    assert not ui.find(popup, lambda v: isinstance(v, ui.Button) and v.title == "Swap")
+    _tap_button(app, "Close")
     _tap_button(app, "‹ Back")
     assert isinstance(app.current, EvergreenScreen) and ui.button(app, "Mercenaries (4 coins left)")
     # start: an Evergreen game with the hired mercenary, saved as the campaign's attempt

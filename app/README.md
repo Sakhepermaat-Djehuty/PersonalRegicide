@@ -18,10 +18,16 @@ modules are used.
 
 Main menu: Continue (last game), Load game (save slots), New game, Quick play (base
 Regicide solo or pass-and-play), Lore (across all games), Settings, Rules, Quit.
-Game menu: Next mission / Retry mission / Continue attempt, Mercenary camp, Mission rules,
-Deck list (relics with what they do, hired mercenaries, the attempt's beast, the party),
-Map, Progress, Lore (this game). A mission's rules card pops up the first time it loads
-(Settings can turn that off) and is in the in-game Menu too.
+Game menu: Next mission / Retry mission / Continue attempt, Mission rules, Deck list, Map,
+Progress, Lore (this game). Deck list: the relics as a row of cards (a tap opens the
+relic's card), the hired mercenaries and the Mercenary camp, Gøran's four beasts (a tap
+chooses the one the next attempt takes, shown with the gold selection border), the party.
+Mercenary camp: every mercenary as a card, shaded while it waits in the box, its cost as
+gold coins down the right side; a tap opens its card to hire it or, after a failure, swap
+it. Card pop-ups (a relic, a mercenary, a reward, the rules card) are drawn like the
+game's playing cards: name and icon on top, the text below. A mission's rules card pops up
+the first time it loads (Settings can turn that off) and is in the in-game Menu and the
+game menu too.
 
 ## What the client offers
 

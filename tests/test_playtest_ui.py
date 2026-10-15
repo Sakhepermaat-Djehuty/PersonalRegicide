@@ -54,7 +54,7 @@ def test_fit_title_never_reuses_the_font_name_ios_returns():
 
 
 def test_rules_card_shows_once_when_a_mission_first_loads_and_from_the_menus(app):
-    from app.screens import GameScreen, RulesOverlay, MissionRulesScreen, CampaignScreen
+    from app.screens import GameScreen, RulesOverlay, CardPopup, CampaignScreen
     _tap(app, "New game")
     _tap(app, "Start")
     camp = app.campaign
@@ -65,6 +65,10 @@ def test_rules_card_shows_once_when_a_mission_first_loads_and_from_the_menus(app
     assert isinstance(gs, GameScreen) and isinstance(gs.overlay, RulesOverlay)
     text = "\n".join(_texts(gs.overlay))
     assert "Mission 1 · Call to Arms" in text and M.MISSIONS[0]["summary"] in text
+    # drawn as a playing card: the mission's name and place on top, the rules below
+    face = ui.find(gs.overlay, lambda v: isinstance(v, widgets.PlayingCardFace))
+    assert len(face) == 1 and face[0].corner == [("1", T.CARD_INK_MUTED)]
+    assert M.MISSIONS[0]["location"] in _texts(face[0])
     assert ui.render(app).size[0] > 0
     _tap(app, "Got it")
     assert gs.overlay is None and gs.mid_btn.title == "Jester attack" and camp.flags["rules_seen"] == [1]
@@ -77,10 +81,14 @@ def test_rules_card_shows_once_when_a_mission_first_loads_and_from_the_menus(app
     app.show(CampaignScreen(app))
     app.start_attempt()
     assert app.current.overlay is None
-    # the game menu has it too, as a screen
+    # the game menu has it too, as the same card over the menu
     app.show(CampaignScreen(app))
     _tap(app, "Mission rules")
-    assert isinstance(app.current, MissionRulesScreen) and any(M.MISSIONS[0]["summary"] in t for t in _texts(app))
+    popups = ui.find(app, lambda v: isinstance(v, CardPopup))
+    assert len(popups) == 1 and any(M.MISSIONS[0]["summary"] in t for t in _texts(popups[0]))
+    assert ui.render(app).size[0] > 0
+    _tap(app, "Got it")
+    assert not ui.find(app, lambda v: isinstance(v, CardPopup)) and isinstance(app.current, CampaignScreen)
 
 
 def test_the_rules_card_setting_turns_the_pop_up_off(app):
@@ -94,7 +102,7 @@ def test_the_rules_card_setting_turns_the_pop_up_off(app):
 
 
 def test_relics_are_explained_in_rewards_on_the_rules_card_and_in_the_deck_list(app):
-    from app.screens import PartyScreen, mission_rules_text
+    from app.screens import CardPopup, PartyScreen, mission_rules_text
     _tap(app, "New game")
     _tap(app, "Start")
     camp = app.campaign
@@ -109,14 +117,34 @@ def test_relics_are_explained_in_rewards_on_the_rules_card_and_in_the_deck_list(
     app.save_campaign()
     app.show(PartyScreen(app))
     texts = _texts(app)
-    assert "Relics" in texts and "Kinfolk Flute" in texts and "Scarlet Whistle" in texts
-    assert relic_text("flute", 1) in texts
+    # the relics are a row of cards with no text beside them; a tap opens the relic's card
+    assert "Relics" in texts and "Kinfolk Flute" not in texts and relic_text("flute", 1) not in texts
     assert any(t.startswith("Mercenaries · until mission 1 is won") for t in texts)
     relic_cards = ui.find(app, lambda v: isinstance(v, widgets.RelicCard))
     assert [v.relic_id for v in relic_cards] == ["flute", "whistle"]
+    assert relic_cards[0].y == relic_cards[1].y                 # side by side
     shown = [v.card.id for v in ui.find(app, lambda v: isinstance(v, CardView))]
     assert "M12H" in shown and "MA_1" in shown
     assert ui.render(app).size[0] > 0
+    ui.tap(app, *ui.root_point(app, relic_cards[0]))
+    popup = ui.find(app, lambda v: isinstance(v, CardPopup))[0]
+    face = ui.find(popup, lambda v: isinstance(v, widgets.PlayingCardFace))[0]
+    labels = ui.find(face, lambda v: isinstance(v, ui.Label))
+    # name and icon on top, the description below
+    icon = [v for v in labels if v.text == RELICS["flute"]["symbol"]][0]
+    name = [v for v in labels if v.text == "Kinfolk Flute"][0]
+    body = [v for v in labels if v.text == relic_text("flute", 1)][0]
+    assert icon.y < name.y and name.text_color == T.CARD_INK and "Relic · solo side" in _texts(face)
+    assert body.superview.y > name.y + name.height
+    assert face.edge == RELICS["flute"]["color"] and ui.render(app).size[0] > 0
+    _tap(app, "Close")
+    assert not ui.find(app, lambda v: isinstance(v, CardPopup))
+    # a tap beside the card closes it too
+    ui.tap(app, *ui.root_point(app, relic_cards[1]))
+    popup = ui.find(app, lambda v: isinstance(v, CardPopup))[0]
+    assert relic_text("whistle", 1) in _texts(popup)
+    ui.tap(app, 4, app.height - 4)
+    assert not ui.find(app, lambda v: isinstance(v, CardPopup))
     # two players read the other side
     assert relic_text("flute", 2).startswith("After you form an attack")
     assert all(relic_name(r) for r in RELICS)
@@ -172,6 +200,7 @@ def test_mission_rules_before_mission_12_show_the_restored_mother(app):
 
 
 def test_deck_list_beasts_follow_the_setup_rules(app):
+    from app import store
     from app.screens import PartyScreen
     _tap(app, "New game")
     _tap(app, "Start")
@@ -180,10 +209,32 @@ def test_deck_list_beasts_follow_the_setup_rules(app):
     camp.set_beast("B_H")
     camp.mission = 10
     app.show(PartyScreen(app))
+    # all four beasts on display, the chosen one with the gold selection border
+    ps = app.current
     assert "Gøran's beast · next attempt" in _texts(app)
+    assert [b for b, v in ps.beast_views.items() if v.selected] == ["B_H"] and len(ps.beast_views) == 4
+    ui.tap(app, *ui.root_point(app, ps.beast_views["B_S"]))       # another: it swaps
+    assert camp.beast == "B_S" and [b for b, v in ps.beast_views.items() if v.selected] == ["B_S"]
+    assert any(t.startswith("B♠ joins the next attempt") for t in _texts(app))
+    ui.tap(app, *ui.root_point(app, ps.beast_views["B_S"]))       # the chosen one again: no beast
+    assert camp.beast is None and not any(v.selected for v in ps.beast_views.values())
+    assert store.load_campaign(camp.slot).beast is None
+    ui.tap(app, *ui.root_point(app, ps.beast_views["B_H"]))
+    assert store.load_campaign(camp.slot).beast == "B_H"
     camp.mission = 11                                                  # all four form the beast deck
     app.show(PartyScreen(app))
-    assert not any(t.startswith("Gøran's beast") for t in _texts(app))
+    texts = _texts(app)
+    assert "Gøran's beasts · mission 11's beast deck" in texts and not app.current.beast_views
+    assert not any(t.startswith("Gøran's beast · ") for t in texts)
+    # during an attempt the choice is locked
+    camp.mission = 1
+    app.save_campaign()
+    app.start_attempt()
+    app.show(PartyScreen(app))
+    ps = app.current
+    assert "Gøran's beast · this attempt" in _texts(app)
+    ui.tap(app, *ui.root_point(app, ps.beast_views["B_C"]))
+    assert camp.beast == "B_H" and ps.beast_views["B_H"].selected
 
 
 def test_the_game_menu_names_a_reward_briefly_and_a_card_explains_it(app):
@@ -252,3 +303,75 @@ def test_the_mage_look_shows_the_attack_so_far(app):
     text = attack_summary(g, g.decision.get("play_index"))
     assert text.startswith("Your attack: 4%s + 4♣, strength 8" % P.to_card(M.MAGE_DECK[3]).label()[1:])
     assert "Warrior" in text and "Mage" in text
+
+
+def test_mercenary_camp_is_reached_from_the_deck_list_not_the_game_menu(app):
+    from app.screens import CampaignScreen, MercenaryScreen, PartyScreen
+    _tap(app, "New game")
+    _tap(app, "Start")
+    camp = app.campaign
+    camp.m_box_opened, camp.coins = True, 3
+    camp.flags["beasts"] = True
+    app.save_campaign()
+    app.show(CampaignScreen(app))
+    titles = [b.title for b in ui.find(app, lambda v: isinstance(v, ui.Button))]
+    # the game menu no longer holds the camp nor the beast picker
+    assert not any(t.startswith("Mercenary camp") for t in titles) and "None" not in titles
+    assert not any(t.startswith("♣") for t in titles)
+    _tap(app, "Deck list")
+    assert isinstance(app.current, PartyScreen) and "Mercenaries" in _texts(app)
+    _tap(app, "Mercenary camp (3 coins)")
+    assert isinstance(app.current, MercenaryScreen) and app.current.back == "deck"
+    _tap(app, "‹ Back")
+    assert isinstance(app.current, PartyScreen)
+    # during an attempt hiring waits
+    app.start_attempt()
+    app.show(PartyScreen(app))
+    b = [v for v in ui.find(app, lambda v: isinstance(v, ui.Button)) if v.title == "Mercenary camp (after this attempt)"]
+    assert b and not b[0].enabled
+
+
+def test_mercenary_coins_stay_bright_on_a_shaded_card():
+    calls = []
+    real_set_color = ui.set_color
+    ui.set_color = lambda c: (calls.append(c), real_set_color(c))[1]
+    try:
+        jester = [m for m in MERCENARIES if m["id"] == "merc_jester_1"][0]
+        v = CardView(P.to_card(jester["card"]), frame=(0, 0, 86, 122))
+        v.shaded, v.coins = True, 5
+        ui.render(v)
+        shade = calls.index(T.SHADE)
+        coins = [i for i, c in enumerate(calls) if c == T.COIN]
+        assert len(coins) == 5 and min(coins) > shade          # the coins are drawn over the shade
+        # the coins sit down the right side, below the corner icons, clear of the bottom
+        d, pad = widgets.coin_metrics(86, 122)
+        assert 86 - pad - d > 86 * 0.6
+        del calls[:]
+        v.shaded, v.selected = True, True                      # a swap candidate keeps a bright border
+        ui.render(v)
+        assert T.ACCENT in calls[calls.index(T.SHADE):]
+        del calls[:]
+        v.shaded, v.coins, v.selected = False, 0, False        # an ordinary card: no coins, no shade
+        ui.render(v)
+        assert T.SHADE not in calls and T.COIN not in calls
+    finally:
+        ui.set_color = real_set_color
+
+
+def test_evergreen_boon_26_shows_all_four_beasts_and_boon_24_hires_from_the_deck_list(app):
+    from app.screens import MercenaryScreen, PartyScreen
+    _tap(app, "New game")
+    _tap(app, "Start")
+    camp = app.campaign
+    camp.flags["beasts"] = True
+    camp.finished = True
+    camp.evergreen = {"setup": {"location": "A", "banes": [2, 9, 11], "boons": [24, 26]}, "coins": 5, "mercenaries": []}
+    app.save_campaign()
+    app.show(PartyScreen(app))
+    texts = _texts(app)
+    assert "Gøran's beasts · all four join this setup" in texts and "Mercenaries · this Evergreen setup" in texts
+    beasts = [v for v in ui.find(app, lambda v: isinstance(v, CardView)) if v.card.id.startswith("B_")]
+    assert len(beasts) == 4 and all(v.selected for v in beasts) and not app.current.beast_views
+    _tap(app, "Mercenaries (5 coins left)")
+    assert isinstance(app.current, MercenaryScreen) and app.current.evergreen and app.current.back == "deck"
+    assert ui.render(app).size[0] > 0

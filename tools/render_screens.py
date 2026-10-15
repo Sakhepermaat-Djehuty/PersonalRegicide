@@ -230,17 +230,28 @@ def main(argv):
     app.open_campaign(slot)
     app.show(MercenaryScreen(app))
     shot(app, "49_mercenary_camp")
-    hires = ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Hire" and v.enabled)
+    # a tap on a mercenary's card opens its card: hire it, then swap it after a failure
+    ui.tap(app, *ui.root_point(app, app.current.card_views["merc_12H"]))
+    shot(app, "49a_mercenary_card")
+    hires = ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Hire for 1 coin" and v.enabled)
     if hires:
         ui.tap(app, *ui.root_point(app, hires[0]))
         shot(app, "49b_mercenary_hired")
+        ui.tap(app, *ui.root_point(app, app.current.card_views["merc_12H"]))
         swaps = ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Swap")
         if swaps:
             ui.tap(app, *ui.root_point(app, swaps[0]))
             shot(app, "49c_mercenary_swap")
             ui.tap(app, *ui.root_point(app, ui.button(app, "Cancel")))
+    app.campaign.relics.append("flute")
+    app.campaign.flags["beasts"] = True
+    app.campaign.set_beast("B_C")
     app.show(PartyScreen(app))
     shot(app, "50_party")
+    relic = ui.find(app, lambda v: v.__class__.__name__ == "RelicCard")
+    if relic:
+        ui.tap(app, *ui.root_point(app, relic[0]))
+        shot(app, "50b_relic_card")
     app.show(ProgressScreen(app))
     shot(app, "51_progress")
     app.show(MapScreen(app))

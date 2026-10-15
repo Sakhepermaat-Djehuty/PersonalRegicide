@@ -153,6 +153,39 @@ def card_caption(card: Card) -> str:
     return ""
 
 
+def coin_metrics(W: float, H: float) -> tuple:
+    """(diameter, right padding) of the coins on a card W x H."""
+    return (min(W * 0.17, H * 0.105), max(3.0, W * 0.05))
+
+
+def draw_coin(x: float, y: float, d: float) -> None:
+    """One gold coin, diameter ``d``, top-left corner at (x, y)."""
+    ui.set_color(T.COIN_RIM)
+    ui.Path.oval(x, y, d, d).fill()
+    ui.set_color(T.COIN)
+    inset = max(1.0, d * 0.1)
+    ui.Path.oval(x + inset, y + inset, d - 2 * inset, d - 2 * inset).fill()
+    ring = ui.Path.oval(x + d * 0.27, y + d * 0.27, d * 0.46, d * 0.46)
+    ring.line_width = max(1.0, d * 0.08)
+    ui.set_color(T.COIN_RIM)
+    ring.stroke()
+
+
+def draw_coin_column(n: int, W: float, H: float) -> None:
+    """A mercenary's cost: ``n`` coins down the right side of a card W x H, from just below
+    where a corner class icon sits (the Wild Animal's top-right icon), the same place on
+    every card."""
+    d, pad = coin_metrics(W, H)
+    step = d * 1.12
+    x = W - pad - d
+    y = max(H * 0.24, pad * 0.5 + H * 0.16 * 1.3 + 2)
+    # keep five coins clear of the bottom corner
+    if y + step * n > H - pad:
+        step = max(d * 0.8, (H - pad - y) / float(n))
+    for i in range(int(n)):
+        draw_coin(x, y + i * step, d)
+
+
 class CardView(ui.View):
     """A playing card. Tap toggles selection through ``on_tap``."""
 
@@ -166,10 +199,33 @@ class CardView(ui.View):
         self.small = False
         self.badge = ""
         self.order = 0                # selection order shown top right (0: none)
+        self.shaded = False           # greyed out (a mercenary still in the box), coins stay bright
+        self.coins = 0                # a mercenary's cost, drawn as coins down the right side
         self.background_color = None  # drawn in draw()
+
+    def coin_room(self) -> float:
+        """The width the coin column takes at the right of the face (0 without coins)."""
+        if not self.coins or not self.face_up:
+            return 0.0
+        d, pad = coin_metrics(self.width, self.height)
+        return d + pad
 
     def draw(self) -> None:
         self._draw_face()
+        if self.shaded and self.face_up:
+            # a shade over the whole card; the coins are drawn after it, so they stay bright
+            W, H = self.width, self.height
+            r = max(6.0, min(W, H) * 0.12)
+            ui.set_color(T.SHADE)
+            ui.Path.rounded_rect(1, 1, W - 2, H - 2, r).fill()
+            if self.selected:
+                # the gold selection border stays bright on a shaded card
+                border = ui.Path.rounded_rect(1.5, 1.5, W - 3, H - 3, r)
+                border.line_width = 3
+                ui.set_color(T.ACCENT)
+                border.stroke()
+        if self.coins and self.face_up:
+            draw_coin_column(self.coins, self.width, self.height)
         if self.order and self.face_up:
             # the order the card was selected in: it enters play (or is discarded) in this
             # order, the last one ending on top of the pile
@@ -211,8 +267,10 @@ class CardView(ui.View):
         w, h = W - 2 * sw, H - 2 * sw
         col = card_color(c)
         if c.is_jester:
-            ui.draw_string("J", (ox, oy + h * 0.12, w, h * 0.4), (T.FONT_BOLD, h * 0.34), col, ui.ALIGN_CENTER)
-            ui.draw_string("JESTER", (ox, oy + h * 0.62, w, h * 0.3), (T.FONT_BOLD, max(8, h * 0.12)), col, ui.ALIGN_CENTER)
+            jw = w - self.coin_room()      # a mercenary Jester's coins take the right edge
+            ui.draw_string("J", (ox, oy + h * 0.12, jw, h * 0.4), (T.FONT_BOLD, h * 0.34), col, ui.ALIGN_CENTER)
+            ui.draw_string("JESTER", (ox, oy + h * 0.62, jw, h * 0.3), (T.FONT_BOLD, max(8, min(h * 0.12, jw * 0.16))), col,
+                           ui.ALIGN_CENTER)
             return
         # Themeless faces: rank and class like a playing card. A beast is a plain "B" with
         # its class; a classless card (a pilgrim, a 19) shows its rank large in the middle.
@@ -322,12 +380,19 @@ class CardView(ui.View):
 
 
 class RelicCard(ui.View):
-    """A relic as a small card: its symbol in its colour on a card face, "relic" below."""
+    """A relic as a small card: its symbol in its colour on a card face, "relic" below.
+    A tap reports through ``on_tap`` (the deck list opens the relic's card)."""
 
-    def __init__(self, relic_id: str, **kw) -> None:
+    def __init__(self, relic_id: str, on_tap: Optional[Callable[["RelicCard"], None]] = None, **kw) -> None:
         super().__init__(**kw)
         self.relic_id = relic_id
+        self.on_tap = on_tap
         self.background_color = None
+
+    def touch_ended(self, touch) -> None:
+        x, y = touch.location
+        if 0 <= x <= self.width and 0 <= y <= self.height and self.on_tap:
+            self.on_tap(self)
 
     def draw(self) -> None:
         from regicide.campaign.relics import RELICS
@@ -343,6 +408,37 @@ class RelicCard(ui.View):
         size = h * 0.42
         ui.draw_string(str(r.get("symbol", "?")), (0, h * 0.14, w, size * 1.3), (T.FONT_BOLD, size), col, ui.ALIGN_CENTER)
         ui.draw_string("relic", (0, h * 0.7, w, h * 0.2), (T.FONT, max(8.0, h * 0.14)), "#555555", ui.ALIGN_CENTER)
+
+
+class PlayingCardFace(ui.View):
+    """The face of a card pop-up, drawn like the game's playing cards: a cream face with
+    rounded corners, an edge in the card's colour and a small index (``corner``: a list of
+    (text, colour)) in the top-left and bottom-right corners. Its content (name, icon,
+    text) is added as subviews by ``card_popup_face``."""
+
+    def __init__(self, edge: str = "", corner=None, **kw) -> None:
+        super().__init__(**kw)
+        self.edge = edge or T.CARD_BORDER
+        self.corner = list(corner or [])
+        self.background_color = None
+
+    def draw(self) -> None:
+        w, h = self.width, self.height
+        r = 18.0
+        ui.set_color(T.CARD_FACE)
+        ui.Path.rounded_rect(1, 1, w - 2, h - 2, r).fill()
+        edge = ui.Path.rounded_rect(3, 3, w - 6, h - 6, r - 2)
+        edge.line_width = 3
+        ui.set_color(self.edge)
+        edge.stroke()
+        if not self.corner:
+            return
+        size = 17.0
+        for i, (text, color) in enumerate(self.corner[:4]):
+            ui.draw_string(text, (12, 10 + i * size * 1.05, size * 1.6, size * 1.3), (T.FONT_BOLD, size), color,
+                           ui.ALIGN_CENTER)
+            ui.draw_string(text, (w - 12 - size * 1.6, h - 10 - (i + 1) * size * 1.05 - size * 0.25, size * 1.6,
+                                  size * 1.3), (T.FONT_BOLD, size), color, ui.ALIGN_CENTER)
 
 
 class EnemyPanel(ui.View):

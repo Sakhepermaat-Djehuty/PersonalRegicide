@@ -2073,31 +2073,26 @@ def mission_rules_text(camp, game: Optional[Game] = None) -> str:
 
 
 class RulesOverlay(Overlay):
-    """The mission's rules card, shown when a mission first loads and from the game menu;
-    it scrolls when the text is longer than the screen."""
+    """The mission's rules card, shown when a mission first loads and from the in-game
+    menu: drawn as a playing card (``card_face``), scrolling when the text is longer than
+    the screen."""
 
     def layout(self) -> None:
         if not hasattr(self, "panel") or not hasattr(self, "screen"):
             return
         for v in list(self.panel.subviews):
             self.panel.remove_subview(v)
+        self.panel.background_color = None
         app = self.screen.app
-        pw = min(340, self.width - 2 * T.MARGIN)
-        tw = pw - 40
-        text = mission_rules_text(app.campaign, self.screen.game)
-        title = make_label("Mission rules", (20, 18, tw, 28), 20, True, T.TEXT, ui.ALIGN_CENTER)
-        self.panel.add_subview(title)
-        _, th = text_size(text, tw - 4, 13)
-        room = max(120.0, self.height - T.TOP_INSET - T.BOTTOM_INSET - 40 - 56 - 70)
-        sh = min(th + 12, room)
-        sv = ui.ScrollView(frame=(20, 54, tw, sh))
-        sv.add_subview(make_label(text, (0, 0, tw, th + 8), 13, False, T.TEXT, ui.ALIGN_LEFT, 0))
-        sv.content_size = (tw, th + 12)
-        self.panel.add_subview(sv)
-        ok = make_button("Got it", self._close, (20, 54 + sh + 12, tw, 46))
+        pw = min(330, self.width - 2 * T.MARGIN)
+        head, subtitle, text, corner = rules_card(app.campaign, self.screen.game)
+        room = self.height - T.TOP_INSET - T.BOTTOM_INSET - 58 - 6
+        face = card_face(head, text, pw, room, None, T.ACCENT, subtitle, corner, 13)
+        self.panel.add_subview(face)
+        ok = make_button("Got it", self._close, (0, face.height + 12, pw, 46))
         fit_title(ok)
         self.panel.add_subview(ok)
-        ph = 54 + sh + 12 + 46 + 18
+        ph = face.height + 12 + 46
         self.panel.frame = ((self.width - pw) / 2, max(T.TOP_INSET, (self.height - ph) / 2), pw, ph)
 
     def _close(self, sender) -> None:
@@ -2125,6 +2120,19 @@ def choice_title(step: dict) -> str:
     if kind == "choice_rip":
         return "the Eternal Vine"
     return "choose"
+
+
+def choice_icon(step: dict) -> list:
+    """The icon on a reward's card: the class a sticker gives, the mage's star, else a star."""
+    kind = step.get("kind")
+    if kind == "choice_suit":
+        suit = str(step.get("suit", ""))
+        return [(SUIT_SYMBOL.get(suit, "★"), T.SUIT_COLOR.get(suit, T.ACCENT))]
+    if kind == "choice_mage_student":
+        return [(SUIT_SYMBOL["M"], T.SUIT_COLOR["M"])]
+    if kind == "choice_corrupt" or kind == "choice_rip":
+        return [("◆", T.CORRUPTED)]
+    return [("★", T.ACCENT)]
 
 
 def choice_text(camp, step: dict) -> str:
@@ -2158,75 +2166,139 @@ def choice_text(camp, step: dict) -> str:
     return "\n\n".join(x for x in parts if x)
 
 
-class CardPopup(ui.View):
-    """A card-like pop-up over a menu screen: a title, text (scrolling when long) and a
-    row of buttons stacked below."""
+def card_face(title: str, body: str, width: float, max_height: float, icon=None, edge: str = "",
+              subtitle: str = "", corner=None, body_size: int = 14):
+    """A card pop-up's face, drawn like the game's playing cards (``PlayingCardFace``): the
+    icon (a list of (text, colour), side by side) and the name at the top, an optional
+    subtitle, a rule in the card's colour, then the text (scrolling when it is longer than
+    the card). The card keeps a playing card's proportions unless the screen is too short;
+    ``corner`` is the small index in two corners (by default the icon). Returns the face,
+    sized ``width`` wide."""
+    from .widgets import PlayingCardFace
+    tokens = [(str(t), str(c)) for t, c in (icon or [])]
+    corner = tokens[:4] if corner is None else [(str(t), str(c)) for t, c in corner][:4]
+    edge = edge or (tokens[0][1] if tokens else T.CARD_BORDER)
+    face = PlayingCardFace(edge, corner)
+    inner = width - 84          # clear of the corner index
+    y = 18.0
+    if tokens:
+        size = 44.0
+        widths = [max(size * 1.25, text_size(t, 0, size, True)[0] + 10) for t, _ in tokens]
+        x = (width - sum(widths)) / 2.0
+        for (t, c), tw_ in zip(tokens, widths):
+            face.add_subview(make_label(t, (x, y, tw_, size * 1.25), int(size), True, c, ui.ALIGN_CENTER))
+            x += tw_
+        y += size * 1.25 + 4
+    name = fit_label(title, inner, 19, True, T.CARD_INK, ui.ALIGN_CENTER)
+    name.frame = (42, y, inner, name.height)
+    face.add_subview(name)
+    y += name.height + 2
+    if subtitle:
+        sub = fit_label(subtitle, inner, 12, False, T.CARD_INK_MUTED, ui.ALIGN_CENTER)
+        sub.frame = (42, y, inner, sub.height)
+        face.add_subview(sub)
+        y += sub.height + 2
+    rule = ui.View(frame=(30, y + 6, width - 60, 1.5))
+    rule.background_color = edge
+    face.add_subview(rule)
+    y += 16
+    bw = width - 44
+    _, th = text_size(body, bw - 4, body_size)
+    th = float(th)
+    bottom = 14 + (len(corner) * 17.0 * 1.05 + 4 if corner else 0)   # clear of the bottom-right index
+    room = max(80.0, max_height - y - bottom)
+    bh = min(th + 10, room)
+    sv = ui.ScrollView(frame=(22, y, bw, bh))
+    sv.add_subview(make_label(body, (0, 0, bw, th + 8), body_size, False, T.CARD_INK, ui.ALIGN_LEFT, 0))
+    sv.content_size = (bw, th + 10)
+    face.add_subview(sv)
+    height = min(max(y + bh + bottom, width * 1.4), max(max_height, y + bh + bottom))
+    face.frame = (0, 0, width, height)
+    return face
 
-    def __init__(self, title: str, text: str, buttons, **kw) -> None:
+
+class CardPopup(ui.View):
+    """A pop-up drawn as a playing card (``card_face``: name and icon at the top, the text
+    below) over a dimmed screen, with its buttons under the card. A button is (title,
+    action, primary) or (title, action, primary, enabled). With ``dismissable`` a tap
+    beside the card closes it."""
+
+    def __init__(self, title: str, text: str, buttons, icon=None, edge: str = "", subtitle: str = "",
+                 corner=None, dismissable: bool = False, **kw) -> None:
         super().__init__(**kw)
         self.title_text = title
         self.body = text
         self.buttons = list(buttons)
+        self.icon = icon
+        self.edge = edge
+        self.subtitle = subtitle
+        self.corner = corner
+        self.dismissable = dismissable
+        self.face: Optional[ui.View] = None
         self.background_color = (0, 0, 0, 0.72)
-        self.panel = ui.View()
-        self.panel.background_color = T.PANEL
-        self.panel.corner_radius = 16
-        self.add_subview(self.panel)
 
     def layout(self) -> None:
-        if not hasattr(self, "panel"):
+        if not hasattr(self, "buttons"):
             return
-        for v in list(self.panel.subviews):
-            self.panel.remove_subview(v)
-        pw = min(340, self.width - 2 * T.MARGIN)
-        tw = pw - 40
-        title = fit_label(self.title_text, tw, 18, True, T.ACCENT, ui.ALIGN_CENTER)
-        title.frame = (20, 18, tw, title.height)
-        self.panel.add_subview(title)
-        y = 18 + title.height + 10
-        _, th = text_size(self.body, tw - 4, 14)
-        room = max(120.0, self.height - T.TOP_INSET - T.BOTTOM_INSET - 60 - y - 58 * len(self.buttons))
-        sh = min(th + 12, room)
-        sv = ui.ScrollView(frame=(20, y, tw, sh))
-        sv.add_subview(make_label(self.body, (0, 0, tw, th + 8), 14, False, T.TEXT, ui.ALIGN_LEFT, 0))
-        sv.content_size = (tw, th + 12)
-        self.panel.add_subview(sv)
-        y += sh + 14
-        for title_, action, primary in self.buttons:
-            b = make_button(title_, action, (20, y, tw, 46), primary)
+        for v in list(self.subviews):
+            self.remove_subview(v)
+        pw = min(300, self.width - 2 * T.MARGIN)
+        buttons_h = 58 * len(self.buttons)
+        room = self.height - T.TOP_INSET - T.BOTTOM_INSET - buttons_h - 6
+        face = card_face(self.title_text, self.body, pw, room, self.icon, self.edge, self.subtitle, self.corner)
+        total = face.height + 12 + buttons_h
+        x = (self.width - pw) / 2.0
+        y = max(T.TOP_INSET, (self.height - total) / 2.0)
+        face.frame = (x, y, pw, face.height)
+        self.add_subview(face)
+        self.face = face
+        y += face.height + 12
+        for spec in self.buttons:
+            title_, action, primary = spec[0], spec[1], spec[2]
+            b = make_button(title_, action, (x, y, pw, 46), primary)
             fit_title(b)
-            self.panel.add_subview(b)
+            if len(spec) > 3 and not spec[3]:
+                set_enabled(b, False, primary)
+            self.add_subview(b)
             y += 58
-        ph = y + 6
-        self.panel.frame = ((self.width - pw) / 2, max(T.TOP_INSET, (self.height - ph) / 2), pw, ph)
+
+    def touch_ended(self, touch) -> None:
+        if not self.dismissable:
+            return
+        x, y = touch.location
+        f = self.face
+        if f is None or not (f.x <= x <= f.x + f.width and f.y <= y <= f.y + f.height):
+            self.close()
 
     def close(self) -> None:
         if self.superview is not None:
             self.superview.remove_subview(self)
 
 
-class MissionRulesScreen(Screen):
-    """The rules card from the game menu (no attempt running)."""
+def show_card_popup(screen: ui.View, popup: CardPopup) -> CardPopup:
+    """Lay ``popup`` over the whole of ``screen``."""
+    popup.frame = (0, 0, screen.width, screen.height)
+    screen.add_subview(popup)
+    popup.layout()
+    return popup
 
-    def layout(self) -> None:
-        if not hasattr(self, "app"):
-            return
-        for v in list(self.subviews):
-            self.remove_subview(v)
-        app = self.app
-        w, h = self.width, self.height
-        m = T.MARGIN
-        y = T.TOP_INSET
-        self.add_subview(make_button("‹ Back", lambda s: app.show(CampaignScreen(app)), (m, y, 80, 36), False, 14))
-        self.add_subview(make_label("Mission rules", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
-        y += 48
-        text = mission_rules_text(app.campaign)
-        tw = w - 2 * m - 8
-        _, th = text_size(text, tw, 14)
-        sv = ui.ScrollView(frame=(m, y, w - 2 * m, h - y - T.BOTTOM_INSET))
-        sv.add_subview(make_label(text, (4, 0, tw, th + 20), 14, False, T.TEXT, ui.ALIGN_LEFT, 0))
-        sv.content_size = (w - 2 * m, th + 40)
-        self.add_subview(sv)
+
+def rules_card(camp, game: Optional[Game] = None) -> tuple:
+    """(name, subtitle, text, corner) of the rules card: the mission's name ("Mission 4 ·
+    ...") on top with its location below it, the rules after, and the mission number (or
+    E for Evergreen) as the corner index."""
+    text = mission_rules_text(camp, game)
+    head, _, rest = text.partition("\n\n")
+    evergreen = game is not None and str(getattr(game.config, "rules_id", "")) == "evergreen"
+    subtitle = ""
+    if head.startswith("Mission ") and rest:
+        place, _, after = rest.partition("\n\n")
+        if after and len(place) <= 40:
+            subtitle, rest = place, after
+    elif not (head.startswith("Evergreen mission") and rest):
+        head, rest = "Mission rules", text
+    mark = "E" if evergreen or (camp is not None and camp.finished) else str(getattr(camp, "mission", "") or "")
+    return head, subtitle, rest, ([(mark, T.CARD_INK_MUTED)] if mark else [])
 
 
 class LogOverlay(Overlay):
@@ -2306,7 +2378,8 @@ class CampaignResultOverlay(Overlay):
                 text += " Pack M is open: mercenaries can be hired between attempts."
             items.append(self.text(text, 13))
             if app.campaign and app.campaign.m_box_opened:
-                items.append(make_button("Mercenary camp", lambda b: app.show(MercenaryScreen(app)), (0, 0, 10, 46)))
+                items.append(make_button("Mercenary camp", lambda b: app.show(MercenaryScreen(app, back="menu")),
+                                         (0, 0, 10, 46)))
             items.append(make_button("Try again", lambda b: app.start_attempt(), (0, 0, 10, 46), not (app.campaign and app.campaign.m_box_opened)))
         items.append(make_button("Game menu", lambda b: app.show(CampaignScreen(app)), (0, 0, 10, 46), False))
         return items
@@ -2364,21 +2437,8 @@ class CampaignScreen(Screen):
                 stats += " · rules unverified"
             self.add_subview(make_label(stats, (m, y, w - 2 * m, 20), 12, False, T.MUTED))
             y += 26
+            # (Gøran's beast and the mercenary camp are chosen in the deck list)
             in_progress = store.has_attempt(camp.slot)
-            beasts = camp.beasts_available() if camp.mission != 11 else []   # mission 11: all four form the beast deck
-            if beasts and not in_progress:
-                # Rulebook p.7: for each attempt you may include one of Gøran's beasts.
-                self.add_subview(make_label("Gøran's beast for this attempt", (m, y, w - 2 * m, 18), 12, False, T.MUTED))
-                y += 20
-                opts = [(None, "None")] + [(str(b["id"]), "%s %s" % (SUIT_SYMBOL.get(b["suits"][0], ""), CLASS_NAME.get(b["suits"][0], "")))
-                                           for b in beasts]
-                gap = 6
-                bw2 = (w - 2 * m - gap * (len(opts) - 1)) / len(opts)
-                for i, (bid, title) in enumerate(opts):
-                    b = make_button(title, (lambda x: lambda s: self._set_beast(x))(bid), (m + i * (bw2 + gap), y, bw2, 36),
-                                    camp.beast == bid, 12)
-                    self.add_subview(b)
-                y += 44
             if not in_progress and info.get("playable") and not camp.pending and camp.prepare_mission():
                 app.save_campaign()
             choice = camp.pending_choice()
@@ -2403,13 +2463,9 @@ class CampaignScreen(Screen):
                 set_enabled(b, False)
                 self.add_subview(b)
                 y += 54
-            if camp.m_box_opened and not in_progress:
-                self.add_subview(make_button("Mercenary camp (%d coin%s)" % (camp.coins, "" if camp.coins == 1 else "s"),
-                                             lambda s: app.show(MercenaryScreen(app)), (x, y, bw, 44), False))
-                y += 52
         y += 6
         row_h, gap = 44, 10
-        buttons = [] if camp.finished else [("Mission rules", lambda s: app.show(MissionRulesScreen(app)))]
+        buttons = [] if camp.finished else [("Mission rules", lambda s: self._show_rules_card())]
         buttons += [
             ("Deck list", lambda s: app.show(PartyScreen(app))),
             ("Map", lambda s: app.show(MapScreen(app))),
@@ -2429,20 +2485,18 @@ class CampaignScreen(Screen):
         if choice is None:
             return
         heading = "Mission setup" if choice.get("phase") == "setup" else "Reward"
-        popup = CardPopup("%s: %s" % (heading, choice_title(choice)), choice_text(app.campaign, choice),
+        popup = CardPopup(choice_title(choice)[:1].upper() + choice_title(choice)[1:], choice_text(app.campaign, choice),
                           [("Choose", lambda s: app.show(ChoiceScreen(app)), True),
-                           ("Later", lambda s: popup.close(), False)])
-        popup.frame = (0, 0, self.width, self.height)
-        self.add_subview(popup)
-        popup.layout()
+                           ("Later", lambda s: popup.close(), False)],
+                          icon=choice_icon(choice), edge=T.ACCENT, subtitle=heading)
+        show_card_popup(self, popup)
 
-    def _set_beast(self, beast_id: Optional[str]) -> None:
-        camp = self.app.campaign
-        if camp is None:
-            return
-        camp.set_beast(beast_id)
-        self.app.save_campaign()
-        self.layout()
+    def _show_rules_card(self) -> None:
+        """The mission's rules card as a card pop-up over the game menu."""
+        head, subtitle, text, corner = rules_card(self.app.campaign)
+        popup = CardPopup(head, text, [("Got it", lambda s: popup.close(), True)], edge=T.ACCENT, subtitle=subtitle,
+                          corner=corner, dismissable=True)
+        show_card_popup(self, popup)
 
 
 class MapScreen(Screen):
@@ -2557,14 +2611,72 @@ class _MapCanvas(ui.View):
             self.screen.select(best)
 
 
+def mercenary_icon(card: Card) -> tuple:
+    """(icon, corner) of a mercenary's card pop-up: its class icons (all four for a Wild
+    Animal), its rank for a classless 19, a J for a Jester; the corner index is the rank
+    and the class."""
+    from .widgets import card_color
+    col = card_color(card)
+    rank = "2/5" if card.has("twofive") else ("J" if card.is_jester else card.rank)
+    if card.has("choosable") and not card.suits:
+        icon = [(SUIT_SYMBOL[s], T.SUIT_COLOR[s]) for s in BASIC_SUITS]
+    elif card.suits:
+        icon = [(SUIT_SYMBOL.get(s, s), T.SUIT_COLOR.get(s, col)) for s in card.suits]
+    else:
+        icon = [(rank, col)]
+    # a playing card's index: the rank and its one class (a Wild Animal shows its rank only)
+    corner = [(rank, col)] + (icon if len(icon) == 1 and icon[0][0] != rank else [])
+    return icon, corner
+
+
+def mercenary_text(merc: dict, card: Card, evergreen: bool) -> str:
+    """What a mercenary is and what hiring it means."""
+    cls = CLASS_NAME.get(card.suits[0], "") if card.suits else ""
+    if card.has("twofive"):
+        what = ("A 2/5 of the %s class: it counts as a 2 or a 5, declared when it enters play, so it can join a "
+                "set of 2s or of 5s." % cls)
+    elif card.has("choosable"):
+        what = ("A Wild Animal: an animal companion (an ace) that declares one of the four basic classes when it "
+                "enters play and has that class while it is in play.")
+    elif card.is_jester:
+        what = "A Jester for the reserve deck."
+    elif not card.suits:
+        what = "A %s with no class: it attacks for %d but has no class power." % (card.rank, card.value)
+    else:
+        what = "A %s of the %s class." % (card.rank, cls)
+    cost = int(merc["cost"])
+    stay = ("It joins the reserve deck for every attempt at this Evergreen setup." if evergreen else
+            "It joins the reserve deck for every attempt until this mission is won, then goes back to the box.")
+    return "%s\n\nCost: %d coin%s. %s" % (what, cost, "" if cost == 1 else "s", stay)
+
+
 class MercenaryScreen(Screen):
+    """The mercenary camp: every mercenary as a playing card, shaded while it waits in the
+    box, its cost in bright gold coins down the right side; the hired ones are bright with
+    the gold selection border. A tap opens the mercenary's card (``CardPopup``) to hire it,
+    or, after a failure, to swap a hired one for another of the same cost. ``evergreen``:
+    Evergreen boon 24's five coins for the drawn setup (no swaps). ``back``: where Back
+    goes: the deck list (default), the game menu or the Evergreen screen."""
+
     swapping = None  # id of a hired mercenary being swapped, or None
 
-    def __init__(self, app: "App", evergreen: bool = False, **kw) -> None:
+    def __init__(self, app: "App", evergreen: bool = False, back: str = "deck", **kw) -> None:
         super().__init__(app, **kw)
-        # Evergreen boon 24 ("This Is Noble, Sir"): five coins of mercenaries for the drawn
-        # setup only, hired here from the Evergreen screen (no swaps: no failures pay coins).
         self.evergreen = evergreen
+        self.back = back
+        self.card_views: Dict[str, CardView] = {}
+
+    def _scope(self) -> str:
+        return "evergreen" if self.evergreen else "mission"
+
+    def _go_back(self) -> None:
+        app = self.app
+        if self.back == "evergreen":
+            app.show(EvergreenScreen(app))
+        elif self.back == "menu":
+            app.show(CampaignScreen(app))
+        else:
+            app.show(PartyScreen(app))
 
     def layout(self) -> None:
         if not hasattr(self, "app"):
@@ -2576,70 +2688,104 @@ class MercenaryScreen(Screen):
         w, h = self.width, self.height
         m = T.MARGIN
         y = T.TOP_INSET
-        back = (lambda s: app.show(EvergreenScreen(app))) if self.evergreen else (lambda s: app.show(CampaignScreen(app)))
-        self.add_subview(make_button("‹ Back", back, (m, y, 80, 36), False, 14))
+        tw = w - 2 * m
+        self.add_subview(make_button("‹ Back", lambda s: self._go_back(), (m, y, 80, 36), False, 14))
         self.add_subview(make_label("Mercenary camp", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
-        y += 48
+        y += 46
+        self.card_views = {}
         if camp is None:
             return
-        scope = "evergreen" if self.evergreen else "mission"
-        coins, hired = camp._purse(scope)
+        from regicide.campaign.mercenaries import MERCENARIES, by_id
+        coins, hired = camp._purse(self._scope())
+        self.add_subview(make_label("Coins: %d" % coins, (m, y, tw, 24), 16, True, T.ACCENT))
+        y += 26
         if self.evergreen:
-            self.add_subview(make_label("This Is Noble, Sir: %d of 5 coins left to spend on mercenaries for this Evergreen "
-                                        "mission. They join the reserve deck for every attempt at this setup." % coins,
-                                        (m, y, w - 2 * m, 72), 13, False, T.TEXT, lines=4))
+            text = ("This Is Noble, Sir: five coins to spend on mercenaries for this Evergreen setup. "
+                    "Tap a card to hire it.")
         else:
-            self.add_subview(make_label("Coins: %d. Each failure of a mission earns coins equal to the number of times it "
-                                        "has been failed. Hired mercenaries stay until the mission is won; after a failure "
-                                        "you may swap one for another of the same cost." % coins,
-                                        (m, y, w - 2 * m, 72), 13, False, T.TEXT, lines=4))
-        y += 78
-        sv = ui.ScrollView(frame=(m, y, w - 2 * m, h - y - T.BOTTOM_INSET))
-        yy = 0
-        from regicide.campaign.mercenaries import by_id
-        if self.evergreen:
-            for mid in hired:
-                sv.add_subview(make_label("Hired: %s" % by_id(mid)["name"], (0, yy + 2, w - 2 * m - 90, 28), 14, True, T.OK))
-                yy += 38
-            for o in camp.hireable(scope):
-                lab = make_label("%s — %d coin%s" % (o["name"], o["cost"], "" if o["cost"] == 1 else "s"), (0, yy, w - 2 * m - 90, 40), 14, False, T.TEXT, lines=2)
-                sv.add_subview(lab)
-                b = make_button("Hire", (lambda mid: lambda s: self._hire(mid))(o["id"]), (w - 2 * m - 80, yy + 2, 80, 36), True, 14)
-                set_enabled(b, bool(o["affordable"]))
-                sv.add_subview(b)
-                yy += 46
-        elif self.swapping is not None and self.swapping in camp.mercenaries:
+            text = ("Each failure earns coins equal to the losses on this mission. Hired mercenaries stay until the "
+                    "mission is won; after a failure one may be swapped for another of the same cost. Tap a card.")
+        info = fit_label(text, tw, 12, False, T.MUTED, ui.ALIGN_LEFT)
+        info.frame = (m, y, tw, info.height)
+        self.add_subview(info)
+        y += info.height + 8
+        candidates: List[str] = []
+        if self.swapping is not None and self.swapping in hired and not self.evergreen:
             cur = by_id(self.swapping)
-            sv.add_subview(make_label("Swap %s for:" % cur["name"], (0, yy + 2, w - 2 * m - 90, 28), 14, True, T.OK))
-            sv.add_subview(make_button("Cancel", lambda s: self._cancel_swap(), (w - 2 * m - 80, yy, 80, 32), False, 13))
-            yy += 38
-            for o in camp.swappable(self.swapping):
-                lab = make_label(o["name"], (0, yy, w - 2 * m - 90, 40), 14, False, T.TEXT, lines=2)
-                sv.add_subview(lab)
-                b = make_button("Take", (lambda nid: lambda s: self._swap(nid))(o["id"]), (w - 2 * m - 80, yy + 2, 80, 36), True, 14)
-                sv.add_subview(b)
-                yy += 46
+            candidates = [o["id"] for o in camp.swappable(self.swapping)]
+            lab = fit_label("Swap %s: tap a mercenary of the same cost (gold border)." % cur["name"], tw - 96, 13, True,
+                            T.OK, ui.ALIGN_LEFT)
+            lab.frame = (m, y, tw - 96, max(36, lab.height))
+            self.add_subview(lab)
+            self.add_subview(make_button("Cancel", lambda s: self._cancel_swap(), (w - m - 86, y + 2, 86, 32), False, 13))
+            y += max(36, lab.height) + 8
         else:
-            for mid in list(camp.mercenaries):
-                mm = by_id(mid)
-                sv.add_subview(make_label("Hired: %s" % mm["name"], (0, yy + 2, w - 2 * m - 90, 28), 14, True, T.OK))
-                if camp.swappable(mid):
-                    sv.add_subview(make_button("Swap", (lambda hid: lambda s: self._begin_swap(hid))(mid),
-                                               (w - 2 * m - 80, yy, 80, 32), False, 13))
-                yy += 38
-            for o in camp.hireable():
-                lab = make_label("%s — %d coin%s" % (o["name"], o["cost"], "" if o["cost"] == 1 else "s"), (0, yy, w - 2 * m - 90, 40), 14, False, T.TEXT, lines=2)
-                sv.add_subview(lab)
-                b = make_button("Hire", (lambda mid: lambda s: self._hire(mid))(o["id"]), (w - 2 * m - 80, yy + 2, 80, 36), True, 14)
-                set_enabled(b, bool(o["affordable"]))
-                sv.add_subview(b)
-                yy += 46
-        sv.content_size = (w - 2 * m, yy + 20)
+            self.swapping = None
+        sv = ui.ScrollView(frame=(m, y, tw, h - y - T.BOTTOM_INSET))
+        cols = 4
+        gap = 8
+        cw = (tw - gap * (cols - 1)) / cols
+        ch = cw * 1.42
+        for i, merc in enumerate(MERCENARIES):
+            mid = str(merc["id"])
+            r, col = divmod(i, cols)
+            v = CardView(P.to_card(merc["card"]), on_tap=(lambda x: lambda view: self._tapped(x))(mid))
+            v.frame = (col * (cw + gap), r * (ch + gap), cw, ch)
+            v.coins = int(merc["cost"])
+            v.shaded = mid not in hired
+            v.selected = mid in hired or mid in candidates
+            if self.swapping is not None and mid != self.swapping and mid not in candidates:
+                v.alpha = 0.4
+            if mid == self.swapping:
+                v.badge = "swap"
+            sv.add_subview(v)
+            self.card_views[mid] = v
+        rows = (len(MERCENARIES) + cols - 1) // cols
+        sv.content_size = (tw, rows * (ch + gap) + 20)
         self.add_subview(sv)
+
+    def _tapped(self, mid: str) -> None:
+        """A mercenary's card: what it is, then Hire (in the box), Swap (hired, after a
+        failure) or Take (the one a hired mercenary is being swapped for)."""
+        from regicide.campaign.mercenaries import by_id
+        camp = self.app.campaign
+        if camp is None:
+            return
+        coins, hired = camp._purse(self._scope())
+        merc = by_id(mid)
+        card = P.to_card(merc["card"])
+        icon, corner = mercenary_icon(card)
+        cost = int(merc["cost"])
+        text = mercenary_text(merc, card, self.evergreen)
+        close = lambda s: popup.close()  # noqa: E731
+        if self.swapping is not None:
+            if mid == self.swapping:
+                self._cancel_swap()
+                return
+            if mid not in [o["id"] for o in camp.swappable(self.swapping)]:
+                import console
+                console.hud_alert("Swap for a mercenary of the same cost that is still in the box.", "error")
+                return
+            old = by_id(self.swapping)
+            buttons = [("Take it in place of %s" % old["name"], lambda s: self._swap(mid), True), ("Cancel", close, False)]
+            subtitle = "Swap · free, same cost"
+        elif mid in hired:
+            buttons = []
+            if not self.evergreen and camp.swappable(mid):
+                buttons.append(("Swap", lambda s: self._begin_swap(mid), True))
+            buttons.append(("Close", close, False))
+            subtitle = "Hired" if self.evergreen else "Hired · until mission %d is won" % camp.mission
+        else:
+            afford = coins >= cost
+            buttons = [("Hire for %d coin%s" % (cost, "" if cost == 1 else "s"), lambda s: self._hire(mid), True, afford),
+                       ("Close", close, False)]
+            subtitle = "In the box" if afford else "In the box · not enough coins (%d)" % coins
+        popup = CardPopup(str(merc["name"]), text, buttons, icon=icon, corner=corner, subtitle=subtitle, dismissable=True)
+        show_card_popup(self, popup)
 
     def _hire(self, mid: str) -> None:
         try:
-            self.app.campaign.hire(mid, "evergreen" if self.evergreen else "mission")
+            self.app.campaign.hire(mid, self._scope())
         except ValueError as e:
             import console
             console.hud_alert(str(e), "error")
@@ -2718,7 +2864,8 @@ class EvergreenScreen(Screen):
             if setup is not None and any(b["n"] == 24 for b in setup["boons"]):
                 coins = int(record.get("coins", 0))
                 self.add_subview(make_button("Mercenaries (%d coin%s left)" % (coins, "" if coins == 1 else "s"),
-                                             lambda s: app.show(MercenaryScreen(app, evergreen=True)), (x, y, bw, 44), False))
+                                             lambda s: app.show(MercenaryScreen(app, evergreen=True, back="evergreen")),
+                                             (x, y, bw, 44), False))
                 y += 52
         if setup is None:
             self.add_subview(make_label("Draw a mission: one location, two grey banes (or one grey and a second red), "
@@ -2943,6 +3090,10 @@ class ChoiceScreen(Screen):
 
 
 class PartyScreen(Screen):
+    """The deck list: the relics (a row of cards; a tap opens the relic's card), the
+    mercenaries hired and the mercenary camp, Gøran's beasts (all four; a tap chooses the
+    one the next attempt takes, shown with the gold selection border), then the party."""
+
     def layout(self) -> None:
         if not hasattr(self, "app"):
             return
@@ -2956,11 +3107,14 @@ class PartyScreen(Screen):
         self.add_subview(make_button("‹ Back", lambda s: app.show(CampaignScreen(app)), (m, y, 80, 36), False, 14))
         self.add_subview(make_label("Deck list", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
         y += 48
+        self.beast_views: Dict[str, CardView] = {}
+        self.beast_note: Optional[ui.Label] = None
         if camp is None:
             return
-        from .widgets import CardView, RelicCard
+        from .widgets import RelicCard
         from regicide.campaign.mercenaries import by_id as merc_by_id
         from regicide.campaign import missions as M
+        in_progress = store.has_attempt(camp.slot)
         sv = ui.ScrollView(frame=(m, y, w - 2 * m, h - y - T.BOTTOM_INSET))
         tw = w - 2 * m
         cols = 5
@@ -2973,56 +3127,135 @@ class PartyScreen(Screen):
             sv.add_subview(make_label(text, (0, yy, tw, 22), 15, True, T.ACCENT))
             return yy + 26
 
-        def card_row(cards, yy: float) -> float:
+        def note(text: str, yy: float) -> float:
+            lab = fit_label(text, tw, 12, False, T.MUTED, ui.ALIGN_LEFT)
+            lab.frame = (0, yy, tw, lab.height)
+            sv.add_subview(lab)
+            return yy + lab.height + 6
+
+        def card_row(cards, yy: float, on_tap=None, views: Optional[List[CardView]] = None) -> float:
             for i, c in enumerate(cards):
                 r, col = divmod(i, cols)
-                v = CardView(c)
+                v = CardView(c, on_tap=on_tap)
                 v.small = True
-                v.touch_enabled = False
+                v.touch_enabled = on_tap is not None
                 v.frame = (col * (cw + gap), yy + r * (ch + gap), cw, ch)
                 sv.add_subview(v)
+                if views is not None:
+                    views.append(v)
             rows = (len(cards) + cols - 1) // cols
             return yy + rows * (ch + gap) + 8
 
-        # relics: a small card each, with what it does for this number of players
+        # relics: a row of cards; a tap shows what the relic does
         relics = [r for r in camp.relics if relic_text(r, camp.players)]
         if relics:
             yy = heading("Relics", yy)
-            for r in relics:
-                tile = RelicCard(r, frame=(0, yy, cw, ch))
+            for i, r in enumerate(relics):
+                row, col = divmod(i, cols)
+                tile = RelicCard(r, on_tap=lambda v: self._show_relic(v.relic_id),
+                                 frame=(col * (cw + gap), yy + row * (ch + gap), cw, ch))
                 sv.add_subview(tile)
-                x0 = cw + 10
-                sv.add_subview(make_label(relic_name(r), (x0, yy, tw - x0, 20), 14, True, T.TEXT))
-                body = fit_label(relic_text(r, camp.players), tw - x0, 12, False, T.MUTED, ui.ALIGN_LEFT)
-                body.frame = (x0, yy + 20, tw - x0, body.height)
-                sv.add_subview(body)
-                yy += max(ch, 20 + body.height) + 10
-        # mercenaries hired for this mission (they leave when it is won)
-        mercs = list((camp.evergreen or {}).get("mercenaries", []) if camp.finished else camp.mercenaries)
-        if mercs:
-            when = ("while this Evergreen setup lasts" if camp.finished
-                    else "until mission %d is won" % camp.mission)
-            yy = heading("Mercenaries · %s" % when, yy)
-            yy = card_row([P.to_card(merc_by_id(mid)["card"]) for mid in mercs], yy)
-        # Gøran's beast(s) the next attempt takes, as the setup code does it: none in
-        # mission 11 (all four form its beast deck), all four with Evergreen boon 26
-        beasts: List[dict] = []
+            yy += ((len(relics) + cols - 1) // cols) * (ch + gap) + 8
+        # mercenaries: the ones hired (they leave when the mission is won) and the camp
+        bw = min(320, tw)
+        if camp.finished:
+            setup = camp.evergreen_setup()
+            mercs = list((camp.evergreen or {}).get("mercenaries", []))
+            boon24 = setup is not None and any(int(b["n"]) == 24 for b in setup.get("boons", []))
+            if mercs or boon24:
+                yy = heading("Mercenaries · this Evergreen setup", yy)
+                if mercs:
+                    yy = card_row([P.to_card(merc_by_id(mid)["card"]) for mid in mercs], yy)
+                if boon24:
+                    coins = int((camp.evergreen or {}).get("coins", 0))
+                    b = make_button("Mercenaries (%d coin%s left)" % (coins, "" if coins == 1 else "s"),
+                                    lambda s: app.show(MercenaryScreen(app, evergreen=True)), ((tw - bw) / 2, yy, bw, 44), False)
+                    set_enabled(b, not in_progress, False)
+                    sv.add_subview(b)
+                    yy += 52
+        elif camp.m_box_opened or camp.mercenaries:
+            mercs = list(camp.mercenaries)
+            yy = heading("Mercenaries · until mission %d is won" % camp.mission if mercs else "Mercenaries", yy)
+            if mercs:
+                yy = card_row([P.to_card(merc_by_id(mid)["card"]) for mid in mercs], yy)
+            if camp.m_box_opened:
+                title = ("Mercenary camp (%d coin%s)" % (camp.coins, "" if camp.coins == 1 else "s") if not in_progress
+                         else "Mercenary camp (after this attempt)")
+                b = make_button(title, lambda s: app.show(MercenaryScreen(app)), ((tw - bw) / 2, yy, bw, 44), False)
+                fit_title(b)
+                set_enabled(b, not in_progress, False)
+                sv.add_subview(b)
+                yy += 52
+        # Gøran's beasts: all four on display. Rulebook p.7: each attempt may take one of
+        # them (a tap chooses it, a tap on the chosen one goes without); mission 11 makes
+        # its beast deck of all four and Evergreen boon 26 brings all four.
         if camp.flags.get("beasts"):
             setup = camp.evergreen_setup() if camp.finished else None
+            beast_cards = [P.to_card(b) for b in M.BEASTS]
+            shown: List[CardView] = []
             if setup is not None and any(int(b["n"]) == 26 for b in setup.get("boons", [])):
-                beasts = [dict(b) for b in M.BEASTS]
-            elif camp.beast and (camp.finished or camp.mission != 11):
-                b = M.beast_by_id(camp.beast)
-                beasts = [b] if b is not None else []
-        if beasts:
-            label = "Gøran's beasts · this Evergreen setup" if len(beasts) > 1 else "Gøran's beast · next attempt"
-            yy = heading(label, yy)
-            yy = card_row([P.to_card(b) for b in beasts], yy)
+                yy = heading("Gøran's beasts · all four join this setup", yy)
+                yy = card_row(beast_cards, yy, views=shown)
+                for v in shown:
+                    v.selected = True
+            elif not camp.finished and camp.mission == 11:
+                yy = heading("Gøran's beasts · mission 11's beast deck", yy)
+                yy = card_row(beast_cards, yy)
+                yy = note("All four form the beast deck this mission; none joins the reserve.", yy)
+            else:
+                yy = heading("Gøran's beast · %s attempt" % ("this" if in_progress else "next"), yy)
+                yy = card_row(beast_cards, yy, None if in_progress else (lambda v: self._toggle_beast(v.card.id)), shown)
+                for v in shown:
+                    v.selected = v.card.id == camp.beast
+                    self.beast_views[v.card.id] = v
+                self.beast_note = fit_label(self._beast_text(in_progress), tw, 12, False, T.MUTED, ui.ALIGN_LEFT)
+                self.beast_note.frame = (0, yy, tw, self.beast_note.height)
+                sv.add_subview(self.beast_note)
+                yy += self.beast_note.height + 6
         cards = sorted(camp.party_cards(), key=lambda c: (c.suits[0] if c.suits else "Z", c.value))
         yy = heading("Party · %d cards" % len(cards), yy)
         yy = card_row(cards, yy)
         sv.content_size = (tw, yy + 20)
         self.add_subview(sv)
+
+    def _beast_text(self, in_progress: bool) -> str:
+        from regicide.campaign import missions as M
+        camp = self.app.campaign
+        beast = M.beast_by_id(camp.beast) if camp.beast else None
+        chosen = P.to_card(dict(beast)).label() if beast is not None else ""
+        if in_progress:
+            return ("%s is in this attempt's reserve; change it after the attempt." % chosen if chosen
+                    else "No beast in this attempt; choose one after the attempt.")
+        return ("%s joins the next attempt. Tap another to swap, or tap it again to go without." % chosen if chosen
+                else "No beast for the next attempt. Tap one to take it.")
+
+    def _toggle_beast(self, beast_id: str) -> None:
+        """Choose (or, tapped again, drop) the beast the next attempt takes; the cards show
+        the choice with the gold selection border."""
+        camp = self.app.campaign
+        if camp is None or store.has_attempt(camp.slot):
+            return
+        camp.set_beast(None if camp.beast == beast_id else beast_id)
+        self.app.save_campaign()
+        for bid, v in self.beast_views.items():
+            v.selected = bid == camp.beast
+            v.set_needs_display()
+        if self.beast_note is not None:
+            self.beast_note.text = self._beast_text(False)
+
+    def _show_relic(self, relic_id: str) -> None:
+        """The relic's card: its icon and name on top, what it does below (the side for
+        this number of players)."""
+        from regicide.campaign.relics import RELICS
+        camp = self.app.campaign
+        r = RELICS.get(relic_id, {})
+        color = str(r.get("color", T.ACCENT))
+        side = "solo side" if camp.players == 1 else "side for two or more players"
+        popup = CardPopup(relic_name(relic_id), relic_text(relic_id, camp.players),
+                          [("Close", lambda s: popup.close(), False)],
+                          icon=[(str(r.get("symbol", "?")), color)], edge=color, subtitle="Relic · %s" % side,
+                          dismissable=True)
+        show_card_popup(self, popup)
 
 
 # ============================================================================ descriptions
