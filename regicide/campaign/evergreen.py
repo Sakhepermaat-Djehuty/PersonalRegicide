@@ -297,7 +297,7 @@ def build_setup(camp, ids: Dict[str, Any], rng: random.Random, mercenaries: Opti
         banished_start = phase1
     pilgrims: List[dict] = []
     if loc == "E":
-        pilgrims = [dict(c) for c in M.PILGRIMS if c["id"] != M.PUPPY["id"]]
+        pilgrims = [dict(c) for c in M.PILGRIMS]
         rng.shuffle(pilgrims)
     return {
         "party": party, "castle": castle, "relics": relics, "extra_jesters": extra_jesters,

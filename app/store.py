@@ -249,6 +249,8 @@ def load_attempt(slot: str) -> Optional[Game]:
         # mages, pilgrims and mercenaries; the cards are plain now
         from regicide.campaign import missions as _missions
         _missions.strip_game_names(game)
+        # mission 7 attempts saved while the pilgrim ace was wrongly in pack P's deck
+        _missions.drop_stray_puppy(game)
         return game
     except (OSError, ValueError, KeyError):
         return None

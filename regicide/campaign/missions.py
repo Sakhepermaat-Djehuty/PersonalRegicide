@@ -5,6 +5,8 @@ from the same card data (see ``evergreen.py``).
 """
 from __future__ import annotations
 
+import json
+
 import itertools
 import random
 from typing import Any, Dict, List, Optional
@@ -386,14 +388,15 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
     pilgrims_in_reserve: List[dict] = []
     if number == 7:
         # Mission rules (confirmed): "Open pack P. Shuffle the pilgrims and place them in a
-        # facedown pilgrim deck in the mission zone."
+        # facedown pilgrim deck in the mission zone." (The 24 of pack P: the pilgrim ace
+        # is still in mission 8's box.)
         pilgrims = [dict(c) for c in PILGRIMS]
         rng.shuffle(pilgrims)
     if number == 8:
         # Mission rules (confirmed): "Place the pilgrim puppy into the mission zone. Open
         # pack P and shuffle the pilgrims into the reserve deck."
         zone_start.append(dict(PUPPY))
-        pilgrims_in_reserve = [dict(c) for c in PILGRIMS if c["id"] != PUPPY["id"]]
+        pilgrims_in_reserve = [dict(c) for c in PILGRIMS]
     capture: Dict[str, Any] = {}
     if number == 9:
         # Mission rules (confirmed): set Gøran, the chosen beast and any Jesters or
@@ -401,7 +404,7 @@ def build_setup(camp, number: int, rng: random.Random) -> Dict[str, Any]:
         # into three captured piles of 10 in the mission zone, top cards face up; shuffle
         # the pilgrims and the set-aside cards into the remaining reserve deck. (The puppy
         # went back into the mission 8 box.)
-        pilgrims_in_reserve = [dict(c) for c in PILGRIMS if c["id"] != PUPPY["id"]]
+        pilgrims_in_reserve = [dict(c) for c in PILGRIMS]
         capture = {"piles": 3, "size": 10, "exempt": []}  # exempt ids filled in below
     beast_deck: List[dict] = []
     if number == 11:
@@ -509,14 +512,17 @@ DRUIDS: List[Dict[str, Any]] = [
     {"id": "%sU" % r, "rank": r, "suits": ["U"], "value": int(r), "flags": []} for r in ("3", "5", "7", "9")
 ]
 
-# Pack P, the pilgrim deck (missions 7 and 8), confirmed by the owner: four classless
-# cards of every strength 2 to 7 (24 cards) plus the pilgrim ace (the puppy on the
-# physical card), which mission 8 places in the mission zone. They show as "Pilgrim 4".
-PUPPY: Dict[str, Any] = {"id": "PILA", "rank": "A", "suits": [], "value": 1, "flags": ["pilgrim"]}
-PILGRIMS: List[Dict[str, Any]] = [dict(PUPPY)] + [
+# Pack P, the pilgrim deck (missions 7, 8 and 9, Evergreen's Lake), confirmed by the
+# owner: four classless cards of every strength 2 to 7, 24 cards and no ace. They show
+# as "Pilgrim 4".
+PILGRIMS: List[Dict[str, Any]] = [
     {"id": "PIL%s_%d" % (r, i + 1), "rank": r, "suits": [], "value": int(r), "flags": ["pilgrim"]}
     for r in ("2", "3", "4", "5", "6", "7") for i in range(4)
 ]
+# The pilgrim ace (the puppy on the physical card) is not part of pack P: it comes in
+# mission 8's box, starts that mission in the mission zone and goes back in the box after
+# it (Evergreen boon 28 brings it back). It shows as "Pilgrim A".
+PUPPY: Dict[str, Any] = {"id": "PILA", "rank": "A", "suits": [], "value": 1, "flags": ["pilgrim"]}
 
 
 # Mission 6's Guardians: a 3, 5, 7 and 9. Only the 3 stays after the mission.
@@ -703,7 +709,8 @@ def plain_card_ids() -> set:
     """Ids of the cards the app shows as plain playing cards (no names): the beasts, the
     class decks, the mages, the pilgrims and the mercenaries."""
     from .mercenaries import MERCENARIES
-    ids = {str(c["id"]) for c in BEASTS + [ASH] + MAGE_DECK + CHANTERS + DRUIDS + GUARDIANS + REAVERS + PILGRIMS}
+    ids = {str(c["id"]) for c in BEASTS + [ASH] + MAGE_DECK + CHANTERS + DRUIDS + GUARDIANS + REAVERS + PILGRIMS
+           + [PUPPY]}
     ids.update(str(m["card"]["id"]) for m in MERCENARIES)   # type: ignore[index]
     return ids
 
@@ -768,6 +775,34 @@ def strip_game_names(game) -> int:
         enemy.name = card.name or ("%s of %s" % ({"J": "Jack", "Q": "Queen", "K": "King"}.get(card.rank, card.rank),
                                                 SUIT_NAME.get(card.suit or "", "no suit")))
     return changed
+
+
+def drop_stray_puppy(game) -> bool:
+    """Mission 7 attempts saved before the fix dealt the pilgrim ace into pack P's pilgrim
+    deck (it belongs to mission 8's box): take it out of the game wherever it waits (the
+    pilgrim deck, the mission zone, a pile or a hand). An ace already in play is left until
+    the attempt ends. Returns whether the game changed."""
+    if str(getattr(game.config, "rules_id", "")) != "legacy_m7" or PUPPY["id"] not in game.cards:
+        return False
+    cid = PUPPY["id"]
+    if any(cid in p.card_ids for p in game.plays) or (game.enemy is not None and game.enemy.card_id == cid):
+        return False
+    if game.decision is not None and cid in json.dumps(game.decision):
+        return False      # a pending choice names it (a reveal, a pilgrim to banish): leave it be
+    for pile in (game.extra.get("pilgrim_deck"), game.mission_zone, game.tavern, game.discard, game.banished,
+                 game.set_aside):
+        while isinstance(pile, list) and cid in pile:
+            pile.remove(cid)
+    for p in game.players:
+        while cid in p.hand:
+            p.hand.remove(cid)
+    if cid in game.all_card_ids():
+        return False      # somewhere this repair does not know: leave the game as it was saved
+    del game.cards[cid]
+    extra = game.config.extra
+    if isinstance(extra.get("pilgrims"), list):
+        extra["pilgrims"] = [c for c in extra["pilgrims"] if str(c.get("id")) != cid]
+    return True
 
 
 def beast_by_id(bid: str) -> Optional[Dict[str, Any]]:

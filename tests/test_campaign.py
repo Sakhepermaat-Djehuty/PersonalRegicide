@@ -1462,9 +1462,10 @@ def test_mission7_setup_and_rewards_follow_the_cards():
     assert [e["name"] for e in enemies] == ["Shoal Pondkin"] * 4 + ["Deep Pondkin"] * 4 + ["Abyssal Pondkin"] * 4
     assert (enemies[0]["attack"], enemies[0]["health"], enemies[-1]["attack"], enemies[-1]["health"]) == (10, 20, 20, 40)
     pil = extra["pilgrims"]
-    assert len(pil) == 25 and all("pilgrim" in d["flags"] and d["suits"] == [] for d in pil)
-    assert sorted(d["value"] for d in pil) == [1] + sorted([v for v in range(2, 8) for _ in range(4)])
-    assert len({d["id"] for d in pil}) == 25
+    # pack P: four classless pilgrims of every strength 2 to 7, no ace (it is in mission 8's box)
+    assert len(pil) == 24 and all("pilgrim" in d["flags"] and d["suits"] == [] for d in pil)
+    assert sorted(d["value"] for d in pil) == sorted([v for v in range(2, 8) for _ in range(4)])
+    assert len({d["id"] for d in pil}) == 24 and M.PUPPY["id"] not in {d["id"] for d in pil}
     steps = M.reward_steps(c, 7, rng)
     assert [s["kind"] for s in steps] == ["add_suit", "corrupt_random", "remove_card", "remove_card", "remove_card", "choice_suit"]
     for s in steps:
@@ -2919,12 +2920,71 @@ def test_evergreen_mother_is_queued_behind_a_flute_addition_and_before_the_whist
 
 
 # ---------------------------------------------------------------- Mission 7: Tales of Rebirth
+def test_pack_p_is_four_pilgrims_of_every_strength_2_to_7_and_the_ace_is_mission_8s():
+    from collections import Counter
+    from regicide.campaign import evergreen as E
+    pack = Counter(d["rank"] for d in M.PILGRIMS)
+    assert pack == {r: 4 for r in ("2", "3", "4", "5", "6", "7")} and len(M.PILGRIMS) == 24
+    assert all(d["suits"] == [] and d["flags"] == ["pilgrim"] and d["value"] == int(d["rank"]) for d in M.PILGRIMS)
+    assert len({d["id"] for d in M.PILGRIMS}) == 24 and M.PUPPY["id"] not in {d["id"] for d in M.PILGRIMS}
+    rng = random.Random(7)
+    # every game that opens pack P gets exactly those 24; only mission 8 adds the ace (in its zone)
+    for number in (7, 8, 9):
+        c = CampaignState.new(1, ["Ana"], seed=number)
+        P.add_card(c.party, dict(M.GORAN))
+        extra = M.build_setup(c, number, rng)
+        deck = extra["pilgrims"] or extra["pilgrims_in_reserve"]
+        assert Counter(d["rank"] for d in deck) == pack, number
+        assert [d["id"] for d in extra["zone_start"] if d["id"] == M.PUPPY["id"]] == (["PILA"] if number == 8 else [])
+    c, g = _mission(7, seed=801)
+    pilgrims = [x for x in g.cards if g.cards[x].has("pilgrim")]
+    assert len(pilgrims) == 24 and "PILA" not in g.cards
+    assert Counter(g.cards[x].rank for x in pilgrims) == pack
+    c, g = _mission(8, seed=802)
+    assert g.mission_zone == ["PILA"] and Counter(g.cards[x].rank for x in g.cards if g.cards[x].has("pilgrim")) == dict(pack, A=1)
+    lake = E.build_setup(c, {"location": "E", "banes": [], "boons": []}, rng)    # Evergreen's Lake
+    assert Counter(d["rank"] for d in lake["pilgrims"]) == pack
+
+
+def test_mission7_attempts_saved_with_the_ace_in_the_pilgrim_deck_lose_it_on_load(tmp_path, monkeypatch):
+    from regicide.engine import Game
+    c, g = _mission(7, seed=803)
+    # an attempt saved before the fix: the ace dealt into pack P's pilgrim deck
+    from regicide.cards import Card
+    puppy = Card.from_dict(dict(M.PUPPY))
+    g.cards[puppy.id] = puppy
+    g.extra["pilgrim_deck"].insert(3, puppy.id)
+    g.config.extra["pilgrims"] = list(g.config.extra["pilgrims"]) + [dict(M.PUPPY)]
+    old = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+    assert M.drop_stray_puppy(old) and "PILA" not in old.cards and "PILA" not in old.extra["pilgrim_deck"]
+    assert len(old.extra["pilgrim_deck"]) == 23 and all(d["id"] != "PILA" for d in old.config.extra["pilgrims"])
+    _ids_everywhere(old)
+    assert not M.drop_stray_puppy(old)                       # once only
+    # wherever it waits: the zone, a hand, the discard pile
+    for where in ("zone", "hand", "discard"):
+        old = Game.from_dict(json.loads(json.dumps(g.to_dict())))
+        old.extra["pilgrim_deck"].remove("PILA")
+        {"zone": old.mission_zone, "hand": old.players[0].hand, "discard": old.discard}[where].append("PILA")
+        assert M.drop_stray_puppy(old) and "PILA" not in old.all_card_ids(), where
+        _ids_everywhere(old)
+    # the app repairs it when the attempt is loaded
+    monkeypatch.setenv("REGICIDE_SAVE_DIR", str(tmp_path))
+    from app import store
+    store.save_attempt(Game.from_dict(json.loads(json.dumps(g.to_dict()))), "slot1")
+    loaded = store.load_attempt("slot1")
+    assert loaded is not None and "PILA" not in loaded.cards and len(loaded.extra["pilgrim_deck"]) == 23
+    # mission 8's own ace is never touched
+    c8, g8 = _mission(8, seed=804)
+    assert not M.drop_stray_puppy(g8) and g8.mission_zone == ["PILA"]
+
+
 def test_mission7_pilgrim_deck_flips_at_every_start_of_turn_and_pilgrims_never_leave_hands():
     c, g = _mission(7, players=2, seed=800)
     assert g.config.rules_id == "legacy_m7" and MISSIONS[6]["playable"] and g.rules.uses_mission_zone
     assert all(x in g.cards for x in ("3U", "5U", "7U", "9U", "GOR8"))
-    # 25 pilgrims: one flipped before the first turn, 24 left face down
-    assert len(g.extra["pilgrim_deck"]) == 24 and len(g.mission_zone) == 1 and g.cards[g.mission_zone[0]].has("pilgrim")
+    # pack P's 24 pilgrims: one flipped before the first turn, 23 left face down; no ace
+    assert len(g.extra["pilgrim_deck"]) == 23 and len(g.mission_zone) == 1 and g.cards[g.mission_zone[0]].has("pilgrim")
+    assert M.PUPPY["id"] not in g.cards
     assert not any(g.cards[x].has("pilgrim") for x in g.tavern)
     _ids_everywhere(g)
     set_mission_enemy(g, "WLJH")

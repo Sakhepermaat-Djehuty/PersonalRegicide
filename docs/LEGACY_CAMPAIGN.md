@@ -757,8 +757,11 @@ one card in mission zone.
 
 **Pack P (pilgrims), confirmed by the owner:** four classless cards of every strength 2
 to 7 (24 cards, each with its own name: Seeker and Traveller among the gnome 2s,
-Follower 3, Servant 4, Acolyte 6, an elf 7), plus the puppy, the animal pilgrim that
-mission 8 places in the mission zone.
+Follower 3, Servant 4, Acolyte 6, an elf 7), and no ace. The puppy, the animal pilgrim
+ace, is not part of pack P: it comes in mission 8's box, which places it in the mission
+zone (and Evergreen boon 28 brings it back). Mission 7 attempts saved while the app
+wrongly dealt the ace into the pilgrim deck lose it when they are loaded
+(`missions.drop_stray_puppy`; an ace already in play stays until the attempt ends).
 
 **Story cards:** intro (the driftwood village, the metal spider, trapped pilgrims, the
 pondkin) and outcome (Gøran reborn on the island, the afflicted refuse the cure, on to
@@ -1164,8 +1167,8 @@ printed on the physical cards; the app shows none of them.
 
 * **Plain cards, rank and class only:** Gøran's four beasts (B♥ B♦ B♣ B♠), Myla's beast
   (B⚝, "Ash"), the ten mages (the ace was "Quill"), the four Reavers, Guardians, Druids
-  and Chanters (3, 5, 7 and 9 of their class), the 24 pilgrims and the pilgrim ace (the
-  puppy), shown as "Pilgrim 4", and the mercenaries ("12 Cleric", "2/5 Bard", "19 (no
+  and Chanters (3, 5, 7 and 9 of their class), the 24 pilgrims of pack P and mission 8's
+  pilgrim ace (the puppy), shown as "Pilgrim 4", and the mercenaries ("12 Cleric", "2/5 Bard", "19 (no
   class)", "Wild Animal (choose a class)", "Jester"). Reward texts name the cards the same
   way ("the 5 Reaver teaches a 6: the Cleric, Bard or Paladin 6 gains the Reaver class").
   Races (dwarves, feltrix and so on) are not shown either: mission 9's student choice is
@@ -1374,7 +1377,8 @@ Numbers are attack / health.
    banish the enemy; exact kill: banish one zone card first. Rewards: Gøran gains
    Cleric; corrupt another character (random); Alantha (7 Druid) stays, the
    other Druids leave; Glamelyn, Herbod or Dhonatir (the 4s) gains Druid (player's
-   choice). Pack P: four classless cards of each strength 2 to 7, plus the puppy.
+   choice). Pack P: four classless cards of each strength 2 to 7 (the puppy is in
+   mission 8's box).
 8. **Winds of Chaos** (Heaven's Edge; fan name: The Troll Bridge) — **confirmed:** four
    Chanters (3, 5, 7, 9) join for the mission; the puppy starts in the mission zone and
    the other pilgrims are shuffled into the reserve. 6 Trolls 10/20 and 6 Wyverns 25/50,

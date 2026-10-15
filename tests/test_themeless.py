@@ -40,7 +40,7 @@ _FLAVOUR_RE = re.compile(r"\b(%s)\b" % "|".join(FLAVOUR))
 
 def _party_side_cards():
     return (M.BEASTS + [M.ASH] + M.MAGE_DECK + M.CHANTERS + M.DRUIDS + M.GUARDIANS + M.REAVERS + M.PILGRIMS
-            + [m["card"] for m in MERCENARIES])
+            + [M.PUPPY] + [m["card"] for m in MERCENARIES])
 
 
 def test_party_side_cards_are_plain_and_only_the_story_characters_keep_a_name():
