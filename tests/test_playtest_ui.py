@@ -759,6 +759,7 @@ def test_the_table_under_a_choice_box_is_current_and_public(app):
     ov.peek_btn.touch_began(None)
     # under the box: no hand, no trace of Ben's selection, nothing to tap
     assert gs.hand.cards == [] and "3♦" not in gs.message.text and "3♥" not in gs.message.text
+    assert gs.forecast == "" and gs.enemy.projection is None
     assert not gs.left_btn.enabled and not gs.mid_btn.enabled and not gs.right_btn.enabled
     ov.peek_btn.touch_ended(None)
 
@@ -804,6 +805,7 @@ def test_the_table_under_a_choice_box_is_current_and_public(app):
     assert isinstance(gs.overlay, MagePeekOverlay)
     assert sorted(c.id for c in gs.hand.cards) == ["8S", "9S"] and gs.hand.selected == []
     assert "reveals 3 cards" not in gs.message.text      # not the forecast made before the play
+    assert gs.forecast == "" and gs.enemy.projection is None and not gs.enemy.warn
 
 
 def test_tall_choice_boxes_scroll_their_options_and_keep_the_hold_button_on_screen(app):
@@ -843,10 +845,10 @@ def test_review_recheck_toast_class_box_scroll_cut_and_the_game_log(app):
     # the solo Jester attack's class box: the selection and its forecast are gone under it
     gs.refresh(after_action=False)
     gs.hand.set_selection([g.players[0].hand[0]])
-    forecast = gs.message.text
+    assert gs.forecast and gs.enemy.projection
     _tap(app, gs.mid_btn.title)
     assert isinstance(gs.overlay, ClassChoiceOverlay)
-    assert gs.hand.selected == [] and gs.message.text != forecast and not gs.right_btn.enabled
+    assert gs.hand.selected == [] and not gs.forecast and gs.enemy.projection is None and not gs.right_btn.enabled
     # every scrolled grid of options ends halfway through a button
     from app.screens import ChanterDeclareOverlay
     from regicide.engine import PHASE_DECIDE
@@ -941,7 +943,8 @@ def test_the_classic_faces_setting(app, tmp_path):
     labels = _texts(app)
     i = [n for n, t in enumerate(labels) if t.startswith("Classic card faces")]
     assert i and not app.settings.get("classic_faces")
-    switch = sw[-1]
+    row = [v for v in ui.find(app, lambda v: isinstance(v, ui.Label) and v.text.startswith("Classic card faces"))][0]
+    switch = [v for v in sw if abs(v.y - (row.y + 6)) < 1][0]
     switch.value = True
     switch.action(switch)
     try:
@@ -1003,7 +1006,7 @@ def test_a_tap_redraws_only_the_cards_that_change():
     assert redrawn == []                                   # nothing changed: nothing redrawn
     grid.selectable = lambda c: c.id != "3H"
     grid.refresh_dim()
-    assert redrawn == ["3H"] and grid.views["3H"].dimmed
+    assert redrawn == ["3H"] and grid.views["3H"].shaded
 
 
 def test_the_test_ui_gstate_restores_the_colour_too():

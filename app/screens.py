@@ -19,7 +19,7 @@ from regicide.rules import GameConfig
 
 from . import store
 from . import theme as T
-from .widgets import (CardStrip, CardView, EnemyPanel, HandGrid, fit_label, fit_title, make_button, make_label,
+from .widgets import (CardStrip, CardView, HandGrid, TableHeader, fit_label, fit_title, make_button, make_label,
                       set_enabled, text_size)
 
 VERSION = "alpha 5.1"
@@ -547,6 +547,7 @@ class GameScreen(Screen):
         self.return_overlay: Optional[ui.View] = None
         self.rules_pending = False   # show the mission's rules card before play starts
         self.message_text = ""
+        self.forecast = ""   # what the selected cards would do, in words (the attack's card)
         self.status = make_label("", (0, 0, 10, 10), 13, False, T.MUTED)
         # a tap on the status line ("Reserve 54 · Discard 17") opens the piles
         self.piles_btn = ui.Button(frame=(0, 0, 10, 10))
@@ -554,9 +555,14 @@ class GameScreen(Screen):
         self.piles_btn.background_color = None
         self.piles_btn.action = lambda s: self._show_piles()
         self.menu_btn = make_button("Menu", self._menu, (0, 0, 70, 30), False, 14)
-        self.enemy = EnemyPanel()
+        # the enemy large in the middle, its attack on the left and its health on the right
+        self.enemy = TableHeader()
+        self.enemy.on_attack = self._show_attack
+        self.enemy.on_enemy = self._show_enemy
+        self.flute_slot: Optional[ui.Button] = None   # the action bar button standing in for the Flute
         self.strip = CardStrip()
         self.zone = CardStrip()
+        self.zone.empty_text = ""    # its title says "(empty)"
         self.zone.hidden = True
         self.message = make_label("", (0, 0, 10, 10), 14, False, T.TEXT, ui.ALIGN_CENTER, lines=3)
         self.hand = HandGrid()
@@ -584,21 +590,43 @@ class GameScreen(Screen):
         self.status.frame = (m, y, w - 2 * m - 80, 30)
         self.piles_btn.frame = self.status.frame
         self.menu_btn.frame = (w - m - 70, y, 70, 30)
-        y += 36
-        eh = 128
+        y += 34
+        # the header grows with the screen (its card keeps a playing card's proportions)
+        eh = max(112.0, min(190.0, h * 0.21))
         self.enemy.frame = (m, y, w - 2 * m, eh)
-        y += eh + 6
-        self.strip.frame = (m, y, w - 2 * m - 90, 64)
-        self.special_btn.frame = (w - m - 84, y + 14, 84, 36)
-        y += 70
-        if not self.zone.hidden:
-            self.zone.frame = (m, y, w - 2 * m, 64)
-            y += 70
-        self.message.frame = (m, y, w - 2 * m, 56)
-        y += 60
+        y += eh + 4
         bar_h = 48
         bar_y = h - T.BOTTOM_INSET - bar_h
-        self.hand.frame = (m, y, w - 2 * m, max(120, bar_y - 10 - y))
+        below = self.app.settings.get("played_below", True)
+        strip_h = 64
+        zone = not self.zone.hidden
+        # on a short screen the mission zone and the played cards share a row
+        shared = zone and h < 760
+        full = w - 2 * m
+
+        def strips(top: float) -> None:
+            if shared:
+                half = (full - 8) / 2.0
+                self.zone.frame = (m, top, half, strip_h)
+                self.strip.frame = (m + half + 8, top, half - (90 if not self.special_btn.hidden else 0), strip_h)
+            else:
+                self.strip.frame = (m, top, full - 90, strip_h)
+            self.special_btn.frame = (w - m - 84, top + 14, 84, 36)
+
+        if not below:
+            strips(y)
+            y += strip_h + 6
+        if zone and not shared:
+            self.zone.frame = (m, y, full, 64)
+            y += 70
+        self.message.frame = (m, y, full, 56)
+        y += 58
+        bottom = bar_y - 8
+        if below:
+            # the cards played against this enemy, between the hand and the action bar
+            bottom -= strip_h + 4
+            strips(bottom + 4)
+        self.hand.frame = (m, y, full, max(100, bottom - y))
         bw = (w - 2 * m - 16) / 3
         self.left_btn.frame = (m, bar_y, bw, bar_h)
         self.mid_btn.frame = (m + bw + 8, bar_y, bw, bar_h)
@@ -619,15 +647,22 @@ class GameScreen(Screen):
         # (mission 10's face-up enemy deck shows its next enemy in the enemy panel)
         self.status.text = status_text(g, self.status.width)
         self.enemy.game = g
-        self.enemy.set_needs_display()
-        # in the order the cards entered play (the clean-up's default order)
-        played = [g.card(c) for p in g.plays for c in p.card_ids]
-        self.strip.set_cards(played, "Played against this enemy")
-        self.strip.set_needs_display()
+        self.enemy.projection, self.enemy.warn, self.enemy.paying = None, False, None
+        self.enemy.refresh()
+        self.hand.warned = set()
+        self.hand.can_start = lambda c: False
         uses_zone = bool(g.mission_zone) or getattr(g.rules, "uses_mission_zone", False)
         if uses_zone != (not self.zone.hidden):
             self.zone.hidden = not uses_zone
             self.layout()
+        # in the order the cards entered play (the clean-up's default order); beside the
+        # mission zone on a short screen, a short title
+        played = [g.card(c) for p in g.plays for c in p.card_ids]
+        title = "Played against this enemy"
+        if text_size(title, 0, CardStrip.TITLE_FONT)[0] > self.strip.width - 8:
+            title = "Played"
+        self.strip.set_cards(played, title)
+        self.strip.set_needs_display()
         if uses_zone:
             zone_cards, title = zone_caption(g)
             self.zone.set_cards(zone_cards, title)
@@ -702,10 +737,6 @@ class GameScreen(Screen):
             self.hand.badges = dict((cid, "flute") for cid in flute)
             self.hand.badges.update(locked)
             self.hand.set_cards(g.hand() + [g.card(c) for c in flute], keep_selection=False)
-        specials = g.rules.special_actions(g)
-        self.special_btn.hidden = not specials
-        if specials:
-            self.special_btn.title = "Flute" if all(a.get("name") == "flute_store" for a in specials) else "Actions"
         self._update_controls()
 
     def reveal_hand(self) -> None:
@@ -725,6 +756,11 @@ class GameScreen(Screen):
         for b, primary in ((self.left_btn, False), (self.mid_btn, False), (self.right_btn, True)):
             set_enabled(b, False, primary)
         self.special_btn.hidden = True
+        self.flute_slot = None
+        self.forecast = ""
+        self.hand.warned = set()
+        self.enemy.projection, self.enemy.warn, self.enemy.paying = None, False, None
+        self.enemy.refresh()
         self.toast.hidden = True      # a Hint names a card of the hand that was shown
 
     def _hand_hidden(self) -> bool:
@@ -778,9 +814,25 @@ class GameScreen(Screen):
         g = self.game
         sel = list(self.hand.selected)
         name = g.active_player.name
+        self.forecast = ""
+        self.flute_slot = None
+        had_special = not self.special_btn.hidden
+        self.special_btn.hidden = True
+        self.hand.can_start = lambda c: False
+        self.hand.warned = set()
+        projection: Optional[dict] = None
+        warn, paying = False, None
         if g.phase == PHASE_PLAY:
-            self.hand.selectable = lambda c: not g.hand_locked(c.id) if c.id in g.active_player.hand else True
-            self.hand.refresh_dim()
+            # Greyed: a card that no legal play has together with the cards selected so far.
+            # A card the solo Kinfolk Flute stores only joins a kinfolk set already begun.
+            # A greyed card that is a legal play on its own starts a new selection.
+            hand_ids = set(g.active_player.hand)
+            plays = [set(p) for p in g.legal_plays()]
+            chosen = set(sel)
+            fits = [p for p in plays if chosen <= p]
+            self.hand.selectable = lambda c: c.id in chosen or (
+                (c.id in hand_ids or bool(chosen)) and any(c.id in p for p in fits))
+            self.hand.can_start = lambda c: c.id in hand_ids and set([c.id]) in plays
             self.left_btn.title = "Yield"
             set_enabled(self.left_btn, g.can_yield(), False)
             if g.n_players == 1:
@@ -798,54 +850,87 @@ class GameScreen(Screen):
                 self.message_text = "%s claimed the Jester: this attack ignores immunity." % name
             if sel:
                 ok, info = g.check_play(sel)
-                if ok:
-                    pv = g.preview_play(sel)
-                    self.message.text = describe_preview(g, pv)
-                    set_enabled(self.right_btn, True)
+                pv = g.preview_play(sel) if ok else {}
+                if pv.get("ok"):
+                    # what the play would do shows on the header (and in full on a tap on the
+                    # attack); a class power the enemy blocks puts a red edge on the card
+                    # and on the enemy
+                    projection = pv
+                    self.forecast = describe_preview(g, pv)
+                    blocked = [suit for suit, ev in pv["powers"].items() if ev.get("immune")]
+                    self.hand.warned = set(c for c in sel if any(s_ in g.card(c).suits for s_ in blocked))
+                    warn = bool(self.hand.warned)
+                    self.message.text = ""
                 else:
-                    self.message.text = info
-                    set_enabled(self.right_btn, False)
+                    self.message.text = pv.get("reason") or info
+                set_enabled(self.right_btn, bool(pv.get("ok")))
             else:
                 self.message.text = self.message_text or ("%s: tap cards to play, then Play." % name)
                 set_enabled(self.right_btn, False)
+            specials = g.rules.special_actions(g)
+            if specials and not g.can_yield():
+                # the solo Kinfolk Flute takes Yield's place (a solo player never yields)
+                self.flute_slot = self.left_btn
+                self.left_btn.title = special_title(specials)
+                set_enabled(self.left_btn, True, False)
+            elif specials:
+                self.special_btn.hidden = False
+                self.special_btn.title = special_title(specials)
+            self.hand.refresh_dim()
         elif g.phase == PHASE_SUFFER:
             need = g.pending_damage
             hand_ids = set(g.active_player.hand)
-            # only hand cards pay damage (not the solo Kinfolk Flute's stored cards)
-            self.hand.selectable = lambda c: c.id in hand_ids and not g.hand_locked(c.id)
-            self.hand.refresh_dim()
             if any(c not in hand_ids for c in sel):
                 self.hand.set_selection([c for c in sel if c in hand_ids])
                 return
             total = sum(g.card(c).defence_value for c in sel)
+            # Legacy (p.18): one card at a time, in the order tapped; no card may follow once
+            # the damage is covered (the last one ends on top of the discard pile)
+            one_by_one = g.rules.sequential_discard(g)
+            covered = one_by_one and total >= need
+            chosen = set(sel)
+            # only hand cards pay damage (not the solo Kinfolk Flute's stored cards); greyed
+            # once a one-at-a-time discard is covered
+            self.hand.selectable = lambda c: c.id in chosen or (
+                c.id in hand_ids and not g.hand_locked(c.id) and not covered)
             feign = g.feign_death_available()
             self.left_btn.title = "Feign death" if feign else "Suggest"
             set_enabled(self.left_btn, True, False)
             self.mid_btn.title = "Jester" if self.width < 385 else "Jester power"
             self.mid_btn.hidden = not (g.n_players == 1 and g.rules.solo_jester_mode(g) == "refresh")
             set_enabled(self.mid_btn, g.can_use_solo_jester(), False)
-            self.right_btn.title = "Discard"
+            self.right_btn.title = "Discard %d/%d" % (total, need) if need > 0 else "Discard"
             whole = set(sel) == hand_ids and bool(sel)
-            # Legacy (p.18): one card at a time, in the order tapped; no card may follow once
-            # the damage is covered (the last one ends on top of the discard pile)
-            one_by_one = g.rules.sequential_discard(g)
             in_order = not one_by_one or sum(g.card(c).defence_value for c in sel[:-1]) < need
             set_enabled(self.right_btn, (total >= need and need > 0 and in_order) or (feign and whole))
-            self.message.text = "%s suffers %d damage. Select cards worth at least %d (selected: %d)." % (
-                name, need, need, total)
+            paying = (total, need)
+            self.message.text = "" if sel else "%s suffers %d damage: select cards worth at least %d." % (name, need, need)
             # one hint at most (the message has three lines)
             if one_by_one and total >= need and not in_order and not (feign and whole):
-                self.message.text = ("%s suffers %d damage. In this order the damage is covered before %s: tap the cards "
-                                     "in the order they are discarded, without a card too many." % (
-                                         name, need, g.card(sel[-1]).label()))
+                self.message.text = ("In this order the damage is covered before %s: tap the cards in the order they "
+                                     "are discarded, without a card too many." % g.card(sel[-1]).label())
             elif g.hand_defence_value() < need and g.can_use_solo_jester():
                 self.message.text += " Your hand is short: use the Jester power."
             elif feign:
                 self.message.text += " At the hand limit you may feign death: discard everything."
-            elif one_by_one and len(sel) >= 2:
-                self.message.text += " Discard one at a time: the last card ends on top of the discard pile."
+            elif sel:
+                pass
+            elif one_by_one:
+                self.message.text += " One at a time: the last card ends on top of the discard pile."
             elif any(g.hand_locked(c) for c in g.active_player.hand):
                 self.message.text += " Pilgrims never leave your hand."
+            self.message.text = self.message.text.strip()
+            specials = g.rules.special_actions(g)
+            if specials and self.mid_btn.hidden:
+                # the solo Kinfolk Flute in the Jester's place (the Jester has no power here)
+                self.flute_slot = self.mid_btn
+                self.mid_btn.hidden = False
+                self.mid_btn.title = special_title(specials)
+                set_enabled(self.mid_btn, True, False)
+            elif specials:
+                self.special_btn.hidden = False
+                self.special_btn.title = special_title(specials)
+            self.hand.refresh_dim()
         elif g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") == "chanter_discard":
             # Chanter: the shown hand belongs to a player over the limit, who discards down to it.
             d = g.decision or {}
@@ -969,6 +1054,7 @@ class GameScreen(Screen):
             who = g.players[g.deciding].name
             if sel and sel[0] in adds:
                 pv = g.preview_decision({"type": "whistle_add", "card": sel[0]})
+                projection = pv if pv.get("ok") else None
                 self.message.text = "%s adds %s (attack %d): %s" % (
                     who, g.card(sel[0]).label(), pv.get("attack", 0), describe_preview(g, pv))
             else:
@@ -1020,6 +1106,7 @@ class GameScreen(Screen):
             who = g.players[g.deciding].name
             if legal:
                 pv = g.preview_decision({"type": "flute_add", "card_ids": sel})
+                projection = pv if pv.get("ok") else None
                 self.message.text = "%s adds %s (attack %d): %s" % (
                     who, " + ".join(g.card(c).label() for c in sel), pv.get("attack", 0), describe_preview(g, pv))
             elif sel:
@@ -1030,6 +1117,9 @@ class GameScreen(Screen):
         for b in (self.left_btn, self.mid_btn, self.right_btn):
             fit_title(b, 16)     # the action bar's size, smaller only for a long title
         self.message.set_needs_display()
+        self.enemy.show(projection, warn, paying)
+        if had_special == self.special_btn.hidden:
+            self.layout()     # the played cards make room for the button beside them, or take it back
 
     def _selection_changed(self) -> None:
         self.message_text = ""
@@ -1058,7 +1148,9 @@ class GameScreen(Screen):
 
     def _left(self, sender) -> None:
         g = self.game
-        if g.phase == PHASE_PLAY:
+        if self.flute_slot is self.left_btn:
+            self._special(sender)
+        elif g.phase == PHASE_PLAY:
             self._act(g.yield_turn)
         elif g.phase == PHASE_SUFFER:
             if g.feign_death_available():
@@ -1098,7 +1190,9 @@ class GameScreen(Screen):
 
     def _mid(self, sender) -> None:
         g = self.game
-        if g.n_players == 1 and g.rules.solo_jester_mode(g) == "attack":
+        if self.flute_slot is self.mid_btn:
+            self._special(sender)
+        elif g.n_players == 1 and g.rules.solo_jester_mode(g) == "attack":
             self._table_under_box(g.active)
             self._show_overlay(ClassChoiceOverlay(self))
         elif g.n_players == 1 or g.phase == PHASE_SUFFER:
@@ -1157,6 +1251,30 @@ class GameScreen(Screen):
         """The piles viewer, on the discard pile (the reserve while nothing is discarded)."""
         self._remember_place()
         self._show_overlay(PilesOverlay(self, pile or ("discard" if self.game.discard else "reserve")))
+
+    def _show_attack(self) -> None:
+        """The attack's card (a tap on the attack number): the enemy's attack beside the shield."""
+        g = self.game
+        if g.enemy is None or self.overlay is not None:
+            return
+        sel = list(self.hand.selected)
+        pv = self.enemy.projection
+        popup = CardPopup("Attack", "", [("Close", lambda s: popup.close(), False)], dismissable=True,
+                          make_face=lambda w, h: attack_face(g, sel, pv, self.forecast, w, h))
+        show_card_popup(self, popup)
+
+    def _show_enemy(self) -> None:
+        """The enemy's card (a tap on the enemy or its health): health, immunity, the castle."""
+        g = self.game
+        if g.enemy is None or self.overlay is not None:
+            return
+        from .widgets import card_color
+        card = g.card(g.enemy.card_id)
+        col = card_color(card)
+        sel = " + ".join(g.card(c).label() for c in self.hand.selected)
+        popup = CardPopup(g.enemy.name, enemy_text(g, self.forecast, sel), [("Close", lambda s: popup.close(), False)],
+                          icon=[(card.rank, col)], edge=col, dismissable=True)
+        show_card_popup(self, popup)
 
     def _remember_place(self) -> None:
         """Before a menu or a viewer opens over the table or a choice box, remember where Back
@@ -2380,6 +2498,118 @@ def card_face(title: str, body: str, width: float, max_height: float, icon=None,
     return face
 
 
+def special_title(specials: List[dict]) -> str:
+    """The button that opens the rules' special actions: "Flute" when they are all the solo
+    Kinfolk Flute's."""
+    return "Flute" if all(a.get("name") == "flute_store" for a in specials) else "Actions"
+
+
+def shield_rows(g: Game) -> List[tuple]:
+    """(cards, value, counts) for each paladin (Spades) play against the enemy: what it adds
+    to the shield, or why it adds nothing (the enemy's immunity), as ``Game.shield`` counts."""
+    rows = []
+    for p in g.plays:
+        if "S" not in p.suits:
+            continue
+        cards = " + ".join(g.card(c).label() for c in p.card_ids)
+        counts = not g.rules.fixed_immunity(g, "S") and (
+            p.jester or not g.immune("S", [g.card(c) for c in p.card_ids]))
+        rows.append((cards, p.value, counts))
+    return rows
+
+
+def attack_face(g: Game, sel: List[str], pv: Optional[dict], forecast: str, width: float, max_height: float):
+    """The attack's card: the enemy's attack (printed, the mission's bonus, a multiplier)
+    beside the players' shield (each paladin play), what is suffered, and with cards
+    selected what the play would change (``forecast``)."""
+    from .widgets import PlayingCardFace, card_color
+    e = g.enemy
+    card = g.card(e.card_id)
+    col = card_color(card)
+    face = PlayingCardFace(col, [(card.rank, col)])
+    ink, muted = T.CARD_INK, T.CARD_INK_MUTED
+    y = 22.0
+    face.add_subview(make_label("Attack", (42, y, width - 84, 26), 20, True, ink, ui.ALIGN_CENTER))
+    y += 26
+    face.add_subview(fit_label(e.name, width - 84, 12, False, muted, ui.ALIGN_CENTER))
+    face.subviews[-1].frame = (42, y, width - 84, 18)
+    y += 22
+    rule = ui.View(frame=(30, y, width - 60, 1.5))
+    rule.background_color = col
+    face.add_subview(rule)
+    y += 10
+    gap = 14.0
+    cw = (width - 44 - gap) / 2.0
+    bonus = g.rules.attack_bonus(g)
+    mult = g.rules.attack_multiplier(g)
+    left = [("Printed", "%d" % e.attack, ink)]
+    if bonus:
+        left.append(("Mission", "%+d" % bonus, ink))
+    if mult != 1:
+        left.append(("Doubled" if mult == 2 else "Multiplied", "×%d" % mult, ink))
+    right = [(cards if counts else cards + " immune", "%d" % v if counts else "0", ink if counts else muted)
+             for cards, v, counts in shield_rows(g)]
+    if len(right) > 5:
+        hidden = len(right) - 4
+        right = right[-4:] + [("%d more" % hidden, "", muted)]
+    if not right:
+        right = [("None yet", "", muted)]
+    total_atk = (e.attack + bonus) * mult
+
+    def column(x: float, head: str, rows: List[tuple], total: str) -> float:
+        yy = y
+        face.add_subview(make_label(head, (x, yy, cw, 18), 12, True, muted, ui.ALIGN_CENTER))
+        yy += 22
+        for name, value, c in rows:
+            face.add_subview(make_label(name, (x, yy, cw - 30, 20), 14, False, c, ui.ALIGN_LEFT))
+            face.add_subview(make_label(value, (x + cw - 34, yy, 34, 20), 14, True, c, ui.ALIGN_RIGHT))
+            yy += 21
+        line = ui.View(frame=(x, yy + 2, cw, 1))
+        line.background_color = muted
+        face.add_subview(line)
+        yy += 6
+        face.add_subview(make_label(total, (x, yy, cw, 28), 22, True, ink, ui.ALIGN_CENTER))
+        return yy + 30
+
+    bottom = max(column(22, "ENEMY", left, "%d" % total_atk),
+                 column(22 + cw + gap, "SHIELD", right, ("−%d" % g.shield) if g.shield else "0"))
+    y = bottom + 6
+    face.add_subview(make_label("You suffer %d" % g.enemy_attack, (22, y, width - 44, 30), 22, True, T.DANGER,
+                                ui.ALIGN_CENTER))
+    y += 34
+    if pv and forecast:
+        rule2 = ui.View(frame=(30, y, width - 60, 1.5))
+        rule2.background_color = col
+        face.add_subview(rule2)
+        y += 8
+        head = "With " + " + ".join(g.card(c).label() for c in sel)
+        face.add_subview(fit_label(head, width - 44, 13, True, ink, ui.ALIGN_LEFT))
+        face.subviews[-1].frame = (22, y, width - 44, 18)
+        y += 20
+        _, th = text_size(forecast, width - 48, 13)
+        face.add_subview(make_label(forecast, (22, y, width - 44, float(th) + 6), 13, False, ink, ui.ALIGN_LEFT, 0))
+        y += float(th) + 8
+    height = max(y + 40, min(width * 1.4, max_height))
+    face.frame = (0, 0, width, min(height, max(max_height, y + 40)))
+    return face
+
+
+def enemy_text(g: Game, forecast: str = "", sel_label: str = "") -> str:
+    """The enemy's card text: health, immunity, what is left in the castle (mission 10's
+    face-up enemy deck shows the next one) and what the selected cards would do."""
+    from .widgets import immunity_text
+    e = g.enemy
+    lines = ["Health %d of %d. Attack %d." % (max(0, e.hp), e.max_hp, g.enemy_attack), immunity_text(g)[0] + "."]
+    castle = "%d more in the castle." % len(g.castle)
+    if getattr(g.rules, "mission", 0) == 10 and g.castle:
+        castle = "%d more in the castle, next: %s." % (len(g.castle), g.card(g.castle[0]).label())
+    lines.append(castle)
+    if forecast:
+        lines.append("")
+        lines.append("With %s: %s" % (sel_label, forecast))
+    return "\n".join(lines)
+
+
 class CardPopup(ui.View):
     """A pop-up drawn as a playing card (``card_face``: name and icon at the top, the text
     below) over a dimmed screen, with its buttons under the card. A button is (title,
@@ -2387,8 +2617,9 @@ class CardPopup(ui.View):
     beside the card closes it."""
 
     def __init__(self, title: str, text: str, buttons, icon=None, edge: str = "", subtitle: str = "",
-                 corner=None, dismissable: bool = False, **kw) -> None:
+                 corner=None, dismissable: bool = False, make_face=None, **kw) -> None:
         super().__init__(**kw)
+        self.make_face = make_face   # (width, max height) -> a face of its own instead of ``card_face``
         self.title_text = title
         self.body = text
         self.buttons = list(buttons)
@@ -2408,7 +2639,8 @@ class CardPopup(ui.View):
         pw = min(300, self.width - 2 * T.MARGIN)
         buttons_h = 58 * len(self.buttons)
         room = self.height - T.TOP_INSET - T.BOTTOM_INSET - buttons_h - 6
-        face = card_face(self.title_text, self.body, pw, room, self.icon, self.edge, self.subtitle, self.corner)
+        face = (self.make_face(pw, room) if self.make_face is not None else
+                card_face(self.title_text, self.body, pw, room, self.icon, self.edge, self.subtitle, self.corner))
         total = face.height + 12 + buttons_h
         x = (self.width - pw) / 2.0
         y = max(T.TOP_INSET, (self.height - total) / 2.0)
@@ -4040,6 +4272,7 @@ class SettingsScreen(Screen):
             ("open_hands", "Open hands by default (pass and play)", False),
             ("rules_card", "Show a mission's rules card when it first loads", True),
             ("classic_faces", "Classic card faces: a 7 shows seven symbols, like a playing card", False),
+            ("played_below", "Played cards under the hand (off: above it)", True),
         ]
         for key, label, default in rows:
             self.add_subview(make_label(label, (m, y, w - 2 * m - 60, 44), 15, False, T.TEXT, lines=2))

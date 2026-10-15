@@ -36,6 +36,30 @@ lays numbered cards out like playing cards (a 7 shows seven class icons, the num
 icon in two corners, the lower half turned; royals show a big letter); cards above 10,
 beasts, 2/5s, Wild Animals, Jesters and the deck list's small cards keep the simple face.
 
+## The table
+
+The enemy sits large in the middle of the top, drawn as a royal with the classes it is
+immune to under its letter. Its attack (after the players' shield) is on the left and its
+health on the right, in big numbers. While cards are selected, the numbers show what the
+play would do ("→ 6" left to suffer, "→ 11" health left, "exact!" or "defeated"). A tap
+left of the enemy opens the attack's card: the enemy's attack (printed, the mission's
+bonus, any multiplier) beside the shield (each paladin play, or why it adds nothing), what
+you suffer, and the selected play's forecast in words. A tap on the enemy opens its card:
+health, immunity, the castle count (mission 10: the next enemy) and the forecast.
+
+Cards that cannot join the selection are greyed. A greyed card that can be played alone
+starts a new selection when tapped. The solo Kinfolk Flute's stored cards stay greyed
+until a set of their strength is begun. A selected card whose class power the enemy is
+immune to gets a red edge and a "!" in its corner, and so does the enemy. While suffering,
+the Discard button shows the tally ("Discard 8/12") and, where cards go one at a time,
+the rest grey out once the damage is covered. The message line stays quiet while cards
+are selected.
+
+Solo, the Flute takes the Yield button's place (a solo player never yields), or the
+Jester's while suffering. The cards played against the enemy sit under the hand, above
+the buttons (Settings: "Played cards under the hand" puts them back above it). On a short
+screen they share a row with the mission zone.
+
 ## What the client offers
 
 Solo and pass-and-play Regicide with full rules enforcement, play forecasts, suggested

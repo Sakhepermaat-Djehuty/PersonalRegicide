@@ -448,10 +448,11 @@ def test_ui_plays_two_five_with_a_five_and_asks_once_for_two_two_fives(app):
     set_hand(g, ["M25H", "5D", "M25S", "9S"])
     gs.refresh(after_action=False)
     gs.hand.set_selection(["M25H", "5D"])              # the owner's report: refused before
-    assert "Combos need" not in gs.message.text and "10 damage" in gs.message.text
-    assert "declare" not in gs.message.text
+    # (the forecast is on the attack's card, a tap on the attack number)
+    assert "Combos need" not in gs.message.text and "10 damage" in gs.forecast
+    assert "declare" not in gs.forecast
     gs.hand.set_selection(["M25H", "M25S"])
-    assert gs.message.text.startswith("2/5: you declare 2 or 5 (5 here).") and "10 damage" in gs.message.text
+    assert gs.forecast.startswith("2/5: you declare 2 or 5 (5 here).") and "10 damage" in gs.forecast
     b = ui.button(app, "Play")
     assert b.enabled
     ui.tap(app, *ui.root_point(app, b))

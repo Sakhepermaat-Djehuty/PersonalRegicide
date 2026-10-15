@@ -11,7 +11,7 @@ from typing import Callable, Dict, List, Optional, Sequence
 import ui
 
 from regicide.cards import BASIC_SUITS, CLASS_NAME, SUIT_NAME, SUIT_SYMBOL, Card
-from regicide.engine import Enemy, Game
+from regicide.engine import Game
 
 from . import theme as T
 
@@ -259,6 +259,22 @@ def draw_coin_column(n: int, W: float, H: float) -> None:
         draw_coin(x, y + i * step, d)
 
 
+def draw_clash(W: float, H: float) -> None:
+    """A gentle warning: a red edge round the card and a red "!" disc in its bottom-left
+    corner (a class power the enemy is immune to)."""
+    r = max(6.0, min(W, H) * 0.12)
+    edge = ui.Path.rounded_rect(1.5, 1.5, W - 3, H - 3, r)
+    edge.line_width = 3
+    ui.set_color(T.DANGER)
+    edge.stroke()
+    d = max(14.0, min(W, H) * 0.22)
+    x, y = 3.0, H - d - 3.0
+    ui.set_color(T.DANGER)
+    ui.Path.oval(x, y, d, d).fill()
+    size = d * 0.7
+    ui.draw_string("!", (x, y + (d - size * 1.2) / 2.0, d, size * 1.3), (T.FONT_BOLD, size), T.TEXT, ui.ALIGN_CENTER)
+
+
 class CardView(ui.View):
     """A playing card. Tap toggles selection through ``on_tap``."""
 
@@ -274,6 +290,9 @@ class CardView(ui.View):
         self.order = 0                # selection order shown top right (0: none)
         self.shaded = False           # greyed out (a mercenary still in the box), coins stay bright
         self.coins = 0                # a mercenary's cost, drawn as coins down the right side
+        self.warn = False             # its class power clashes with the enemy's immunity: red edge and "!"
+        self.force_kind = ""          # "royal": the classic royal face whatever the setting (the enemy)
+        self.center_icons = None      # a royal: these class icons under the letter instead of its value
         self.background_color = None  # drawn in draw()
 
     def coin_room(self) -> float:
@@ -299,6 +318,8 @@ class CardView(ui.View):
                 border.stroke()
         if self.coins and self.face_up:
             draw_coin_column(self.coins, self.width, self.height)
+        if self.warn and self.face_up:
+            draw_clash(self.width, self.height)
         if self.order and self.face_up:
             # the order the card was selected in: it enters play (or is discarded) in this
             # order, the last one ending on top of the pile
@@ -364,8 +385,8 @@ class CardView(ui.View):
         suits = list(c.suits)
         pips = face_pips(c)
         caption = card_caption(c)
-        kind = (classic_kind(c) if (FACE_STYLE == "classic" and not self.small and W >= CLASSIC_MIN_WIDTH)
-                else "")
+        kind = self.force_kind or (classic_kind(c) if (FACE_STYLE == "classic" and not self.small
+                                                       and W >= CLASSIC_MIN_WIDTH) else "")
         if kind:
             self._draw_classic(c, kind, rank, pips, col, ox, oy, w, h)
             return
@@ -456,7 +477,15 @@ class CardView(ui.View):
             ui.draw_string(rank, (fx, oy + hh * 0.44 - size * 0.65, fw, size * 1.3), (T.FONT_BOLD, size), col,
                            ui.ALIGN_CENTER)
             vs = max(8.0, hh * 0.09)
-            ui.draw_string("%d" % c.value, (fx, oy + hh * 0.7, fw, vs * 1.3), (T.FONT_BOLD, vs), col, ui.ALIGN_CENTER)
+            if self.center_icons is not None:
+                # the enemy: the classes it is immune to under its letter
+                icons = list(self.center_icons)
+                isz = min(hh * 0.11, fw / float(max(1, len(icons))) * 0.9)
+                for i, s_ in enumerate(icons):
+                    draw_symbol(s_, fx + fw * (i + 0.5) / len(icons), oy + hh * 0.76, isz, col)
+            else:
+                ui.draw_string("%d" % c.value, (fx, oy + hh * 0.7, fw, vs * 1.3), (T.FONT_BOLD, vs), col,
+                               ui.ALIGN_CENTER)
         else:
             sym = pips[0] if pips else ""
             n = 1 if rank == "A" else int(rank)
@@ -633,14 +662,60 @@ class PlayingCardFace(ui.View):
                                   size * 1.3), (T.FONT_BOLD, size), color, ui.ALIGN_CENTER)
 
 
-class EnemyPanel(ui.View):
-    """Current enemy with health bar, attack after shields, immunity state."""
+class TableHeader(ui.View):
+    """The enemy at the top of the table: its card large in the middle (drawn as a royal:
+    letter, the classes it is immune to, a corrupted sleeve), the attack it will deal on
+    the left and its health on the right, in big numbers. While cards are selected the
+    numbers show what the attack would do (``projection``, a ``Game.preview_play``) and a
+    clash with the enemy's immunity puts a red edge on the card (``warn``). While damage is
+    paid (``paying``: selected, needed) the attack side shows what is left to pay. A tap
+    left of the card calls ``on_attack``, anywhere else ``on_enemy``."""
 
     def __init__(self, **kw) -> None:
         super().__init__(**kw)
         self.game: Optional[Game] = None
-        self.background_color = T.PANEL
-        self.corner_radius = 12
+        self.projection: Optional[dict] = None
+        self.warn = False
+        self.paying: Optional[tuple] = None
+        self.on_attack: Optional[Callable[[], None]] = None
+        self.on_enemy: Optional[Callable[[], None]] = None
+        self.card_view: Optional[CardView] = None
+        self.background_color = None
+
+    def card_frame(self) -> tuple:
+        h = self.height - 6
+        w = h / 1.42
+        return ((self.width - w) / 2.0, 3.0, w, h)
+
+    def layout(self) -> None:
+        if getattr(self, "card_view", None) is not None:
+            self.card_view.frame = self.card_frame()
+
+    def show(self, projection: Optional[dict], warn: bool, paying: Optional[tuple]) -> None:
+        """What the selection would do: redrawn only when it changes (every tap comes here)."""
+        if (projection, warn, paying) == (self.projection, self.warn, self.paying):
+            return
+        self.projection, self.warn, self.paying = projection, warn, paying
+        if self.card_view is not None and self.card_view.warn != warn:
+            self.card_view.warn = warn
+            self.card_view.set_needs_display()
+        self.set_needs_display()
+
+    def refresh(self) -> None:
+        """Rebuild the enemy's card (a new enemy, a corruption, a change of immunity)."""
+        g = self.game
+        if self.card_view is not None:
+            self.remove_subview(self.card_view)
+            self.card_view = None
+        if g is not None and g.enemy is not None:
+            v = CardView(g.card(g.enemy.card_id), frame=self.card_frame())
+            v.force_kind = "royal"
+            v.touch_enabled = False
+            v.center_icons = list(g.rules.immune_suits(g) or ()) if not g.immunity_cancelled else []
+            v.warn = self.warn
+            self.add_subview(v)
+            self.card_view = v
+        self.set_needs_display()
 
     def draw(self) -> None:
         g = self.game
@@ -648,80 +723,85 @@ class EnemyPanel(ui.View):
         if g is None or g.enemy is None:
             ui.draw_string("No enemy", (0, h / 2 - 12, w, 24), (T.FONT_BOLD, 18), T.MUTED, ui.ALIGN_CENTER)
             return
-        e: Enemy = g.enemy
-        card = g.card(e.card_id)
-        col = card_color(card)
-        # card on the left
-        cw, ch = min(78.0, w * 0.22), min(110.0, h - 16)
-        cx, cy = 10, (h - ch) / 2
-        sleeve = sleeve_color(card)   # a corrupted enemy (an experiment, a royal) sits in a purple sleeve
-        sw = max(2.5, cw * 0.08) if sleeve else 0.0
-        if sleeve:
-            ui.set_color(sleeve)
-            ui.Path.rounded_rect(cx, cy, cw, ch, 8).fill()
-            ui.set_color(T.CARD_FACE)
-            ui.Path.rounded_rect(cx + sw, cy + sw, cw - 2 * sw, ch - 2 * sw, max(3.0, 8 - sw * 0.6)).fill()
-        else:
-            ui.set_color(T.CARD_FACE)
-            ui.Path.rounded_rect(cx, cy, cw, ch, 8).fill()
-            ui.set_color(T.CARD_BORDER)
-            ui.Path.rounded_rect(cx + 0.5, cy + 0.5, cw - 1, ch - 1, 8).stroke()
-        ui.draw_string(card.rank, (cx + 4 + sw, cy + 2 + sw, cw, 26), (T.FONT_BOLD, 22), col)
-        # each class in its own colour (a Hydra Head's two classes, the Evergreen tree)
-        CardView._pips(face_pips(card), cx + sw + 2, cy + ch * 0.34, cw - 2 * sw - 4, ch * 0.4, ui.ALIGN_CENTER)
-        # text block
-        tx = cx + cw + 12
-        tw = w - tx - 10
-        ui.draw_string(e.name, (tx, 8, tw, 24), (T.FONT_BOLD, 18), T.TEXT)
-        # health bar
-        hp = max(0, e.hp)
-        frac = hp / float(e.max_hp) if e.max_hp else 0
-        bx, by, bw, bh = tx, 38, tw, 16
-        ui.set_color("#3b2f2f")
-        ui.Path.rounded_rect(bx, by, bw, bh, 8).fill()
-        ui.set_color(T.DANGER if frac > 0.5 else "#e09a3f" if frac > 0.25 else T.OK)
-        if frac > 0:
-            ui.Path.rounded_rect(bx, by, max(bh, bw * frac), bh, 8).fill()
-        ui.draw_string("Health %d / %d" % (hp, e.max_hp), (bx, by - 1, bw, bh + 2), (T.FONT_BOLD, 12), T.TEXT, ui.ALIGN_CENTER)
-        atk = g.enemy_attack
-        sh = g.shield
-        bonus = g.rules.attack_bonus(g)
-        atk_text = "Attack %d" % atk
-        if sh or bonus:
-            detail = "%d" % e.attack
-            if bonus:
-                detail += " + %d" % bonus   # Legacy mission bonus (discard top, mission zone)
-            if sh:
-                detail += " − %d shield" % sh
-            atk_text += "  (%s)" % detail
-        ui.draw_string(atk_text, (tx, 60, tw, 20), (T.FONT_BOLD, 15), T.TEXT)
-        imm, icol = self.immunity_text(g)
-        # The immunity line wraps onto a second line in a smaller font when it is long (a
-        # mission zone can make an enemy immune to five classes); the castle count follows.
-        size = 13
-        _, ih = text_size(imm, tw, size)
-        if ih > 20:
-            size = 11
-            _, ih = text_size(imm, tw, size)
-        ih = min(max(ih, 16.0), 30.0)
-        iy = 80 if ih <= 20 else 79
-        ui.draw_string(imm, (tx, iy, tw, ih), (T.FONT, size), icol)
-        castle = "%d more in the castle" % len(g.castle)
-        if getattr(g.rules, "mission", 0) == 10 and g.castle:
-            # mission 10's enemy deck is face up, 2 on top down to 9: the next one is known
-            castle += " · next: %s" % g.card(g.castle[0]).label()
-        ui.draw_string(castle, (tx, iy + ih + 1, tw, 16), (T.FONT, 11 if size == 11 else 12), T.MUTED)
+        e = g.enemy
+        cx, cy, cw, ch = self.card_frame()
+        side = cx - 6
+        # the number, a line under it and a note (what the selection changes) fit between the
+        # label and the health bar, at the same height on both sides
+        big = max(20.0, min(side * 0.55, h * 0.42, (h - 76) / 1.2))
+        top = 20 + max(0.0, (h - 14 - 20 - (big * 1.2 + 40)) / 2.0)
+        pv = self.projection or {}
 
-    @staticmethod
-    def immunity_text(g: Game) -> tuple:
-        """(text, colour) of the immunity line."""
-        if g.immunity_cancelled:
-            return "Immunity cancelled by the Jester", T.OK
-        if g.rules.immune_suits(g):
-            legacy = bool(getattr(g.rules, "legacy", False))
-            names = [(CLASS_NAME.get(s, s) + "s") if legacy else SUIT_NAME.get(s, s) for s in g.rules.immune_suits(g)]
-            return "Immune to %s" % " / ".join(names), T.MUTED
-        return "No immunity", T.MUTED
+        def block(x: float, label: str, value: str, color: str, note: str, note_color: str, extra: str = "") -> None:
+            ui.draw_string(label, (x, 4, side, 16), (T.FONT_BOLD, 11), T.MUTED, ui.ALIGN_CENTER)
+            ui.draw_string(value, (x, top, side, big * 1.25), (T.FONT_BOLD, big), color, ui.ALIGN_CENTER)
+            y = top + big * 1.2
+            if extra:
+                ui.draw_string(extra, (x, y, side, 16), (T.FONT, 12), T.MUTED, ui.ALIGN_CENTER)
+                y += 16
+            if note:
+                ui.draw_string(note, (x, y + 1, side, 22), (T.FONT_BOLD, 15), note_color, ui.ALIGN_CENTER)
+
+        # the attack: what the enemy will deal (after shields), and with the selection what
+        # it would deal; while damage is paid, what is left to pay
+        atk = g.enemy_attack
+        note, note_col = "", T.ACCENT
+        label, extra = "ATTACK", ("shield %d" % g.shield) if g.shield else ""
+        if self.paying is not None:
+            paid, need = self.paying
+            label, atk = "SUFFER", need
+            if paid >= need:
+                note, note_col = "covered", T.OK
+            elif paid:
+                note = "%d to go" % (need - paid)
+        elif pv and not pv.get("defeats") and pv.get("enemy_attack_after", atk) != atk:
+            note = "→ %d" % pv["enemy_attack_after"]
+        block(0, label, "%d" % atk, T.TEXT, note, note_col, extra)
+        # the health: what is left, and with the selection what would be
+        hp = max(0, e.hp)
+        after = int(pv.get("enemy_hp_after", hp)) if pv else hp
+        note, note_col = "", T.ACCENT
+        if pv:
+            if pv.get("exact"):
+                note, note_col = "exact!", T.OK
+            elif pv.get("defeats"):
+                note, note_col = "defeated", T.OK
+            elif after != hp:
+                note = "→ %d" % after
+        block(cx + cw + 6, "HEALTH", "%d" % hp, T.DANGER, note, note_col, "of %d" % e.max_hp)
+        # a thin health bar under the number
+        bx, by, bw = cx + cw + 6 + side * 0.18, h - 10, side * 0.64
+        ui.set_color(T.PANEL_2)
+        ui.Path.rounded_rect(bx, by, bw, 5, 2.5).fill()
+        frac = hp / float(e.max_hp) if e.max_hp else 0
+        if frac > 0:
+            ui.set_color(T.DANGER)
+            ui.Path.rounded_rect(bx, by, max(5.0, bw * frac), 5, 2.5).fill()
+        if pv and after < hp and e.max_hp:
+            ui.set_color(T.OK if pv.get("defeats") else T.ACCENT)
+            ui.Path.rounded_rect(bx + bw * after / float(e.max_hp), by, max(2.0, bw * (hp - after) / float(e.max_hp)), 5,
+                                 2.5).fill()
+
+    def touch_ended(self, touch) -> None:
+        x, y = touch.location
+        cx, _, cw, _ = self.card_frame()
+        if x < cx:
+            if self.on_attack:
+                self.on_attack()
+        elif self.on_enemy:
+            self.on_enemy()
+
+
+def immunity_text(g: Game) -> tuple:
+    """(text, colour) of the enemy's immunity: "Immune to Paladins / Mages", or the Jester's
+    cancellation, or none."""
+    if g.immunity_cancelled:
+        return "Immunity cancelled by the Jester", T.OK
+    if g.rules.immune_suits(g):
+        legacy = bool(getattr(g.rules, "legacy", False))
+        names = [(CLASS_NAME.get(s, s) + "s") if legacy else SUIT_NAME.get(s, s) for s in g.rules.immune_suits(g)]
+        return "Immune to %s" % " / ".join(names), T.MUTED
+    return "No immunity", T.MUTED
 
 
 class HandGrid(ui.View):
@@ -734,6 +814,8 @@ class HandGrid(ui.View):
         self.selected: List[str] = []
         self.on_change: Optional[Callable[[], None]] = None
         self.selectable: Callable[[Card], bool] = lambda c: True
+        self.can_start: Callable[[Card], bool] = lambda c: False   # a greyed card that may begin a new selection
+        self.warned: set = set()      # selected cards whose class power the enemy blocks (red edge)
         self.badges: Dict[str, str] = {}
         self.background_color = None
         self.columns = 4
@@ -772,22 +854,36 @@ class HandGrid(ui.View):
         n = len(self.cards)
         if not n:
             return
-        cols = self.columns if n > 3 else max(1, n)
-        rows = int(math.ceil(n / float(cols)))
         gap = 8.0
-        cw = (self.width - gap * (cols - 1)) / cols
-        ch = min(cw * 1.42, (self.height - gap * (rows - 1) - 8) / rows)
-        cw = min(cw, ch / 1.42)
+
+        def size(cols: int) -> tuple:
+            rows = int(math.ceil(n / float(cols)))
+            cw = (self.width - gap * (cols - 1)) / cols
+            ch = min(cw * 1.42, (self.height - gap * (rows - 1) - 8) / rows)
+            return min(cw, ch / 1.42), ch, cols
+
+        # rows of four, or of five or six when that gives bigger cards (a short screen)
+        cw, ch, cols = size(self.columns) if n > 3 else size(max(1, n))
+        if n > self.columns:
+            cw, ch, cols = max([size(k) for k in range(self.columns, self.columns + 3)], key=lambda t: (round(t[0], 1), -t[2]))
         total_w = cols * cw + gap * (cols - 1)
         x0 = (self.width - total_w) / 2
+        # at the bottom of the grid's room, near the thumb and the action bar (8pt above
+        # for a selected card's lift)
+        rows = int(math.ceil(n / float(cols)))
+        y0 = max(8.0, self.height - rows * ch - gap * (rows - 1))
         for i, c in enumerate(self.cards):
             r, col = divmod(i, cols)
             v = self.views[c.id]
             lift = 8 if v.selected else 0
-            v.frame = (x0 + col * (cw + gap), 8 + r * (ch + gap) - lift, cw, ch)
+            v.frame = (x0 + col * (cw + gap), y0 + r * (ch + gap) - lift, cw, ch)
 
     def _tapped(self, v: CardView) -> None:
         if not self.selectable(v.card):
+            # a greyed card does not join the selection; it starts a new one when it could
+            # be played on its own (``can_start``)
+            if self.can_start(v.card):
+                self.set_selection([v.card.id])
             return
         if v.card.id in self.selected:
             self.selected.remove(v.card.id)
@@ -815,11 +911,13 @@ class HandGrid(ui.View):
         self.set_selection([])
 
     def refresh_dim(self) -> None:
-        # only the cards whose state changes are redrawn (every tap comes through here)
+        # greyed (the mercenary camp's shade) when it cannot join the selection now; only
+        # the cards whose state changes are redrawn (every tap comes through here)
         for c, v in ((c, self.views[c.id]) for c in self.cards):
-            dim = not self.selectable(c)
-            if v.dimmed != dim:
-                v.dimmed = dim
+            dim = not self.selectable(c) and c.id not in self.selected
+            warn = c.id in self.warned and c.id in self.selected
+            if v.shaded != dim or v.warn != warn or v.dimmed:
+                v.shaded, v.warn, v.dimmed = dim, warn, False
                 v.set_needs_display()
 
 
@@ -836,6 +934,7 @@ class CardStrip(ui.View):
         self.background_color = None
         self.title = ""
         self.dimmed: List[str] = []   # ids drawn greyed out (e.g. revealed cards that may not be picked)
+        self.empty_text = "nothing played yet"
 
     def title_height(self) -> float:
         """The room the title takes: one line (14pt) or two (28pt)."""
@@ -880,5 +979,5 @@ class CardStrip(ui.View):
         th = self.title_height()
         if self.title:
             ui.draw_string(self.title, (4, 0, self.width - 8, th), (T.FONT, self.TITLE_FONT), T.MUTED)
-        if not self.cards:
-            ui.draw_string("nothing played yet", (4, max(20.0, th + 4), self.width - 8, 20), (T.FONT, 12), T.MUTED)
+        if not self.cards and self.empty_text:
+            ui.draw_string(self.empty_text, (4, max(20.0, th + 4), self.width - 8, 20), (T.FONT, 12), T.MUTED)
