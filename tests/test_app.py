@@ -103,7 +103,7 @@ def test_menu_to_solo_game_and_play_with_taps(app):
     assert ui.button(app, "Main menu") is not None
 
 
-def test_illegal_selection_disables_play_and_shows_reason(app):
+def test_illegal_selection_disables_play_and_says_nothing(app):
     app.start_game(GameConfig(players=1), seed=2)
     gs = _game_screen(app)
     g = app.game
@@ -113,7 +113,7 @@ def test_illegal_selection_disables_play_and_shows_reason(app):
     if len(bad) == 2 and bad[0].rank != bad[1].rank:
         gs.hand.set_selection([bad[0].id, bad[1].id])
         assert not gs.right_btn.enabled
-        assert "same number" in _said(gs) or "Companion" in _said(gs) or "combo" in _said(gs).lower()
+        assert gs.message.hidden and not gs.forecast      # no text: Play stays off
 
 
 def test_pass_and_play_handover_and_jester_choice(app):
@@ -392,7 +392,7 @@ def test_kinfolk_flute_decision_overlay_add(app, tmp_path):
     assert gs.left_btn.title == "Pass" and gs.left_btn.enabled
     assert gs.right_btn.title == "Add" and not gs.right_btn.enabled
     assert gs.mid_btn.hidden
-    assert "Ben: add to Ana's 3♣ attack?" in _said(gs)
+    assert "Kinfolk Flute: Ben may add to Ana's 3♣" in _said(gs)
     # only 3s are selectable
     assert gs.hand.views["7C"].shaded and gs.hand.views["AS"].shaded and not gs.hand.views["3D"].shaded
     _tap_card(app, gs, "7C")
@@ -411,7 +411,7 @@ def test_kinfolk_flute_decision_overlay_add(app, tmp_path):
     assert store.load_attempt(app.campaign.slot).to_dict() == g.to_dict()
     _tap_button(app, "Show my hand")
     assert "Ben adds 3♦ (attack 6)" in gs.message_text and gs.right_btn.title.startswith("Discard")
-    assert "suffers 10 damage" in _said(gs)
+    assert gs.right_btn.title == "Discard 0/10"
 
 
 def test_kinfolk_flute_decision_overlay_pass_and_undo(app):
@@ -644,7 +644,7 @@ def test_mission3_zone_strip_and_exact_kill_pick_overlay(app):
     _tap_button(app, "Discard")
     assert g.mission_zone == ["4H"] and "immune: Cleric" in gs.zone.title
     texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
-    assert any("mission zone" in t for t in texts)
+    assert "mission zone" in gs.message_text           # (the game log's line; the table says nothing)
     # exact kill: the pick overlay offers each zone card
     g.enemy.hp = 10
     set_hand(g, ["5C", "2D", "AS"])
@@ -773,7 +773,7 @@ def test_emblem_place_handover_flow_for_two_players(app):
     assert gs.right_btn.title == "Place" and not gs.right_btn.enabled and gs.mid_btn.hidden
     assert "Azure Emblem" in _said(gs)
     _tap_card(app, gs, "7C")
-    assert gs.hand.selected == ["7C"] and gs.right_btn.enabled and "7♣" in _said(gs)
+    assert gs.hand.selected == ["7C"] and gs.right_btn.enabled and "Azure Emblem: Ben may place a card for Ana" in _said(gs)
     _tap_card(app, gs, "3D")                       # only one card may be placed
     assert gs.hand.selected == ["3D"] and gs.right_btn.enabled
     _tap_card(app, gs, "3D")
@@ -907,7 +907,7 @@ def test_reaver_count_grid_then_pick_overlay(app):
     assert gs.overlay is None and gs.right_btn.title.startswith("Discard")
     assert "doubled to 34" in gs.message_text and "68 damage" in gs.message_text
     assert "2♦ on top of the banished pile" in gs.message_text
-    assert "suffers 10 damage" in _said(gs)
+    assert gs.right_btn.title == "Discard 0/10"
 
 
 def test_scarlet_whistle_solo_pick_overlay_and_the_beast_choice(app):
@@ -1024,10 +1024,10 @@ def test_mission6_team_damage_seat_picker_flow(app):
     assert "Pass the phone to" in texts and "Ben" in texts
     _tap_button(app, "Show my hand")
     assert gs.overlay is None and [c.id for c in gs.hand.cards] == ["3H", "4D", "7S", "2C"]
-    assert gs.left_btn.title == "Players" and gs.right_btn.title == "Discard" and not gs.right_btn.enabled
-    assert "Team damage: 7 to go. Ben" in _said(gs)
+    assert gs.left_btn.title == "Players" and gs.right_btn.title == "Discard 0/7" and not gs.right_btn.enabled
+    assert "Team damage: Ben discards" in _said(gs) and gs.enemy.paying == (0, 7)
     _tap_card(app, gs, "3H")
-    assert gs.right_btn.enabled and "worth 3" in _said(gs)
+    assert gs.right_btn.enabled and gs.right_btn.title == "Discard 3/7"
     _tap_card(app, gs, "4D")
     assert gs.hand.selected == ["4D"]                 # one card at a time
     _tap_button(app, "Players")                        # back to the picker without discarding
@@ -1051,7 +1051,7 @@ def test_mission6_team_damage_seat_picker_flow(app):
     assert isinstance(gs.overlay, HandoverOverlay)
     _tap_button(app, "Show my hand")
     _tap_card(app, gs, "8D")
-    assert ", enough" in _said(gs)
+    assert gs.right_btn.title == "Discard 8/4" and gs.enemy.paying == (8, 4)   # enough
     _tap_button(app, "Discard")
     assert g.decision is None and g.enemies_defeated == 1 and g.phase == PHASE_PLAY and g.active == 0
     assert "Team damage satisfied" in gs.message_text and gs.overlay is None
@@ -1070,7 +1070,7 @@ def test_mission6_solo_team_damage_shows_the_hand_at_once(app):
     _tap_button(app, "Move 5♠ to the mission zone")
     _tap_button(app, "Rescue 5♠ to the discard pile")
     assert g.decision["kind"] == "team_discard" and gs.overlay is None
-    assert gs.left_btn.title == "Suggest" and "Team damage: 7 to go" in _said(gs)
+    assert gs.left_btn.title == "Suggest" and "Team damage" in _said(gs) and gs.right_btn.title == "Discard 0/7"
     _tap_button(app, "Suggest")
     assert gs.hand.selected == ["8S"]                  # the smallest card that covers 7
     _tap_button(app, "Discard")
@@ -1272,15 +1272,15 @@ def test_chanter_declare_grid_then_the_other_players_discard_down(app):
     assert any("Ben: discard down to 7 cards" in t for t in texts) and any("must discard 2" in t for t in texts)
     assert "Chanter: Ana declares 3" in gs.message_text
     _tap_button(app, "Show my hand")
-    assert gs.overlay is None and len(gs.hand.cards) == 9 and gs.right_btn.title == "Discard 2" and not gs.right_btn.enabled
+    assert gs.overlay is None and len(gs.hand.cards) == 9 and gs.right_btn.title == "Discard 0/2" and not gs.right_btn.enabled
     assert gs.left_btn.title == "Suggest" and gs.mid_btn.hidden
     _tap_card(app, gs, "7C")
-    assert not gs.right_btn.enabled and "(1 selected)" in _said(gs)
+    assert not gs.right_btn.enabled and gs.right_btn.title == "Discard 1/2"
     _tap_card(app, gs, "6C")
     assert gs.right_btn.enabled
     _tap_button(app, "Suggest")
     assert sorted(gs.hand.selected) == ["2C", "3C"]
-    _tap_button(app, "Discard 2")
+    _tap_button(app, "Discard 2/2")
     assert g.decision is None and len(g.players[1].hand) == 7 and set(g.discard[:2]) == {"2C", "3C"}
     assert g.phase == PHASE_SUFFER and g.active == 0 and "Ben discards 2♣ + 3♣" in gs.message_text
     # back to Ana for her damage
@@ -1350,12 +1350,12 @@ def test_mission9_pile_strip_rescue_flow_and_exact_kill_overlay(app):
     # then the hand: one card to banish
     assert gs.overlay is None and gs.pile_choice == 1 and [c.id for c in gs.hand.cards] == ["5D", "6D"]
     assert gs.right_btn.title == "Banish" and not gs.right_btn.enabled and gs.left_btn.title == "Back"
-    assert "Rescue %s from captured pile 2" % g.card(tops[1]).label() in _said(gs)
+    assert "Rescue %s from pile 2" % g.card(tops[1]).label() in _said(gs)
     _tap_button(app, "Back")
     assert isinstance(gs.overlay, PileRescueOverlay) and gs.pile_choice is None
     ui.tap(app, *ui.root_point(app, ui.button(app, labels[1])))
     _tap_card(app, gs, "5D")
-    assert gs.right_btn.enabled and "banishes 5♦" in _said(gs)
+    assert gs.right_btn.enabled
     _tap_button(app, "Banish")
     assert g.decision is None and g.banished[-1] == "5D" and g.discard[0] == tops[1] and len(piles[1]) == sizes[1] - 1
     assert gs.pile_choice is None and g.turn == 2
@@ -1541,10 +1541,10 @@ def test_mission11_beast_hand_pick_and_mission12_banish_order_overlay(app):
     _tap_button(app, "Discard")
     assert g.phase == PHASE_DECIDE and g.decision["kind"] == "beast_discard" and gs.overlay is None
     assert gs.right_btn.title == "Discard" and not gs.right_btn.enabled and gs.left_btn.title == "No pass" and not gs.left_btn.enabled
-    assert "cleric beast" in _said(gs) and [c.id for c in gs.hand.cards] == ["2C"]
+    assert "Cleric beast" in _said(gs) and [c.id for c in gs.hand.cards] == ["2C"]
     assert gs.zone.title.startswith("Beast deck") and "Cleric" in gs.zone.title and ui.render(app).size[0] > 0
     _tap_card(app, gs, "2C")
-    assert gs.right_btn.enabled and "discards 2♣" in _said(gs)
+    assert gs.right_btn.enabled
     _tap_button(app, "Discard")
     assert g.decision is None and g.discard[0] == "2C" and g.phase == PHASE_PLAY
     assert "2♣ discarded" in gs.message_text
@@ -1622,7 +1622,7 @@ def test_evergreen_mother_solo_pick_overlay_and_two_player_hand_banish(app):
     assert [c.id for c in gs.hand.cards] == ["5C", "2C"] and gs.right_btn.title == "Banish" and not gs.right_btn.enabled
     assert gs.left_btn.title == "No pass" and not gs.left_btn.enabled
     _tap_card(app, gs, "2C")
-    assert gs.right_btn.enabled and "Ben banishes 2♣" in _said(gs)
+    assert gs.right_btn.enabled and "Evergreen Mother: Ben banishes a card" in _said(gs)
     _tap_button(app, "Banish")
     assert g.banished == ["2C"] and "2C" not in g.players[1].hand and "5C" in g.players[1].hand and g.decision is None
     assert "Ben banishes 2♣ from hand (Evergreen Mother)" in gs.message_text
@@ -1653,12 +1653,11 @@ def test_finding_2_ui_discards_one_card_at_a_time_in_the_tap_order(app):
     assert gs.hand.selected == ["AS", "10C"] and gs.right_btn.enabled   # the legal order: the 10 last
     assert gs.right_btn.title == "Discard 11/11"
     gs.hand.clear_selection()
-    assert "One at a time: the last card ends on top of the discard pile." in _said(gs)
     for cid in ("10C", "8S", "AS"):                    # 18 covers it: the ace is greyed and stays out
         _tap_card(app, gs, cid)
     assert gs.hand.selected == ["10C", "8S"] and gs.hand.views["AS"].shaded and gs.right_btn.enabled
     gs.hand.set_selection(["10C", "8S", "AS"])         # (a selection made some other way) one card too many
-    assert not gs.right_btn.enabled and "covered before A♠" in _said(gs)
+    assert not gs.right_btn.enabled
     gs.hand.clear_selection()
     for cid in ("AS", "10C"):
         _tap_card(app, gs, cid)

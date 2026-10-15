@@ -203,7 +203,11 @@ def test_the_played_cards_sit_under_the_hand_and_everything_fits(app, size):
     gs.refresh(after_action=False)
     hand, strip, bar = gs.hand, gs.strip, gs.left_btn
     assert hand.y + hand.height <= strip.y <= strip.y + strip.height <= bar.y
-    assert gs.enemy.y + gs.enemy.height <= gs.message.y <= hand.y
+    piles = [gs.pile_views[k] for k in ("castle", "reserve", "discard", "banished")]
+    for p in piles:                                     # the piles in a row between the enemy and the hand
+        assert gs.enemy.y + gs.enemy.height <= p.y and p.y + p.height <= hand.y and p.card_rect()[2] >= (32 if h < 600 else 40)
+    assert [p.x for p in piles] == sorted(p.x for p in piles) and piles[-1].x + piles[-1].width <= w
+    assert gs.message.hidden
     for v in hand.views.values():
         assert v.y >= 0 and v.y + v.height <= hand.height and v.width >= 40
     if not gs.zone.hidden:
@@ -211,7 +215,7 @@ def test_the_played_cards_sit_under_the_hand_and_everything_fits(app, size):
             assert gs.zone.y == strip.y                 # a short screen: side by side
             assert gs.zone.x + gs.zone.width <= strip.x
         else:
-            assert gs.zone.y + gs.zone.height <= gs.message.y
+            assert gs.zone.y + gs.zone.height <= hand.y
     # the setting puts them back above the hand
     app.settings["played_below"] = False
     gs.layout()
@@ -297,12 +301,12 @@ def test_a_short_screen_shares_the_row_only_when_the_zone_title_fits(app):
     if gs._strips_shared():
         assert zone.y == strip.y
     else:
-        assert zone.y + zone.height <= gs.message.y and zone.width > strip.width / 2
+        assert zone.y + zone.height <= gs.hand.y and zone.width > strip.width / 2
     # a long title at half width stacks the zone above the message, a short one shares
     long_title = "Mission zone · 1 pilgrim, total 3 · 23 in the pilgrim deck"
     zone.set_cards([], long_title)
     gs.layout()
-    assert not gs._strips_shared() and zone.y + zone.height <= gs.message.y
+    assert not gs._strips_shared() and zone.y + zone.height <= gs.hand.y
     zone.set_cards([], "Mission zone (empty)")
     gs.layout()
     assert gs._strips_shared() and zone.y == strip.y

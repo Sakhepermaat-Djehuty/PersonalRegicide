@@ -47,13 +47,26 @@ bonus, any multiplier) beside the shield (each paladin play, or why it adds noth
 you suffer, and the selected play's forecast in words. A tap on the enemy opens its card:
 health, immunity, the castle count (mission 10: the next enemy) and the forecast.
 
+Under the enemy lie the piles as stacks of cards: the castle and the reserve (tavern)
+face down with their count in the circle on the back, the discard and banished piles face
+up with the top card showing and the count in a badge (mission 10's enemy deck is face up
+too). A tap opens a pile: the castle shows every enemy of the game, the defeated ones
+greyed and the one faced marked; the discard and banished piles are in order, the top card
+first; the reserve is sorted like the deck list. Settings, "Card backs": Lattice, Crowns,
+Sunburst or Flat.
+
+The table carries no running text. The status line holds the turn and, solo, the Jester
+powers left (in pass and play, whose turn it is); what happened is in the game log (Menu).
+A decision made with the hand (an Azure Emblem, a Chanter's discard, a cleric beast...)
+names itself in one line above the hand.
+
 Cards that cannot join the selection are greyed. A greyed card that can be played alone
 starts a new selection when tapped. The solo Kinfolk Flute's stored cards stay greyed
-until a set of their strength is begun. A selected card whose class power the enemy is
-immune to gets a red edge and a "!" in its corner, and so does the enemy. While suffering,
-the Discard button shows the tally ("Discard 8/12") and, where cards go one at a time,
-the rest grey out once the damage is covered. The message line stays quiet while cards
-are selected.
+until a set of their strength is begun (or they make a set on their own). A selected card
+whose class power the enemy is immune to gets a red edge and a "!" in its corner, and so
+does the enemy. While suffering, the Discard button shows the tally ("Discard 8/12"),
+where cards go one at a time the rest grey out once the damage is covered, and a hand too
+short to pay lights the Jester power up.
 
 Solo, the Flute takes the Yield button's place (a solo player never yields), or the
 Jester's while suffering. The cards played against the enemy sit under the hand, above

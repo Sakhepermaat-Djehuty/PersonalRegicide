@@ -144,6 +144,7 @@ def draw_tree(x: float, y: float, w: float, h: float, color: str) -> None:
 # "classic" lays numbered cards out like playing cards (a 7 shows seven icons, the number
 # and icon in two corners, the lower half turned) and gives a royal a big letter.
 FACE_STYLE = "simple"
+BACK_STYLE = "lattice"     # the card backs (``app.backs``), from the "card_back" setting
 CLASSIC_MIN_WIDTH = 54.0   # narrower cards (a 320-pt phone's hand) keep the simple face: too small to read
 
 # pip positions (x, y in 0..1 of the pip area), the standard playing-card layouts
@@ -259,6 +260,26 @@ def draw_coin_column(n: int, W: float, H: float) -> None:
         draw_coin(x, y + i * step, d)
 
 
+def draw_back(x: float, y: float, w: float, h: float, count: Optional[int] = None, plain: bool = False) -> None:
+    """The back of a card filling the rect, in the chosen style (``BACK_STYLE``); with
+    ``count`` a plain circle in the middle holds it (a pile's number of cards); ``plain``:
+    the edge and field only (a card under the top one of a pile)."""
+    from . import backs
+    backs.STYLES.get(BACK_STYLE, backs.lattice)(x, y, w, h, count, plain)
+
+
+def draw_count_circle(cx: float, cy: float, d: float, count: int, fill: str, ink: str, rim: str = "") -> None:
+    """A plain circle centred on (cx, cy) with a number in it."""
+    if rim:
+        ui.set_color(rim)
+        ui.Path.oval(cx - d / 2.0 - 1.5, cy - d / 2.0 - 1.5, d + 3, d + 3).fill()
+    ui.set_color(fill)
+    ui.Path.oval(cx - d / 2.0, cy - d / 2.0, d, d).fill()
+    text = "%d" % count
+    size = d * (0.52 if len(text) < 2 else 0.44 if len(text) < 3 else 0.34)
+    ui.draw_string(text, (cx - d / 2.0, cy - size * 0.66, d, size * 1.32), (T.FONT_BOLD, size), ink, ui.ALIGN_CENTER)
+
+
 def draw_clash(W: float, H: float) -> None:
     """A gentle warning: a red edge round the card and a red "!" disc in its bottom-left
     corner (a class power the enemy is immune to)."""
@@ -336,10 +357,7 @@ class CardView(ui.View):
         W, H = self.width, self.height
         r = max(6.0, min(W, H) * 0.12)
         if not self.face_up:
-            ui.set_color(T.CARD_BACK)
-            ui.Path.rounded_rect(1, 1, W - 2, H - 2, r).fill()
-            ui.set_color("#7c6bc2")
-            ui.Path.rounded_rect(5, 5, W - 10, H - 10, r * 0.7).stroke()
+            draw_back(0, 0, W, H)
             return
         c = self.card
         # Sleeves, as on the physical cards: a corrupted card sits in a purple sleeve, a
@@ -711,7 +729,11 @@ class TableHeader(ui.View):
             v = CardView(g.card(g.enemy.card_id), frame=self.card_frame())
             v.force_kind = "royal"
             v.touch_enabled = False
-            v.center_icons = list(g.rules.immune_suits(g) or ()) if not g.immunity_cancelled else []
+            icons = list(g.rules.immune_suits(g) or ()) if not g.immunity_cancelled else []
+            if g.extra.get("jester_attack"):
+                # a claimed Jester's attack ignores immunity (all but a fixed one, Myla's)
+                icons = [s_ for s_ in icons if g.rules.fixed_immunity(g, s_)]
+            v.center_icons = icons
             v.warn = self.warn
             self.add_subview(v)
             self.card_view = v
@@ -805,6 +827,128 @@ def immunity_text(g: Game) -> tuple:
         names = [(CLASS_NAME.get(s, s) + "s") if legacy else SUIT_NAME.get(s, s) for s in g.rules.immune_suits(g)]
         return "Immune to %s" % " / ".join(names), T.MUTED
     return "No immunity", T.MUTED
+
+
+class PileView(ui.View):
+    """A pile on the table drawn as a stack of cards, its name under it: face down (the
+    reserve, the castle) with the count in the circle on its back, or face up (the discard
+    and banished piles, mission 10's face-up castle) with the top card showing and the
+    count in a badge on it. An empty pile is an outline. A tap calls ``on_tap``."""
+
+    LABEL_H = 15.0
+
+    def __init__(self, label: str = "", **kw) -> None:
+        super().__init__(**kw)
+        self.label = label
+        self.count = 0
+        self.top: Optional[Card] = None      # the face-up top card; None: face down
+        self.on_tap: Optional[Callable[[], None]] = None
+        self.top_view: Optional[CardView] = None
+        self.badge_view: Optional[ui.View] = None
+        self.background_color = None
+
+    def card_rect(self) -> tuple:
+        h = max(20.0, self.height - self.LABEL_H - 2)
+        w = h / 1.42
+        if w > self.width - 4:
+            w = self.width - 4
+            h = w * 1.42
+        return ((self.width - w) / 2.0, 0.0, w, h)
+
+    def layers(self) -> int:
+        """Cards drawn in the stack: one, two, or three for a pile of ten or more."""
+        return 0 if self.count <= 0 else 1 if self.count == 1 else 2 if self.count < 10 else 3
+
+    def set_pile(self, count: int, top: Optional[Card] = None) -> None:
+        if (count, top) == (self.count, self.top) and (top is None) == (self.top_view is None):
+            return
+        self.count, self.top = count, top
+        self.layout()
+        self.set_needs_display()
+
+    def top_rect(self) -> tuple:
+        x, y, w, h = self.card_rect()
+        step = 2.0 * (max(1, self.layers()) - 1)
+        return (x, y, w - step, h - step)
+
+    def layout(self) -> None:
+        if not hasattr(self, "badge_view"):
+            return
+        for v in (self.top_view, self.badge_view):
+            if v is not None:
+                self.remove_subview(v)
+        self.top_view = self.badge_view = None
+        if self.top is None or self.count <= 0:
+            return
+        x, y, w, h = self.top_rect()
+        v = CardView(self.top, frame=(x, y, w, h))
+        v.small = True
+        v.touch_enabled = False
+        self.add_subview(v)
+        self.top_view = v
+        d = max(18.0, w * 0.5)
+        badge = CountBadge(self.count, frame=(x + (w - d) / 2.0, y + h - d * 0.8, d, d))
+        self.add_subview(badge)
+        self.badge_view = badge
+
+    def draw(self) -> None:
+        x, y, w, h = self.card_rect()
+        n = self.layers()
+        r = max(6.0, min(w, h) * 0.12)
+        if n == 0:
+            edge = ui.Path.rounded_rect(x + 1, y + 1, w - 2, h - 2, r)
+            edge.line_width = 1.5
+            ui.set_color(T.PANEL_2)
+            edge.stroke()
+            ui.draw_string("0", (x, y + h / 2.0 - 11, w, 22), (T.FONT_BOLD, 16), T.PANEL_2, ui.ALIGN_CENTER)
+        else:
+            step = 2.0
+            cw, ch = w - step * (n - 1), h - step * (n - 1)
+            for i in range(n - 1, -1, -1):          # the bottom card first, peeking out down-right
+                cx_, cy_ = x + step * i, y + step * i
+                if self.top is None:
+                    if i == 0:
+                        draw_back(cx_, cy_, cw, ch, self.count)
+                    else:
+                        draw_back(cx_, cy_, cw, ch, plain=True)
+                elif i > 0:
+                    # the edges of the face-up cards under the top one
+                    ui.set_color(T.CARD_BORDER)
+                    ui.Path.rounded_rect(cx_, cy_, cw, ch, r).fill()
+                    ui.set_color(T.CARD_FACE_DIM)
+                    ui.Path.rounded_rect(cx_ + 1, cy_ + 1, cw - 2, ch - 2, r - 1).fill()
+        ui.draw_string(self.label, (0, self.height - self.LABEL_H, self.width, self.LABEL_H), (T.FONT, 11), T.MUTED,
+                       ui.ALIGN_CENTER)
+
+    def touch_ended(self, touch) -> None:
+        if self.on_tap is not None:
+            self.on_tap()
+
+
+class BackSample(ui.View):
+    """A card back in the chosen style (Settings shows it beside the style's name)."""
+
+    def __init__(self, **kw) -> None:
+        super().__init__(**kw)
+        self.background_color = None
+        self.touch_enabled = False
+
+    def draw(self) -> None:
+        draw_back(0, 0, self.width, self.height, 7)
+
+
+class CountBadge(ui.View):
+    """A pile's count on its face-up top card."""
+
+    def __init__(self, count: int, **kw) -> None:
+        super().__init__(**kw)
+        self.count = count
+        self.touch_enabled = False
+        self.background_color = None
+
+    def draw(self) -> None:
+        d = min(self.width, self.height) - 3
+        draw_count_circle(self.width / 2.0, self.height / 2.0, d, self.count, T.PANEL_2, T.TEXT, rim=T.CARD_FACE)
 
 
 class HandGrid(ui.View):

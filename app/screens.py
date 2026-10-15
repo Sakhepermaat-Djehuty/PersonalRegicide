@@ -19,7 +19,7 @@ from regicide.rules import GameConfig
 
 from . import store
 from . import theme as T
-from .widgets import (CardStrip, CardView, HandGrid, TableHeader, fit_label, fit_title, make_button, make_label,
+from .widgets import (CardStrip, CardView, HandGrid, PileView, TableHeader, fit_label, fit_title, make_button, make_label,
                       set_enabled, text_size)
 
 VERSION = "alpha 5.1"
@@ -98,19 +98,37 @@ def zone_caption(g: Game) -> tuple:
 
 
 def status_text(g: Game, width: float, size: int = 13) -> str:
-    """The status line: Turn · Reserve · Discard · Banished · Jesters, as much as fits in
-    ``width``: the turn number goes first, then the banished count; the solo Jester count
-    (shown nowhere else) stays."""
+    """The status line: the turn and, solo, the Jester powers left (shown nowhere else); in
+    pass and play whose turn it is. The piles on the table show their own counts."""
+    parts = ["Turn %d" % g.turn]
+    parts.append(("Jesters %d" % g.solo_jesters) if g.n_players == 1 else g.active_player.name)
+    text = " · ".join(parts)
+    return text if text_size(text, 0, size)[0] <= width else parts[1]
+
+
+# The piles on the table, left to right, and their names (the base game's reserve deck is
+# the tavern deck)
+PILE_ORDER = ("castle", "reserve", "discard", "banished")
+PILE_LABELS = {"castle": "Castle", "reserve": "Reserve", "discard": "Discard", "banished": "Banished"}
+
+
+def enemy_deck(g: Game) -> List[str]:
+    """Every enemy of this game, the one faced and the defeated ones included: the castle's
+    cards are the enemy cards (a Legacy enemy has its own health; the base game's are the
+    twelve royals). Sorted Jacks, Queens, Kings, then by health and class."""
     legacy = bool(getattr(g.rules, "legacy", False))
-    turn = "Turn %d" % g.turn
-    core = ["%s %d" % ("Reserve" if legacy else "Tavern", len(g.tavern)), "Discard %d" % len(g.discard)]
-    banished = ["Banished %d" % len(g.banished)] if g.banished else []
-    jesters = ["Jesters %d" % g.solo_jesters] if g.n_players == 1 else []
-    for parts in ([turn] + core + banished + jesters, core + banished + jesters, core + jesters):
-        text = " · ".join(parts)
-        if text_size(text, 0, size)[0] <= width:
-            return text
-    return " · ".join(core + jesters)
+    ids = set(g.castle) | (set([g.enemy.card_id]) if g.enemy is not None else set())
+    for cid, c in g.cards.items():
+        if c.health > 0 or (not legacy and c.rank in ("J", "Q", "K")):
+            ids.add(cid)
+    tier = {"J": 0, "Q": 1, "K": 2}
+    suits = "".join(BASIC_SUITS)
+
+    def key(cid: str) -> tuple:
+        c = g.card(cid)
+        first = c.suits[0] if c.suits else "Z"
+        return (tier.get(c.rank, 3), g.rules.enemy_stats(g, c)[1], suits.find(first) if first in suits else 9, cid)
+    return sorted(ids, key=key)
 
 
 # ============================================================================ base
@@ -128,9 +146,12 @@ class Screen(ui.View):
 
 
 def apply_face_style(settings: dict) -> None:
-    """Card faces follow the "classic_faces" setting (see ``widgets.FACE_STYLE``)."""
-    from . import widgets
+    """Card faces follow the "classic_faces" setting (see ``widgets.FACE_STYLE``), card backs
+    the "card_back" setting (``widgets.BACK_STYLE``)."""
+    from . import backs, widgets
     widgets.FACE_STYLE = "classic" if settings.get("classic_faces") else "simple"
+    back = str(settings.get("card_back", "lattice"))
+    widgets.BACK_STYLE = back if back in backs.STYLES else "lattice"
 
 
 class App(ui.View):
@@ -549,11 +570,12 @@ class GameScreen(Screen):
         self.message_text = ""
         self.forecast = ""   # what the selected cards would do, in words (the attack's card)
         self.status = make_label("", (0, 0, 10, 10), 13, False, T.MUTED)
-        # a tap on the status line ("Reserve 54 · Discard 17") opens the piles
-        self.piles_btn = ui.Button(frame=(0, 0, 10, 10))
-        self.piles_btn.title = ""
-        self.piles_btn.background_color = None
-        self.piles_btn.action = lambda s: self._show_piles()
+        # the piles on the table, each a stack of cards with its count; a tap opens it
+        self.pile_views: Dict[str, PileView] = {}
+        for key in PILE_ORDER:
+            pv = PileView(PILE_LABELS[key])
+            pv.on_tap = (lambda k: lambda: self._show_piles(k))(key)
+            self.pile_views[key] = pv
         self.menu_btn = make_button("Menu", self._menu, (0, 0, 70, 30), False, 14)
         # the enemy large in the middle, its attack on the left and its health on the right
         self.enemy = TableHeader()
@@ -564,7 +586,10 @@ class GameScreen(Screen):
         self.zone = CardStrip()
         self.zone.empty_text = ""    # its title says "(empty)"
         self.zone.hidden = True
-        self.message = make_label("", (0, 0, 10, 10), 14, False, T.TEXT, ui.ALIGN_CENTER, lines=3)
+        # one line naming a decision the shown hand makes (an Azure Emblem, a Chanter...);
+        # hidden while playing and suffering: the table speaks for itself
+        self.message = make_label("", (0, 0, 10, 10), 14, True, T.ACCENT, ui.ALIGN_CENTER)
+        self.message.hidden = True
         self.hand = HandGrid()
         self.hand.on_change = self._selection_changed
         self.left_btn = make_button("Yield", self._left, (0, 0, 10, 10), False)
@@ -576,8 +601,9 @@ class GameScreen(Screen):
         self.toast.background_color = T.ACCENT
         self.toast.corner_radius = 8
         self.toast.hidden = True
-        for v in (self.status, self.piles_btn, self.menu_btn, self.enemy, self.strip, self.zone, self.message, self.hand,
-                  self.left_btn, self.mid_btn, self.right_btn, self.special_btn, self.toast):
+        for v in [self.status, self.menu_btn, self.enemy] + list(self.pile_views.values()) + [
+                  self.strip, self.zone, self.message, self.hand,
+                  self.left_btn, self.mid_btn, self.right_btn, self.special_btn, self.toast]:
             self.add_subview(v)
 
     # ------------------------------------------------------------------ layout
@@ -588,13 +614,21 @@ class GameScreen(Screen):
         m = T.MARGIN
         y = T.TOP_INSET
         self.status.frame = (m, y, w - 2 * m - 80, 30)
-        self.piles_btn.frame = self.status.frame
         self.menu_btn.frame = (w - m - 70, y, 70, 30)
         y += 34
-        # the header grows with the screen (its card keeps a playing card's proportions)
-        eh = max(112.0, min(190.0, h * 0.21))
+        # the header and the piles grow with the screen (their cards keep a playing card's
+        # proportions); a very short screen trims both for the hand's sake
+        tiny = h < 600
+        eh = max(96.0, h * 0.18) if tiny else max(112.0, min(190.0, h * 0.21))
         self.enemy.frame = (m, y, w - 2 * m, eh)
-        y += eh + 4
+        y += eh + 6
+        # the piles in a row under the enemy, spread across the width
+        shown = [k for k in PILE_ORDER if not self.pile_views[k].hidden]
+        ph = (48.0 if tiny else max(56.0, min(86.0, h * 0.1))) + PileView.LABEL_H + 2
+        slot = (w - 2 * m) / float(max(1, len(shown)))
+        for i, k in enumerate(shown):
+            self.pile_views[k].frame = (m + i * slot, y, slot, ph)
+        y += ph + 6
         bar_h = 48
         bar_y = h - T.BOTTOM_INSET - bar_h
         below = self.app.settings.get("played_below", True)
@@ -620,8 +654,9 @@ class GameScreen(Screen):
         if zone and not shared:
             self.zone.frame = (m, y, full, 64)
             y += 70
-        self.message.frame = (m, y, full, 56)
-        y += 58
+        if not self.message.hidden:
+            self.message.frame = (m, y, full, 22)
+            y += 24
         bottom = bar_y - 8
         if below:
             # the cards played against this enemy, between the hand and the action bar
@@ -655,6 +690,7 @@ class GameScreen(Screen):
         g = self.game = self.app.game  # type: ignore[assignment]
         # (mission 10's face-up enemy deck shows its next enemy in the enemy panel)
         self.status.text = status_text(g, self.status.width)
+        self._refresh_piles()
         self.enemy.game = g
         self.enemy.projection, self.enemy.warn, self.enemy.paying = None, False, None
         self.enemy.refresh()
@@ -749,6 +785,28 @@ class GameScreen(Screen):
             self.hand.set_cards(g.hand() + [g.card(c) for c in flute], keep_selection=False)
         self._update_controls()
 
+    def _refresh_piles(self) -> None:
+        """The piles' counts and top cards: the discard and banished piles lie face up (the
+        top card shows), the reserve and the castle face down (mission 10's enemy deck is
+        face up: its next enemy shows). The banished pile is on the table in Legacy, or once
+        something is banished."""
+        g = self.game
+        legacy = bool(getattr(g.rules, "legacy", False))
+        v = self.pile_views
+        v["reserve"].label = "Reserve" if legacy else "Tavern"
+        face_up_castle = getattr(g.rules, "mission", 0) == 10 and bool(g.castle)
+        v["castle"].set_pile(len(g.castle), g.card(g.castle[0]) if face_up_castle else None)
+        v["reserve"].set_pile(len(g.tavern))
+        v["discard"].set_pile(len(g.discard), g.card(g.discard[0]) if g.discard else None)
+        # the last card banished is on top
+        v["banished"].set_pile(len(g.banished), g.card(g.banished[-1]) if g.banished else None)
+        hide = not (legacy or g.banished)
+        if v["banished"].hidden != hide:
+            v["banished"].hidden = hide
+            self.layout()
+        for pv in v.values():
+            pv.set_needs_display()
+
     def reveal_hand(self) -> None:
         self.shown_player = self.game.deciding
         self.refresh(after_action=False)
@@ -762,7 +820,7 @@ class GameScreen(Screen):
         g = self.game
         self.hand.badges = {}
         self.hand.set_cards(g.hand(seat) if seat is not None else [], keep_selection=False)
-        self.message.text = self.message_text
+        self._caption("")
         for b, primary in ((self.left_btn, False), (self.mid_btn, False), (self.right_btn, True)):
             set_enabled(b, False, primary)
         self.special_btn.hidden = True
@@ -832,6 +890,7 @@ class GameScreen(Screen):
         self.hand.warned = set()
         projection: Optional[dict] = None
         warn, paying = False, None
+        caption = ""      # names a decision the shown hand makes; nothing while playing or suffering
         if g.phase == PHASE_PLAY:
             # Greyed: a card that no legal play has together with the cards selected so far.
             # A card the solo Kinfolk Flute stores only joins a kinfolk set already begun,
@@ -858,8 +917,6 @@ class GameScreen(Screen):
                 self.mid_btn.hidden = not self.app.settings.get("show_hints", True)
                 set_enabled(self.mid_btn, True, False)
             self.right_btn.title = "Play"
-            if g.extra.get("jester_attack"):
-                self.message_text = "%s claimed the Jester: this attack ignores immunity." % name
             if sel:
                 ok, info = g.check_play(sel)
                 pv = g.preview_play(sel) if ok else {}
@@ -872,12 +929,8 @@ class GameScreen(Screen):
                     blocked = [suit for suit, ev in pv["powers"].items() if ev.get("immune")]
                     self.hand.warned = set(c for c in sel if any(s_ in g.card(c).suits for s_ in blocked))
                     warn = bool(self.hand.warned)
-                    self.message.text = ""
-                else:
-                    self.message.text = pv.get("reason") or info
                 set_enabled(self.right_btn, bool(pv.get("ok")))
             else:
-                self.message.text = self.message_text or ("%s: tap cards to play, then Play." % name)
                 set_enabled(self.right_btn, False)
             specials = g.rules.special_actions(g)
             if specials and not g.can_yield():
@@ -910,28 +963,14 @@ class GameScreen(Screen):
             set_enabled(self.left_btn, True, False)
             self.mid_btn.title = "Jester" if self.width < 385 else "Jester power"
             self.mid_btn.hidden = not (g.n_players == 1 and g.rules.solo_jester_mode(g) == "refresh")
-            set_enabled(self.mid_btn, g.can_use_solo_jester(), False)
+            # a hand too short to pay lights the Jester power up (it draws a new hand)
+            short = g.hand_defence_value() < need
+            set_enabled(self.mid_btn, g.can_use_solo_jester(), short)
             self.right_btn.title = "Discard %d/%d" % (total, need) if need > 0 else "Discard"
             whole = set(sel) == hand_ids and bool(sel)
             in_order = not one_by_one or sum(g.card(c).defence_value for c in sel[:-1]) < need
             set_enabled(self.right_btn, (total >= need and need > 0 and in_order) or (feign and whole))
             paying = (total, need)
-            self.message.text = "" if sel else "%s suffers %d damage: select cards worth at least %d." % (name, need, need)
-            # one hint at most (the message has three lines)
-            if one_by_one and total >= need and not in_order and not (feign and whole):
-                self.message.text = ("In this order the damage is covered before %s: tap the cards in the order they "
-                                     "are discarded, without a card too many." % g.card(sel[-1]).label())
-            elif g.hand_defence_value() < need and g.can_use_solo_jester():
-                self.message.text += " Your hand is short: use the Jester power."
-            elif feign:
-                self.message.text += " At the hand limit you may feign death: discard everything."
-            elif sel:
-                pass
-            elif one_by_one:
-                self.message.text += " One at a time: the last card ends on top of the discard pile."
-            elif any(g.hand_locked(c) for c in g.active_player.hand):
-                self.message.text += " Pilgrims never leave your hand."
-            self.message.text = self.message.text.strip()
             specials = g.rules.special_actions(g)
             if specials and self.mid_btn.hidden:
                 # the solo Kinfolk Flute in the Jester's place (the Jester has no power here)
@@ -954,11 +993,10 @@ class GameScreen(Screen):
             self.left_btn.title = "Suggest"
             set_enabled(self.left_btn, True, False)
             self.mid_btn.hidden = True
-            self.right_btn.title = "Discard %d" % needs
+            self.right_btn.title = "Discard %d/%d" % (len(sel), needs)
             set_enabled(self.right_btn, len(sel) == needs and needs > 0)
             who = g.players[g.deciding].name
-            self.message.text = "Chanter: %s drew to %d cards and must discard down to %d. Select %d card%s and tap Discard (%d selected)." % (
-                who, len(g.players[g.deciding].hand), g.config.max_hand, needs, "" if needs == 1 else "s", len(sel))
+            caption = "Chanter: %s discards down to %d" % (who, g.config.max_hand)
         elif g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") in HAND_PICKS:
             # One hand card leaves: into the mission zone (mission 10's bard, bane 12), the
             # discard or banished pile (mission 11's beasts, bane 21, bane 23's choice).
@@ -978,10 +1016,7 @@ class GameScreen(Screen):
             self.right_btn.title = spec["verb"]
             set_enabled(self.right_btn, len(sel) == 1 and sel[0] in allowed)
             who = g.players[g.deciding].name
-            if sel and sel[0] in allowed:
-                self.message.text = spec["chosen"] % {"who": who, "card": g.card(sel[0]).label()}
-            else:
-                self.message.text = spec["text"] % {"who": who}
+            caption = spec["title"] if g.n_players == 1 else "%s · %s" % (who, spec["title"])
         elif g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") == "mother_banish":
             # Evergreen Mother, 2+ players: another player must banish one card from hand.
             if len(sel) > 1:
@@ -995,14 +1030,8 @@ class GameScreen(Screen):
             self.mid_btn.hidden = True
             self.right_btn.title = "Banish"
             set_enabled(self.right_btn, len(sel) == 1 and sel[0] in allowed)
-            d = g.decision or {}
             who = g.players[g.deciding].name
-            corrupt = g.card(str(d.get("card"))).label() if d.get("card") in g.cards else "a corrupted card"
-            if sel:
-                self.message.text = "%s banishes %s from hand (Evergreen Mother, for %s)." % (who, g.card(sel[0]).label(), corrupt)
-            else:
-                self.message.text = ("Evergreen Mother: %s entered play, so %s must banish one card from hand instead of "
-                                     "the reserve. Select it and tap Banish." % (corrupt, who))
+            caption = "Evergreen Mother: %s banishes a card" % who
         elif g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") == "pile_rescue":
             # Mission 9: the pile is chosen; now the hand card to banish for the rescue.
             if len(sel) > 1:
@@ -1019,11 +1048,7 @@ class GameScreen(Screen):
             set_enabled(self.right_btn, len(sel) == 1 and sel[0] in allowed)
             piles = g.extra.get("captured", [])
             top = g.card(piles[k][0]).label() if k < len(piles) and piles[k] else "?"
-            if sel:
-                self.message.text = "%s banishes %s: %s is rescued from pile %d to the discard pile." % (
-                    name, g.card(sel[0]).label(), top, k + 1)
-            else:
-                self.message.text = "Rescue %s from captured pile %d: select the card to banish from hand and tap Banish." % (top, k + 1)
+            caption = "Rescue %s from pile %d: banish a card" % (top, k + 1)
         elif g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") == "team_discard":
             # Mission 6: the shown hand belongs to whoever discards next for Myla's team damage.
             if len(sel) > 1:
@@ -1040,11 +1065,10 @@ class GameScreen(Screen):
             self.mid_btn.hidden = True
             self.right_btn.title = "Discard"
             set_enabled(self.right_btn, len(sel) == 1)
-            self.message.text = "Team damage: %d to go. %s: select one card and tap Discard." % (remaining, who)
-            if sel:
-                worth = g.card(sel[0]).defence_value
-                self.message.text = "Team damage: %d to go. %s discards %s (worth %d)%s." % (
-                    remaining, who, g.card(sel[0]).label(), worth, ", enough" if worth >= remaining else "")
+            worth = g.card(sel[0]).defence_value if sel else 0
+            self.right_btn.title = "Discard %d/%d" % (worth, remaining)
+            paying = (worth, remaining)
+            caption = "Team damage: %s discards" % who if g.n_players > 1 else "Team damage"
         elif g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") == "whistle_add":
             # Scarlet Whistle, 2+ players: the shown hand belongs to another player, who may
             # add one card (not a Jester) to the attacker's solitary companion or beast.
@@ -1064,14 +1088,13 @@ class GameScreen(Screen):
             attacker = g.players[play.player].name
             attack = " + ".join(g.card(c).label() for c in play.card_ids)
             who = g.players[g.deciding].name
+            caption = "Scarlet Whistle: %s may add to %s's %s" % (who, attacker, attack)
             if sel and sel[0] in adds:
                 pv = g.preview_decision({"type": "whistle_add", "card": sel[0]})
-                projection = pv if pv.get("ok") else None
-                self.message.text = "%s adds %s (attack %d): %s" % (
-                    who, g.card(sel[0]).label(), pv.get("attack", 0), describe_preview(g, pv))
-            else:
-                self.message.text = ("%s: add one card to %s's %s attack (Scarlet Whistle)? Any card but a Jester. "
-                                     "Select it and tap Add, or Pass." % (who, attacker, attack))
+                if pv.get("ok"):
+                    projection = pv
+                    self.forecast = "%s adds %s (attack %d): %s" % (
+                        who, g.card(sel[0]).label(), pv.get("attack", 0), describe_preview(g, pv))
         elif g.phase == PHASE_DECIDE and (g.decision or {}).get("kind") == "emblem_place":
             # Azure Emblem, 2+ players: the shown hand belongs to another player, who may
             # place one card face down on top of the reserve before the attacker's mage looks.
@@ -1091,12 +1114,7 @@ class GameScreen(Screen):
             attacker = g.players[play.player].name
             attack = " + ".join(g.card(c).label() for c in play.card_ids)
             who = g.players[g.deciding].name
-            if sel:
-                self.message.text = "%s places %s face down on top of the reserve deck: %s's mage reveals it first." % (
-                    who, g.card(sel[0]).label(), attacker)
-            else:
-                self.message.text = ("%s: place one card on the reserve deck for %s's %s attack (Azure Emblem)? "
-                                     "Select a card and tap Place, or Pass." % (who, attacker, attack))
+            caption = "Azure Emblem: %s may place a card for %s" % (who, attacker)
         elif g.phase == PHASE_DECIDE:
             # Kinfolk Flute: the shown hand belongs to the deciding player; only cards that
             # keep the attack a valid kinfolk attack may be selected.
@@ -1116,22 +1134,32 @@ class GameScreen(Screen):
             attacker = g.players[play.player].name
             attack = " + ".join(g.card(c).label() for c in play.card_ids)
             who = g.players[g.deciding].name
+            caption = "Kinfolk Flute: %s may add to %s's %s" % (who, attacker, attack)
             if legal:
                 pv = g.preview_decision({"type": "flute_add", "card_ids": sel})
-                projection = pv if pv.get("ok") else None
-                self.message.text = "%s adds %s (attack %d): %s" % (
-                    who, " + ".join(g.card(c).label() for c in sel), pv.get("attack", 0), describe_preview(g, pv))
-            elif sel:
-                self.message.text = "Only %ss may join, and the attack must stay at 10 or less." % d.get("strength")
-            else:
-                self.message.text = "%s: add to %s's %s attack? Select %ss (total at most 10) and tap Add, or Pass." % (
-                    who, attacker, attack, d.get("strength"))
+                if pv.get("ok"):
+                    projection = pv
+                    self.forecast = "%s adds %s (attack %d): %s" % (
+                        who, " + ".join(g.card(c).label() for c in sel), pv.get("attack", 0), describe_preview(g, pv))
         for b in (self.left_btn, self.mid_btn, self.right_btn):
             fit_title(b, 16)     # the action bar's size, smaller only for a long title
-        self.message.set_needs_display()
+        self._caption(caption)
         self.enemy.show(projection, warn, paying)
         if had_special == self.special_btn.hidden:
             self.layout()     # the played cards make room for the button beside them, or take it back
+
+    def _caption(self, text: str) -> None:
+        """Show (or hide) the one-line caption naming the decision the shown hand makes,
+        smaller when it is long; the hand takes its room back when it goes."""
+        size = 14
+        while size > 11 and text and text_size(text, 0, size, True)[0] > self.width - 2 * T.MARGIN:
+            size -= 1
+        self.message.font = (T.FONT_BOLD, size)
+        self.message.text = text
+        if self.message.hidden != (not text):
+            self.message.hidden = not text
+            self.layout()
+        self.message.set_needs_display()
 
     def _selection_changed(self) -> None:
         self.message_text = ""
@@ -2743,9 +2771,10 @@ def deck_list_key(card: Card) -> tuple:
 
 class PilesOverlay(Overlay):
     """The piles at a glance: the discard pile and the banished pile in order, the top card
-    first, and the reserve (tavern) deck sorted like the deck list (by class, then
-    strength; equal-looking cards by id), which shows what is left without giving its
-    order away. One pile at a time, picked with a segmented control."""
+    first, the reserve (tavern) deck sorted like the deck list (by class, then strength;
+    equal-looking cards by id), which shows what is left without giving its order away, and
+    the castle: every enemy of the game, the defeated ones greyed and the one faced marked.
+    One pile at a time, picked with a segmented control (or a tap on a pile on the table)."""
 
     columns = 5
     peekable = False   # not a choice: it closes with its own button
@@ -2766,36 +2795,47 @@ class PilesOverlay(Overlay):
         return list(g.tavern) + [c for i, p in enumerate(g.players) if i != me for c in p.hand]
 
     def piles(self, g: Game) -> List[tuple]:
-        """(key, segment title) of the piles to show."""
+        """(key, segment title) of the piles to show, as they lie on the table."""
         legacy = bool(getattr(g.rules, "legacy", False))
-        reserve = ("Unseen %d" % len(self.unseen(g)) if self.hidden_hands(g)
-                   else "%s %d" % ("Reserve" if legacy else "Tavern", len(g.tavern)))
-        out = [("discard", "Discard %d" % len(g.discard)), ("reserve", reserve)]
+        reserve = "Unseen" if self.hidden_hands(g) else ("Reserve" if legacy else "Tavern")
+        out = [("castle", "Castle"), ("reserve", reserve), ("discard", "Discard")]
         if legacy or g.banished:
-            out.append(("banished", "Banished %d" % len(g.banished)))
+            out.append(("banished", "Banished"))
         return out
+
+    def castle_state(self, g: Game) -> tuple:
+        """(the enemy deck in order, the defeated ids, the enemy faced)."""
+        deck = enemy_deck(g)
+        now = g.enemy.card_id if g.enemy is not None else None
+        waiting = set(g.castle)
+        return deck, set(c for c in deck if c not in waiting and c != now), now
 
     def pile_cards(self, g: Game) -> tuple:
         """(card ids in the order shown, the line under the control, a badge per id)."""
         legacy = bool(getattr(g.rules, "legacy", False))
+        if self.pile == "castle":
+            deck, defeated, now = self.castle_state(g)
+            note = "%d enem%s left after this one; the defeated are greyed." % (
+                len(g.castle), "y" if len(g.castle) == 1 else "ies")
+            return deck, note, ({now: "now"} if now else {})
         if self.pile == "reserve":
             name = "reserve deck" if legacy else "tavern deck"
             if self.hidden_hands(g):
                 ids = sorted(self.unseen(g), key=lambda c: (deck_list_key(g.card(c)), c))
                 note = ("Nothing you have not seen." if not ids else
-                        "The cards you have not seen: the %s and the other players' hands together, sorted like "
-                        "the deck list." % name)
+                        "%d cards you have not seen: the %s and the other players' hands together, sorted like "
+                        "the deck list." % (len(ids), name))
                 return ids, note, {}
             ids = sorted(g.tavern, key=lambda c: (deck_list_key(g.card(c)), c))
             note = ("The %s is empty." % name if not ids else
-                    "What is left in the %s, sorted like the deck list: its order stays hidden." % name)
+                    "%d cards left in the %s, sorted like the deck list: its order stays hidden." % (len(ids), name))
             return ids, note, {}
         if self.pile == "banished":
             ids = list(reversed(g.banished))          # the last banished is on top
-            note = "The banished pile is empty." if not ids else "In order, the top card first."
+            note = "The banished pile is empty." if not ids else "%d cards in order, the top card first." % len(ids)
         else:
             ids = list(g.discard)                     # the first is the top card
-            note = "The discard pile is empty." if not ids else "In order, the top card first."
+            note = "The discard pile is empty." if not ids else "%d cards in order, the top card first." % len(ids)
         return ids, note, ({ids[0]: "top"} if ids else {})
 
     def build(self) -> List[ui.View]:
@@ -2809,6 +2849,7 @@ class PilesOverlay(Overlay):
         seg.selected_index = keys.index(self.pile)
         seg.action = lambda s: self._switch(keys[s.selected_index])
         ids, note, badges = self.pile_cards(g)
+        defeated = self.castle_state(g)[1] if self.pile == "castle" else set()
         pw = self.text_width()
         cols = self.columns
         gap = 5.0
@@ -2820,7 +2861,8 @@ class PilesOverlay(Overlay):
         # the grid takes the room the screen has left and scrolls past it; it is as tall for
         # every pile (the biggest one's height), so switching piles does not move the panel
         room = self.height - T.TOP_INSET - T.BOTTOM_INSET - 36 - 32 - note_label.height - 44 - 5 * 12 - 28
-        biggest = max(len(g.discard), len(self.unseen(g)) if self.hidden_hands(g) else len(g.tavern), len(g.banished), 1)
+        biggest = max(len(g.discard), len(self.unseen(g)) if self.hidden_hands(g) else len(g.tavern), len(g.banished),
+                      len(enemy_deck(g)), 1)
         tallest = ((biggest + cols - 1) // cols) * (ch + gap)
         sv = ui.ScrollView(frame=(0, 0, pw, max(ch + gap, min(tallest, room))))
         sv.content_size = (pw, need + 4)
@@ -2831,6 +2873,8 @@ class PilesOverlay(Overlay):
             v.small = True
             v.touch_enabled = False
             v.badge = badges.get(cid, "")
+            v.shaded = cid in defeated            # a defeated enemy, greyed like the mercenary camp
+            v.selected = cid == badges.get("now") or badges.get(cid) == "now"   # the enemy faced
             v.frame = (c * (cw + gap), r * (ch + gap), cw, ch)
             sv.add_subview(v)
             self.card_views[cid] = v
@@ -4295,12 +4339,32 @@ class SettingsScreen(Screen):
             sw.value = bool(self.app.settings.get(key, default))
             sw.action = (lambda k: lambda s: self._toggle(k, s.value))(key)
             self.add_subview(sw)
-            y += 56
+            y += 56 if self.height >= 640 else 48      # a short phone: closer rows
+        # the card backs: a tap on the button tries the next style; the card beside it shows it
+        from . import backs
+        from .widgets import BackSample
+        style = str(self.app.settings.get("card_back", "lattice"))
+        style = style if style in backs.STYLES else "lattice"
+        self.add_subview(make_label("Card backs", (m, y + 18, w - 2 * m - 170, 30), 15, False, T.TEXT))
+        btn = make_button(backs.NAMES[style] + " ›", self._next_back, (w - m - 160, y + 14, 110, 36), False, 14)
+        self.add_subview(btn)
+        self.add_subview(BackSample(frame=(w - m - 42, y, 42, 64)))
+        y += 74
         y += 10
         self.add_subview(make_label("Saves live in %s" % store.save_dir(), (m, y, w - 2 * m, 60), 12, False, T.MUTED, lines=3))
 
+    def _next_back(self, sender) -> None:
+        from . import backs
+        style = str(self.app.settings.get("card_back", "lattice"))
+        i = backs.ORDER.index(style) if style in backs.ORDER else -1
+        self._set("card_back", backs.ORDER[(i + 1) % len(backs.ORDER)])
+        self.layout()
+
     def _toggle(self, key: str, value: bool) -> None:
-        self.app.settings[key] = bool(value)
+        self._set(key, bool(value))
+
+    def _set(self, key: str, value) -> None:
+        self.app.settings[key] = value
         self.app.save_settings()
         apply_face_style(self.app.settings)
 

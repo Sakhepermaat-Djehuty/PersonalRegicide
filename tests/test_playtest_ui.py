@@ -540,15 +540,15 @@ def test_the_piles_show_the_discard_and_banished_piles_in_order_and_the_reserve_
     from app.screens import PilesOverlay, deck_list_key
     gs, g = _piles_game(app)
     before = json.dumps(g.to_dict(), sort_keys=True)
-    # a tap on the status line opens the piles, the discard pile first
-    ui.tap(app, *ui.root_point(app, gs.piles_btn))
+    # a tap on the discard pile on the table opens it
+    ui.tap(app, *ui.root_point(app, gs.pile_views["discard"]))
     ov = gs.overlay
     assert isinstance(ov, PilesOverlay) and ov.pile == "discard"
     seg = ui.find(ov, lambda v: isinstance(v, ui.SegmentedControl))[0]
-    assert seg.segments == ["Discard %d" % len(g.discard), "Reserve %d" % len(g.tavern), "Banished 3"]
+    assert seg.segments == ["Castle", "Reserve", "Discard", "Banished"]
     shown = [v.card.id for v in sorted(ov.card_views.values(), key=lambda v: (v.y, v.x))]
     assert shown == g.discard and ov.card_views[g.discard[0]].badge == "top"
-    assert "In order, the top card first." in _texts(ov) and ui.render(app).size[0] > 0
+    assert "%d cards in order, the top card first." % len(g.discard) in _texts(ov) and ui.render(app).size[0] > 0
     assert not any(ui.label_truncated(v) for v in ui.find(ov, lambda v: isinstance(v, ui.Label)))
     height = ov.panel.frame[3]
     # the reserve: every card, sorted like the deck list (class, then strength), not in the deck's order
@@ -567,7 +567,7 @@ def test_the_piles_show_the_discard_and_banished_piles_in_order_and_the_reserve_
     g.tavern[:] = order
     assert ov.panel.frame[3] == height                     # switching piles does not move the panel
     # the banished pile, the top (last banished) first
-    seg.selected_index = 2
+    seg.selected_index = 3
     seg.action(seg)
     shown = [v.card.id for v in sorted(ov.card_views.values(), key=lambda v: (v.y, v.x))]
     assert shown == list(reversed(g.banished)) and ov.card_views[g.banished[-1]].badge == "top"
@@ -605,10 +605,11 @@ def test_the_piles_during_a_decision_and_in_the_base_game(app):
     app.start_game(GameConfig(players=1), seed=3)
     gs = app.current
     assert isinstance(gs, GameScreen)
-    ui.tap(app, *ui.root_point(app, gs.piles_btn))
+    assert gs.pile_views["banished"].hidden and gs.pile_views["reserve"].label == "Tavern"
+    ui.tap(app, *ui.root_point(app, gs.pile_views["reserve"]))
     seg = ui.find(gs.overlay, lambda v: isinstance(v, ui.SegmentedControl))[0]
-    assert seg.segments == ["Discard 0", "Tavern %d" % len(app.game.tavern)] and gs.overlay.pile == "reserve"
-    seg.selected_index = 0
+    assert seg.segments == ["Castle", "Tavern", "Discard"] and gs.overlay.pile == "reserve"
+    seg.selected_index = 2
     seg.action(seg)
     assert "The discard pile is empty." in _texts(gs.overlay)
 
@@ -671,7 +672,7 @@ def test_back_from_the_piles_keeps_the_selection_and_the_choice_in_progress(app)
     gs.hand.set_selection([g.players[0].hand[2], g.players[0].hand[0]])
     picked = list(gs.hand.selected)
     message = gs.message.text
-    ui.tap(app, *ui.root_point(app, gs.piles_btn))
+    ui.tap(app, *ui.root_point(app, gs.pile_views["discard"]))
     assert isinstance(gs.overlay, PilesOverlay)
     _tap(app, "Back")
     assert gs.overlay is None and gs.hand.selected == picked and gs.message.text == message
@@ -719,7 +720,8 @@ def test_with_hidden_hands_the_reserve_is_shown_with_the_other_hands(app):
     ov = gs.overlay
     other = [c for i, p in enumerate(g.players) if i != me for c in p.hand]
     seg = ui.find(ov, lambda v: isinstance(v, ui.SegmentedControl))[0]
-    assert seg.segments[1] == "Unseen %d" % (len(g.tavern) + len(other))
+    assert seg.segments[1] == "Unseen"
+    assert any(t.startswith("%d cards you have not seen" % (len(g.tavern) + len(other))) for t in _texts(ov))
     # the reserve and the other hand, mixed and sorted: no telling which card is where
     assert sorted(ov.card_views) == sorted(list(g.tavern) + other)
     assert any("the other players' hands together" in t for t in _texts(ov))
@@ -729,7 +731,7 @@ def test_with_hidden_hands_the_reserve_is_shown_with_the_other_hands(app):
     gs, g = app.current, app.game
     gs._show_piles("reserve")
     assert sorted(gs.overlay.card_views) == sorted(g.tavern)
-    assert ui.find(gs.overlay, lambda v: isinstance(v, ui.SegmentedControl))[0].segments[1] == "Tavern %d" % len(g.tavern)
+    assert ui.find(gs.overlay, lambda v: isinstance(v, ui.SegmentedControl))[0].segments[1] == "Tavern"
 
 
 
@@ -752,7 +754,7 @@ def test_the_table_under_a_choice_box_is_current_and_public(app):
     _tap(app, "Play")
     _tap(app, "Show my hand")
     gs.hand.set_selection(["3D", "3H"])            # Ben thinks about adding, then passes
-    assert "3♦" in gs.message.text
+    assert "3♦" in gs.forecast and gs.enemy.projection
     _tap(app, "Pass")
     ov = gs.overlay
     assert isinstance(ov, DecisionOverlay) and g.deciding == 2
