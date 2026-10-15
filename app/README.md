@@ -30,7 +30,8 @@ the first time it loads (Settings can turn that off) and is in the in-game Menu 
 game menu too. In a game, a tap on the status line ("Reserve 54 · Discard 17"), or
 "Discard and reserve piles" in the in-game Menu, shows the piles: the discard pile and the
 banished pile in order (the top card first) and the reserve deck shuffled (what is left,
-never its order).
+never its order). Every choice box has "Hold to view game": while it is held the box fades
+away and the table shows; letting go brings the box back.
 
 ## What the client offers
 

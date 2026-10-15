@@ -1140,7 +1140,12 @@ class GameScreen(Screen):
 
 
 class Overlay(ui.View):
-    """Semi-transparent full-screen panel with a centred card."""
+    """Semi-transparent full-screen panel with a centred card. A choice box (``peekable``)
+    also offers "Hold to view game": while it is held the box fades away and the table
+    shows, and letting go brings it back (``PeekButton``); it sits beside the box's "Game
+    menu" button when there is one."""
+
+    peekable = True
 
     def __init__(self, screen: GameScreen, **kw) -> None:
         super().__init__(**kw)
@@ -1149,7 +1154,61 @@ class Overlay(ui.View):
         self.panel = ui.View()
         self.panel.background_color = T.PANEL
         self.panel.corner_radius = 16
+        self.peek_btn = None
+        self.peeking = False
+        self._peek_saved: tuple = ()
         self.add_subview(self.panel)
+
+    def _add_peek(self, pw: float, y: float) -> float:
+        """Put the "Hold to view game" button in the panel: beside a closing "Game menu"
+        button, or as a row of its own below ``y``. Returns the panel's new bottom."""
+        self.peeking = False
+        self.peek_btn = None
+        if not self.peekable:
+            return y
+        from .widgets import PeekButton
+        last = self.panel.subviews[-1] if self.panel.subviews else None
+        if isinstance(last, ui.Button) and last.title == "Game menu":
+            x, ly, w, h = last.frame
+            half = (w - 8) / 2.0
+            last.frame = (x, ly, half, h)
+            fit_title(last)
+            self.peek_btn = PeekButton(self._peek, frame=(x + half + 8, ly, half, h))
+        else:
+            self.peek_btn = PeekButton(self._peek, frame=(20, y, pw - 40, 36))
+            y += 36 + 12
+        self.panel.add_subview(self.peek_btn)
+        return y
+
+    def _peek(self, on: bool) -> None:
+        """Fade the box away (all but the held button) so the table shows, or bring it back."""
+        if on == self.peeking:
+            return
+        self.peeking = on
+        if on:
+            hidden = [v for v in list(self.panel.subviews) + list(self.subviews)
+                      if v is not self.panel and v is not self.peek_btn and not v.hidden]
+            self._peek_saved = (self.background_color, self.panel.background_color, hidden)
+            for v in hidden:
+                v.hidden = True
+            self.background_color = (0, 0, 0, 0.0)
+            self.panel.background_color = None
+        elif self._peek_saved:
+            bg, panel_bg, hidden = self._peek_saved
+            self.background_color = bg
+            self.panel.background_color = panel_bg
+            for v in hidden:
+                v.hidden = False
+            self._peek_saved = ()
+
+    def touch_ended(self, touch) -> None:
+        # a hold the phone cancelled (a notification, a system gesture) leaves the box
+        # away: any tap brings it back
+        if self.peeking:
+            if self.peek_btn is not None:
+                self.peek_btn.held = False
+                self.peek_btn.set_needs_display()
+            self._peek(False)
 
     def build(self) -> List[ui.View]:
         return []
@@ -1167,6 +1226,7 @@ class Overlay(ui.View):
     def layout(self) -> None:
         if not hasattr(self, "panel") or not hasattr(self, "screen"):
             return
+        self._unpeek_for_layout()
         for v in list(self.panel.subviews):
             self.panel.remove_subview(v)
         pw = min(340, self.width - 2 * T.MARGIN)
@@ -1178,13 +1238,21 @@ class Overlay(ui.View):
                 fit_title(v)
             self.panel.add_subview(v)
             y += v.height + 12
+        y = self._add_peek(pw, y)
         ph = y + 8
         self.panel.frame = ((self.width - pw) / 2, max(T.TOP_INSET, (self.height - ph) / 2), pw, ph)
+
+    def _unpeek_for_layout(self) -> None:
+        """A rebuild while the box is away brings it back first (the colours are restored)."""
+        if self.peeking:
+            self._peek(False)
 
 
 class HandoverOverlay(Overlay):
     """The "Pass the phone to X" screen: the deciding player's hand (or ``seat``'s, for the
     team damage seat picker) stays hidden until that player taps."""
+
+    peekable = False   # not a choice: it closes with its own button
 
     def __init__(self, screen: "GameScreen", seat: Optional[int] = None, **kw) -> None:
         super().__init__(screen, **kw)
@@ -1353,6 +1421,7 @@ class PickOverlay(Overlay):
     def layout(self) -> None:
         if not hasattr(self, "panel") or not hasattr(self, "screen"):
             return
+        self._unpeek_for_layout()
         for v in list(self.panel.subviews):
             self.panel.remove_subview(v)
         pw = min(340, self.width - 2 * T.MARGIN)
@@ -1380,6 +1449,7 @@ class PickOverlay(Overlay):
                 fit_title(v)
             self.panel.add_subview(v)
             y += v.height + 12
+        y = self._add_peek(pw, y)
         ph = y + 8
         self.panel.frame = ((self.width - pw) / 2, max(T.TOP_INSET, (self.height - ph) / 2), pw, ph)
 
@@ -2002,6 +2072,9 @@ class ResultOverlay(Overlay):
 
 
 class GameMenuOverlay(Overlay):
+
+    peekable = False   # not a choice: it closes with its own button
+
     def build(self) -> List[ui.View]:
         app = self.screen.app
         items: List[ui.View] = [
@@ -2315,6 +2388,9 @@ def rules_card(camp, game: Optional[Game] = None) -> tuple:
 
 
 class LogOverlay(Overlay):
+
+    peekable = False   # not a choice: it closes with its own button
+
     def build(self) -> List[ui.View]:
         g = self.screen.game
         lines = g.log[-14:]
@@ -2334,6 +2410,7 @@ class PilesOverlay(Overlay):
     game's is never touched)."""
 
     columns = 5
+    peekable = False   # not a choice: it closes with its own button
 
     def __init__(self, screen: "GameScreen", pile: str = "discard", rng: Optional[random.Random] = None, **kw) -> None:
         super().__init__(screen, **kw)
@@ -2430,6 +2507,8 @@ class ClassChoiceOverlay(Overlay):
 
 class SpecialOverlay(Overlay):
     """Relic and mission actions offered by the rules."""
+
+    peekable = False   # not a choice: it closes with its own button
 
     def build(self) -> List[ui.View]:
         g = self.screen.game

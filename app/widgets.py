@@ -388,6 +388,48 @@ class CardView(ui.View):
             self.on_tap(self)
 
 
+class PeekButton(ui.View):
+    """Hold to look at the game: while a finger rests on it, ``on_hold(True)`` (the choice
+    box fades away and the table shows); lifting it calls ``on_hold(False)`` (the box comes
+    back). A hold ending anywhere still counts, and a tap on it while the box is away
+    brings the box back too, so it can never stay hidden."""
+
+    def __init__(self, on_hold: Callable[[bool], None], title: str = "Hold to view game",
+                 held_title: str = "Release to return", **kw) -> None:
+        super().__init__(**kw)
+        self.on_hold = on_hold
+        self.title = title
+        self.held_title = held_title
+        self.held = False
+        self.background_color = None
+
+    def draw(self) -> None:
+        w, h = self.width, self.height
+        ui.set_color(T.ACCENT if self.held else T.PANEL_2)
+        ui.Path.rounded_rect(0, 0, w, h, 10).fill()
+        text = self.held_title if self.held else self.title
+        size = 13.0
+        while size > 10 and text_size(text, 0, size, True)[0] > w - 10:
+            size -= 1
+        ui.draw_string(text, (4, (h - size * 1.25) / 2.0, w - 8, size * 1.3), (T.FONT_BOLD, size),
+                       T.BG if self.held else T.BTN_TEXT, ui.ALIGN_CENTER)
+
+    def _set(self, held: bool) -> None:
+        if held != self.held:
+            self.held = held
+            self.set_needs_display()
+            self.on_hold(held)
+
+    def touch_began(self, touch) -> None:
+        self._set(True)
+
+    def touch_moved(self, touch) -> None:
+        pass
+
+    def touch_ended(self, touch) -> None:
+        self._set(False)
+
+
 class RelicCard(ui.View):
     """A relic as a small card: its symbol in its colour on a card face, "relic" below.
     A tap reports through ``on_tap`` (the deck list opens the relic's card)."""

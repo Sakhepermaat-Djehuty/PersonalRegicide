@@ -603,3 +603,48 @@ def test_the_piles_during_a_decision_and_in_the_base_game(app):
     seg = ui.find(gs.overlay, lambda v: isinstance(v, ui.SegmentedControl))[0]
     assert seg.segments == ["Discard 0", "Tavern %d" % len(app.game.tavern)]
     assert "The discard pile is empty." in _texts(gs.overlay)
+
+
+def test_choice_boxes_offer_hold_to_view_the_game(app):
+    import json
+    from app.screens import ClassChoiceOverlay, GameMenuOverlay, LogOverlay, MagePeekOverlay, PilesOverlay
+    from helpers import set_hand, set_mission_enemy, set_tavern_top
+    gs, g = _piles_game(app)
+    set_mission_enemy(g, "LABJD", hp=100)
+    set_hand(g, ["3M", "9S", "8S"])
+    set_tavern_top(g, ["4C", "10H", "2D"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["3M"])
+    _tap(app, "Play")
+    ov = gs.overlay
+    assert isinstance(ov, MagePeekOverlay) and isinstance(ov.peek_btn, widgets.PeekButton)
+    menu = ui.button(ov, "Game menu")
+    # beside the Game menu button, on the same row: the box is no taller for it
+    assert ov.peek_btn.y == menu.y and ov.peek_btn.x > menu.x and abs(ov.peek_btn.width - menu.width) < 1
+    before = json.dumps(g.to_dict(), sort_keys=True)
+    shown = [v for v in ov.panel.subviews if not v.hidden]
+    ov.peek_btn.touch_began(None)                  # held: the box fades, the table shows
+    assert ov.peeking and ov.peek_btn.held and ov.background_color[3] == 0 and ov.panel.background_color is None
+    assert [v for v in ov.panel.subviews if not v.hidden] == [ov.peek_btn]
+    assert ui.render(app).size[0] > 0
+    ov.peek_btn.touch_ended(None)                  # released: the same box again
+    assert not ov.peeking and [v for v in ov.panel.subviews if not v.hidden] == shown
+    assert ov.background_color[3] > 0.5 and gs.overlay is ov
+    assert json.dumps(g.to_dict(), sort_keys=True) == before and g.decision["kind"] == "mage_peek"
+    # a hold the phone cancels: any tap brings the box back
+    ov.peek_btn.touch_began(None)
+    ov.touch_ended(None)
+    assert not ov.peeking and not ov.peek_btn.held and ui.button(ov, "Game menu")
+    # a rebuild while held brings it back too
+    ov.peek_btn.touch_began(None)
+    ov.layout()
+    assert not ov.peeking and all(not v.hidden for v in ov.panel.subviews)
+    # the choice still works
+    _tap(app, "Add 4♣ to the attack")
+    assert g.decision is None or g.decision["kind"] != "mage_peek"
+    # a choice box without a Game menu button gets its own row; menus and information do not
+    gs._show_overlay(ClassChoiceOverlay(gs))
+    assert gs.overlay.peek_btn is not None and gs.overlay.peek_btn.width > ui.button(gs.overlay, "Cancel").width * 0.9
+    for cls in (GameMenuOverlay, LogOverlay, PilesOverlay):
+        gs._show_overlay(cls(gs))
+        assert gs.overlay.peek_btn is None and not ui.find(gs.overlay, lambda v: isinstance(v, widgets.PeekButton))
