@@ -603,13 +603,9 @@ class GameScreen(Screen):
         self.status.text = status_text(g, self.status.width)
         self.enemy.game = g
         self.enemy.set_needs_display()
+        # in the order the cards entered play (the clean-up's default order)
         played = [g.card(c) for p in g.plays for c in p.card_ids]
-        # the played cards go onto the discard pile in this order at clean-up, the last on
-        # top: say so where the top of the pile matters
-        title = "Played against this enemy"
-        if played and g.rules.discard_top_matters(g):
-            title += " · the last ends on top of the discard pile"
-        self.strip.set_cards(played, title)
+        self.strip.set_cards(played, "Played against this enemy")
         self.strip.set_needs_display()
         uses_zone = bool(g.mission_zone) or getattr(g.rules, "uses_mission_zone", False)
         if uses_zone != (not self.zone.hidden):
@@ -653,8 +649,8 @@ class GameScreen(Screen):
         if kind is not None and kind not in HAND_DECISIONS:
             # A decision of the current player's own with a short list of options: the
             # mage's secret look, the reaver's reveal, which zone card to rescue, the order
-            # a mage's leftovers or a reaver's reveals go onto a pile, the card moved to the
-            # zone, the Scarlet Whistle's take. In
+            # a mage's leftovers, a reaver's reveals or the played cards after a kill go onto
+            # a pile, the card moved to the zone, the Scarlet Whistle's take. In
             # pass-and-play another player may hold the phone (a Kinfolk Flute, Scarlet
             # Whistle or Azure Emblem decision came first): hand it back first.
             seat = g.deciding
@@ -1483,8 +1479,8 @@ def pile_top_why(g: Game, pile: str) -> str:
 class TopChoiceOverlay(PickOverlay):
     """Retired: only a game saved while the app asked which card ends on top of a pile (the
     played cards at clean-up, a mage's unchosen cards, a reaver's or a mage attack's
-    banished cards) still shows it. The clean-up now keeps the order the cards entered play
-    and the other questions ask for the whole order (``OrderOverlay``)."""
+    banished cards) still shows it. Those questions now ask for the whole order
+    (``OrderOverlay``)."""
 
     def heading(self, g: Game, d: dict) -> tuple:
         kind = str(d.get("kind"))
@@ -1795,8 +1791,12 @@ class OrderOverlay(CardGridOverlay):
     as tapped (the first tapped goes first, the last ends on top). The cards are the
     decision template's ``pick_from``: the mission zone for mission 12's banish order and
     the Lake's discard order, a mage's unchosen cards (``discard_order``), a reaver's
-    revealed cards (``reaver_order``); the last two are asked only where the top of that
-    pile matters."""
+    revealed cards (``reaver_order``), the played cards after a kill
+    (``played_discard_order``, ``played_banish_order``, shown in the order they entered
+    play with a one-tap "Keep the order played"); all but the first two are asked only
+    where the top of that pile matters."""
+
+    KEEP = ("played_discard_order", "played_banish_order")
 
     def heading(self, g: Game, d: dict) -> tuple:
         kind = str(d.get("kind"))
@@ -1811,6 +1811,14 @@ class OrderOverlay(CardGridOverlay):
         if kind == "reaver_order":
             return ("What order?", "Reaver: the revealed cards are banished in any order. Tap them in order: the "
                                    "first tapped goes first, the last ends on top. " + pile_top_why(g, "banished"))
+        if kind == "played_discard_order":
+            return ("What order?", "Enemy defeated: the played cards go on top of the discard pile in any order. "
+                                   "Tap them in order (the first tapped goes first, the last ends on top) or keep "
+                                   "the order they were played. " + pile_top_why(g, "discard"))
+        if kind == "played_banish_order":
+            return ("What order?", "Enemy defeated: the mage attack's cards are banished in any order. Tap them in "
+                                   "order (the first tapped goes first, the last ends on top) or keep the order "
+                                   "they were played. " + pile_top_why(g, "banished"))
         return ("Enemy defeated", "The Lake: the mission zone goes to the discard pile in any order. Tap the cards "
                                   "in order: the last one ends on top of the discard pile.")
 
@@ -1825,11 +1833,16 @@ class OrderOverlay(CardGridOverlay):
         n, total = len(self.picked), len(self.card_ids(g, d))
         b = make_button("Confirm the order (%d of %d)" % (n, total), lambda s: self.confirm(), (0, 0, 10, 46))
         set_enabled(b, n == total and total > 0)
+        if str(d.get("kind")) in self.KEEP:
+            # the cards are shown in the order they entered play: keep it in one tap
+            keep = make_button("Keep the order played", lambda s: self.confirm(self.card_ids(g, d)), (0, 0, 10, 44), False)
+            return [b, keep]
         return [b]
 
-    def confirm(self) -> None:
+    def confirm(self, order: Optional[List[str]] = None) -> None:
         g = self.screen.game
-        self.screen.decide({"type": str((g.decision or {}).get("kind")), "player": g.deciding, "cards": list(self.picked)})
+        cards = list(self.picked) if order is None else list(order)
+        self.screen.decide({"type": str((g.decision or {}).get("kind")), "player": g.deciding, "cards": cards})
 
 
 class CloseCallOverlay(CardGridOverlay):
@@ -1904,6 +1917,7 @@ PICK_OVERLAYS = {"mage_peek": MagePeekOverlay, "emblem_keep": EmblemKeepOverlay,
                  "pile_to_reserve": PileToReserveOverlay,
                  "banish_order": OrderOverlay, "zone_order": OrderOverlay,
                  "discard_order": OrderOverlay, "reaver_order": OrderOverlay,
+                 "played_discard_order": OrderOverlay, "played_banish_order": OrderOverlay,
                  "close_call": CloseCallOverlay, "restored_arrows": RestoredArrowsOverlay,
                  # the top-card questions of games saved before the order questions
                  "cleanup_top": TopChoiceOverlay, "banish_top": TopChoiceOverlay, "discard_top": TopChoiceOverlay,
@@ -3208,6 +3222,9 @@ def describe_events(g: Game) -> str:
             parts.append("What order? The revealed cards are banished.")
         elif t == "reaver_order":
             parts.append("%s on top of the banished pile." % g.card(ev["cards"][-1]).label())
+        elif t == "decide" and ev.get("kind") in ("played_discard_order", "played_banish_order"):
+            parts.append("What order? The played cards go to the %s pile." % (
+                "discard" if ev["kind"] == "played_discard_order" else "banished"))
         elif t == "cleanup_order":
             parts.append("%s ends on top of the %s pile." % (g.card(ev["cards"][-1]).label(), ev.get("pile", "discard")))
         # the answers to the top-card questions of games saved before the order questions

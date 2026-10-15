@@ -991,10 +991,10 @@ class Game:
             played = [c for c in played if c.id not in last_ids]
             mage_ids = [c for c in mage_ids if c not in last_ids]
         # Rulebook p.19: the played cards go on the discard pile "in any order you wish" (and
-        # a mage attack is banished in the player's order, mission 5): the order they entered
-        # play, the last card on top (``_cleanup_played``). A rule set may still ask before
-        # cleaning up (``before_cleanup``); ``resume_defeat`` then comes back here
-        # (``resumed``) and the rules see the recorded choice.
+        # a mage attack is banished in the player's order, mission 5): by default the order
+        # they entered play, the last card on top (``_cleanup_played``). A rule set may ask
+        # for the order first (``before_cleanup``, Legacy where the top of the pile matters);
+        # ``resume_defeat`` then comes back here (``resumed``) and the rules see the choice.
         to_discard = [c.id for c in played if c.id not in mage_ids] if plan.get("played_to", "discard") == "discard" else []
         decision = self.rules.before_cleanup(self, exact, plan, to_discard, list(mage_ids))
         if decision is not None:

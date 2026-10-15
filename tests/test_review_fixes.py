@@ -7,7 +7,7 @@ import random
 
 import pytest
 
-from helpers import set_discard, set_enemy, set_hand, set_mission_enemy, set_tavern_top, _pull
+from helpers import keep_played_order, set_discard, set_enemy, set_hand, set_mission_enemy, set_tavern_top, _pull
 from regicide.bots import (apply_action, greedy_policy, min_waste_discard, play_out, random_policy,
                            sequential_payment_ok, simple_decision)
 from regicide.campaign import CampaignState
@@ -322,8 +322,10 @@ def test_finding_5_mission5_mage_attack_is_banished_in_the_order_it_entered_play
     set_tavern_top(g, ["10C"])
     g.play(["AS", "9M"])
     g.decide({"type": "mage_pick", "card": "10C"})      # 1 + 9 + 10 = 20, doubled: 40, exact
-    # "in the order the current player chooses": the order the cards entered play, the ace
-    # and the mage as selected, then the card the mage added, on top; nothing is asked
+    # "in the order the current player chooses": "What order?", offered in the order the cards
+    # entered play (the ace and the mage as selected, then the card the mage added); kept
+    assert g.decision["kind"] == "played_banish_order" and g.enemies_defeated == 0
+    assert keep_played_order(g) == [["AS", "9M", "10C"]]
     assert g.decision is None and g.enemies_defeated >= 1 and g.banished[-3:] == ["AS", "9M", "10C"]
     assert [ev for ev in g.last_events if ev["t"] == "cleanup_order"] == [
         {"t": "cleanup_order", "pile": "banished", "cards": ["AS", "9M", "10C"]}]
@@ -344,7 +346,11 @@ def test_finding_5_mission5_mage_attack_is_banished_in_the_order_it_entered_play
     set_tavern_top(g, ["10C"])
     g.play(["9M", "AS"])
     g.decide({"type": "mage_pick", "card": "10C"})
-    assert g.decision is None and g.banished[-3:] == ["9M", "AS", "10C"]
+    assert g.decision["options"] == ["9M", "AS", "10C"]
+    with pytest.raises(IllegalAction):
+        g.decide({"type": "played_banish_order", "cards": ["9M", "AS"]})     # every card, once
+    g.decide({"type": "played_banish_order", "cards": ["AS", "10C", "9M"]})  # the player's own order
+    assert g.decision is None and g.banished[-3:] == ["AS", "10C", "9M"] and "played_order" not in g.extra
     ids_everywhere(g)
 
 
@@ -361,8 +367,9 @@ def test_finding_6_solo_whistle_cleanup_keeps_the_play_order_and_the_whistle_off
     g.decide({"type": "zone_move", "card": "2C"})
     while g.decision is not None and g.decision["kind"] == "team_discard":
         g.decide(greedy_policy(g))
-    # two played cards go to the discard pile and the solo Whistle reads its top: nothing is
-    # asked, they go in the order they entered play (2♣ went to the zone), 9♣ on top
+    # two played cards go to the discard pile and the solo Whistle reads its top: "What
+    # order?"; kept as they entered play (2♣ went to the zone), 9♣ ends on top
+    assert keep_played_order(g) == [["AS", "9C"]]
     assert g.decision is None and g.enemies_defeated == 1 and g.discard[:2] == ["9C", "AS"]
     assert any(ev["t"] == "cleanup_order" and ev["cards"] == ["AS", "9C"] for ev in g.last_events)
     ids_everywhere(g)
@@ -383,7 +390,8 @@ def test_finding_6_mission11_two_players_the_last_card_played_tops_the_discard_p
     g.enemy.hp = 20
     g.play(["5C", "5S"])                                # 10, doubled: 20, exact
     assert g.rules.discard_top_feeds_enemy(g) and g.rules.banished_top_matters(g)
-    # the selection order is the clean-up order: 5♠, selected last, ends on top
+    # "What order?" offers the selection order: kept, 5♠ (selected last) ends on top
+    assert keep_played_order(g) == [["5C", "5S"]]
     assert g.decision is None and g.discard[:2] == ["5S", "5C"]
     assert "S" in g.rules.immune_suits(g) and "C" not in g.rules.immune_suits(g)
 
@@ -750,6 +758,9 @@ def test_cleanup_after_a_solo_jester_kill_sets_the_jester_aside_once():
     g.use_solo_jester({"suit": "H"})
     assert g.decision is None and g.set_aside == ["X1"]    # the Jester is not cleaned up
     g = _solo_jester_kill(466)
+    assert g.decision["options"] == ["9S", "6H"] and g.set_aside == [] and g.enemies_defeated == 0
+    g = round_trip(g)                                   # saved on the question: the Jester is still out
+    assert keep_played_order(g) == [["9S", "6H"]]
     assert g.decision is None and g.set_aside == ["X1"] and g.discard[:2] == ["6H", "9S"]   # play order
     ids_everywhere(g)
     # a game saved while the clean-up still asked which card ends on top resolves the old way
@@ -763,10 +774,10 @@ def test_cleanup_after_a_solo_jester_kill_sets_the_jester_aside_once():
 
 
 # ---------------------------------------------------------------- playtest: the order cards go onto a pile
-# The owner's playtest: cards are numbered as they are selected, so the clean-up asks nothing
-# (the played cards go in the order they entered play, the last one on top) and the
-# questions left ask for the whole order ("What order?": the first named goes first, the
-# last ends on top), only where the top of that pile matters.
+# The owner's playtest: cards are numbered as they are selected and the order questions ask
+# for the whole order ("What order?": the first named goes first, the last ends on top), only
+# where the top of that pile matters; the clean-up after a kill offers the order the cards
+# entered play (the last one on top), kept in one tap.
 def _m11_quiet(seed=1100, players=1):
     """Mission 11 after the first turn's beast, with no more beasts and empty piles (so no
     immunity nor bonus from the pile tops yet)."""
@@ -794,6 +805,7 @@ def test_pile_order_mission11_cleanup_tops_both_piles_with_the_last_card_to_ente
     g.decide({"type": "mage_pick", "card": "8C"})       # 1 + 8 = 9, doubled: 18, a kill
     # two plays against the enemy: the first one is discarded, 4♠ (selected last) on top; the
     # mage attack is banished after the enemy, the card the mage added (last in) on top
+    assert keep_played_order(g) == [["4C", "4S"], ["AM", "8C"]]
     assert g.decision is None and g.enemies_defeated == 1 and g.phase == PHASE_PLAY
     assert g.discard[:3] == ["4S", "4C", "8S"] and g.banished[-3:] == [enemy, "AM", "8C"]
     assert [(ev["pile"], ev["cards"]) for ev in g.last_events if ev["t"] == "cleanup_order"] == [
@@ -813,6 +825,7 @@ def test_pile_order_kinfolk_flute_and_scarlet_whistle_additions_enter_play_last(
     g.play(["4C"])
     assert g.decision["kind"] == "flute_add" and g.decision["player"] == 1
     g.flute_add(["4S"])                                 # 8, doubled: 16, a kill
+    assert g.decision["player"] == 0 and keep_played_order(g) == [["4C", "4S"]]
     assert g.decision is None and g.enemies_defeated == 1 and g.discard[:3] == ["4S", "4C", "LABJD"]
     ids_everywhere(g)
     # the Scarlet Whistle (solo): the top discard taken into the attack goes back on top
@@ -823,6 +836,7 @@ def test_pile_order_kinfolk_flute_and_scarlet_whistle_additions_enter_play_last(
     g.play(["AS"])
     assert g.decision["kind"] == "whistle_take" and g.decision["card"] == "9C"
     g.decide({"type": "whistle_take", "card": "9C"})    # 1 + 9 = 10, doubled: 20, a kill
+    assert keep_played_order(g) == [["AS", "9C"]]
     assert g.decision is None and g.enemies_defeated == 1 and g.discard[:4] == ["9C", "AS", "LABJD", "2D"]
     ids_everywhere(g)
 
@@ -979,8 +993,58 @@ def test_pile_order_bots_and_random_games_answer_the_order_questions_and_keep_ev
                 assert g.is_over and g.decision is None
                 ids_everywhere(g)
                 assert all(len(p.hand) <= g.config.max_hand for p in g.players)
-    assert {"discard_order", "reaver_order"} <= kinds, kinds
+    assert {"discard_order", "reaver_order", "played_discard_order"} <= kinds, kinds
     assert not kinds & {"cleanup_top", "banish_top", "discard_top"}
+
+
+def test_pile_order_cleanup_question_bots_stale_answers_and_the_restored_relic():
+    # mission 4: the bots name the weakest card last (it feeds the next enemy)
+    c, g = mission(4, seed=1408)
+    set_mission_enemy(g, "LABJD", hp=10)
+    set_discard(g, ["7D"])
+    set_hand(g, ["AS", "9C", "3D"])
+    g.extra["played_order"] = {"enemy": "LABQD", "discard": ["9C", "AS"]}   # left over from another enemy
+    g.play(["AS", "9C"])
+    d = g.decision
+    assert d["kind"] == "played_discard_order" and d["options"] == ["AS", "9C"] and d["player"] == 0
+    assert [a["label"] for a in g.legal_actions()] == [
+        "Put the played cards on the discard pile in this order (the last ends on top)"]
+    act = greedy_policy(g)
+    assert act == {"type": "played_discard_order", "player": 0, "cards": ["9C", "AS"]}
+    apply_action(g, act)
+    assert g.decision is None and g.discard[:3] == ["AS", "9C", "LABJD"] and "played_order" not in g.extra
+    assert [ev["cards"] for ev in g.last_events if ev["t"] == "played_order"] == [["9C", "AS"]]
+    assert any("A♠ ends on top" in line for line in g.log[-6:])
+    # nothing to ask (one card): nothing is left in the save either
+    set_mission_enemy(g, "LABJS", hp=9)
+    set_hand(g, ["9D", "2H"])
+    g.play(["9D"])
+    assert g.decision is None and "played_order" not in g.extra
+    ids_everywhere(g)
+    # mission 12's restored relic keeps restored cards off the banished pile: the named order
+    # covers the cards that land there, a restored card goes under the reserve first
+    c, g = mission(5, seed=1409)
+    g.extra["played_order"] = {"enemy": g.enemy.card_id, "banished": ["9M", "AS"]}
+    assert g.rules.order_for_banish(g, ["AS", "RESTORED", "9M"]) == ["RESTORED", "9M", "AS"]
+    assert "played_order" not in g.extra
+    # a batch the answer does not cover keeps its order and leaves the answer alone
+    g.extra["played_order"] = {"enemy": g.enemy.card_id, "discard": ["9C", "AS"]}
+    cards = [g.cards["AS"], g.cards["9C"], g.cards["3D"]]
+    assert g.rules.order_for_discard(g, cards) == cards and g.extra["played_order"]["discard"] == ["9C", "AS"]
+
+
+def test_pile_order_cli_cleanup_enter_keeps_the_order_played(monkeypatch, capsys):
+    from regicide import cli
+    c, g = mission(4, seed=1410)
+    set_mission_enemy(g, "LABJD", hp=10)
+    set_discard(g, ["7D"])
+    set_hand(g, ["AS", "9C", "3D"])
+    g.play(["AS", "9C"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")
+    assert cli.human_turn(g, None)
+    out = capsys.readouterr().out
+    assert "Enemy defeated: the played cards go to the discard pile. What order?" in out and "(enter keeps the order played)" in out
+    assert g.decision is None and g.discard[:3] == ["9C", "AS", "LABJD"]
 
 
 def test_pile_order_cli_asks_for_the_whole_order(monkeypatch, capsys):

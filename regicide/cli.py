@@ -19,7 +19,8 @@ from .rules import GameConfig
 DEFAULT_SAVE = os.path.join("saves", "cli.json")
 # Decisions answered with a list of cards (templates): the Chanter's and mission 8's picks,
 # and the orders in which cards go to a pile (the first named goes first, the last on top).
-ORDER_TEMPLATES = ("chanter_discard", "discard_banish", "banish_order", "zone_order", "discard_order", "reaver_order")
+ORDER_TEMPLATES = ("chanter_discard", "discard_banish", "banish_order", "zone_order", "discard_order", "reaver_order",
+                   "played_discard_order", "played_banish_order")
 
 
 def save_game(game: Game, path: str) -> None:
@@ -223,7 +224,8 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
         # Templates filled in with a list of cards: the Chanter's discard down to the limit,
         # mission 8's banish from the discard pile (any number, enter for none), the order in
         # which a mission zone is banished (mission 12) or discarded (Evergreen's Lake), a
-        # mage's unchosen cards are discarded or a reaver's revealed cards banished.
+        # mage's unchosen cards are discarded, a reaver's revealed cards banished or the
+        # played cards cleaned up after a kill.
         d = game.decision or {}
         kind = str(d.get("kind"))
         acts = game.legal_actions()
@@ -241,16 +243,26 @@ def human_turn(game: Game, save_path: Optional[str]) -> bool:
         elif kind == "reaver_order":
             print("Reaver: the revealed cards are banished. What order? Name every card, the first goes first and "
                   "the last ends on top of the banished pile:")
+        elif kind in ("played_discard_order", "played_banish_order"):
+            print("Enemy defeated: the %s go to the %s pile. What order? Name every card, the first goes first and "
+                  "the last ends on top (enter keeps the order played):" % (
+                      "played cards" if kind == "played_discard_order" else "mage attack's cards",
+                      "discard" if kind == "played_discard_order" else "banished"))
         else:
             print("Mission zone filled: banish any cards from the discard pile (the rest heals under the reserve):")
         for i, c in enumerate(pool, 1):
             print("  %2d. %s" % (i, c.label()))
-        ans = input("[numbers=choose those cards%s, q=quit] > " % (", enter=none" if kind == "discard_banish" else "")).strip().lower()
+        keep = kind in ("played_discard_order", "played_banish_order")
+        ans = input("[numbers=choose those cards%s, q=quit] > " % (
+            ", enter=none" if kind == "discard_banish" else ", enter=as played" if keep else "")).strip().lower()
         if ans == "q":
             return False
         try:
             if not ans and kind == "discard_banish":
                 game.decide({"type": "discard_banish_skip"})
+                return True
+            if not ans and keep:
+                game.decide({"type": kind, "player": game.deciding, "cards": [c.id for c in pool]})
                 return True
             idx = parse_indices(ans, len(pool))
             if idx is None:

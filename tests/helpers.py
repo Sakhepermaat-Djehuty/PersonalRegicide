@@ -94,3 +94,17 @@ def set_mission_enemy(g: Game, card_id: str, hp: Optional[int] = None) -> None:
     g.plays = []
     g.immunity_cancelled = False
     g.phase = PHASE_PLAY
+
+
+PLAYED_ORDER_KINDS = ("played_discard_order", "played_banish_order")
+
+
+def keep_played_order(g: Game) -> List[List[str]]:
+    """Answer the clean-up's "What order?" questions (Legacy, where the top of a pile
+    matters) with the order the cards entered play; returns the options asked, in order."""
+    asked = []
+    while g.decision is not None and g.decision.get("kind") in PLAYED_ORDER_KINDS:
+        options = [str(c) for c in g.decision["options"]]
+        asked.append(options)
+        g.decide({"type": g.decision["kind"], "player": g.deciding, "cards": options})
+    return asked

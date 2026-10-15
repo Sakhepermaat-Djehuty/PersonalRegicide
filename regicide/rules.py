@@ -290,7 +290,7 @@ class BaseRules:
         the rules' ``decide`` must then end with ``game.resume_defeat()``, which asks here
         again, so the rules must record the choice where this hook can see it
         (``order_for_discard`` and ``order_for_banish`` may apply it). None cleans up at
-        once (every rule set today: Legacy no longer asks, see ``LegacyRules``)."""
+        once (the base game; Legacy asks "What order?" where the top of the pile matters)."""
         return None
 
     def immune_suits(self, game: "Game") -> Tuple[str, ...]:

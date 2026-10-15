@@ -179,7 +179,7 @@ def simple_decision(g: Game) -> Optional[dict]:
         return max(acts, key=value)
     if kind == "reaver_count":
         return min(acts, key=lambda a: int(a.get("count", 1)))
-    if kind in ("discard_order", "reaver_order"):
+    if kind in ("discard_order", "reaver_order", "played_discard_order", "played_banish_order"):
         return pile_order_choice(g, acts)
     if kind in ("cleanup_top", "banish_top", "discard_top"):
         return top_card_choice(g, acts)
@@ -196,7 +196,7 @@ def _top_feeds_enemy(g: Game, kind: Optional[str]) -> bool:
     """Does the top of the pile this decision fills feed the enemy (the banished pile
     wherever it is asked; the discard pile in missions 4, 10, 11 and Evergreen banes), as
     opposed to only the solo Scarlet Whistle reading it?"""
-    return (kind in ("banish_top", "reaver_order")
+    return (kind in ("banish_top", "reaver_order", "played_banish_order")
             or bool(getattr(g.rules, "discard_top_feeds_enemy", lambda game: False)(g)))
 
 
@@ -212,8 +212,9 @@ def _top_key(g: Game, kind: Optional[str]) -> Callable[[str], tuple]:
 
 
 def pile_order_choice(g: Game, acts: List[dict]) -> dict:
-    """The full order of a mage's unchosen cards (``discard_order``) or a reaver's revealed
-    cards (``reaver_order``): the card ``top_card_choice`` would put on top is named last,
+    """The full order of a mage's unchosen cards (``discard_order``), a reaver's revealed
+    cards (``reaver_order``) or the played cards at clean-up (``played_discard_order``,
+    ``played_banish_order``): the card ``top_card_choice`` would put on top is named last,
     the others before it in the same ranking (``_top_key``)."""
     kind = (g.decision or {}).get("kind")
     t = [a for a in acts if "needs" in a]
@@ -577,8 +578,9 @@ def decision_policy(game: Game) -> dict:
         return max(picks, key=lambda a: _mage_pick_key(game, a))
     if kind == "emblem_keep":
         return max(acts, key=lambda a: (evaluate(_simulate_turn(game, a)), 1 if a.get("skip") else 0))
-    if kind in ("reaver_count", "reaver_pick", "discard_order", "reaver_order", "cleanup_top", "banish_top",
-                "discard_top", "zone_move", "zone_rescue", "team_discard") or kind in NEW_KINDS:
+    if kind in ("reaver_count", "reaver_pick", "discard_order", "reaver_order", "played_discard_order",
+                "played_banish_order", "cleanup_top", "banish_top", "discard_top", "zone_move", "zone_rescue",
+                "team_discard") or kind in NEW_KINDS:
         act = simple_decision(game)
         if act is not None:
             return act

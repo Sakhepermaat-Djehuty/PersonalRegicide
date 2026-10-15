@@ -830,7 +830,7 @@ def test_reaver_count_grid_then_pick_overlay(app):
 
 
 def test_scarlet_whistle_solo_pick_overlay_and_the_beast_choice(app):
-    from app.screens import CampaignScreen, PickOverlay
+    from app.screens import CampaignScreen, OrderOverlay, PickOverlay
     from helpers import set_discard
     app.new_campaign(1, ["Solo"])
     camp = app.campaign
@@ -862,10 +862,13 @@ def test_scarlet_whistle_solo_pick_overlay_and_the_beast_choice(app):
     assert ui.render(app).size[0] > 0
     _tap_button(app, "Add 6♦ from the discard pile")
     # beast + 6♦ is a 12, doubled by the beast's warrior class: the Justicar falls; the solo
-    # Scarlet Whistle reads the discard pile, yet nothing is asked: the played cards go in the
-    # order they entered play and the Whistle's 6♦, added last, ends on top
-    assert g.decision is None and g.enemies_defeated == 1 and gs.overlay is None and g.discard[:2] == ["6D", "B_C"]
+    # Scarlet Whistle reads the discard pile, so the clean-up asks "What order?", the cards
+    # shown in the order they entered play; keeping it puts the Whistle's 6♦ (added last) on top
+    assert isinstance(gs.overlay, OrderOverlay) and g.decision["kind"] == "played_discard_order"
+    assert g.decision["options"] == ["B_C", "6D"] and "What order?" in [v.text for v in _labels(gs.overlay)]
     assert "adds 6♦ from the discard pile (Scarlet Whistle, attack 12)" in gs.message_text
+    _tap_button(app, "Keep the order played")
+    assert g.decision is None and g.enemies_defeated == 1 and gs.overlay is None and g.discard[:2] == ["6D", "B_C"]
     assert "6♦ ends on top of the discard pile" in gs.message_text
 
 
@@ -984,6 +987,7 @@ def test_mission6_solo_team_damage_shows_the_hand_at_once(app):
 
 
 def test_mission4_cleanup_follows_the_selection_order_and_enemy_bonus(app):
+    from app.screens import OrderOverlay
     from helpers import set_discard, set_mission_enemy
     gs, g = _mission_attempt(app, 4)
     set_mission_enemy(g, "LABJD", hp=10)
@@ -992,12 +996,38 @@ def test_mission4_cleanup_follows_the_selection_order_and_enemy_bonus(app):
     gs.refresh(after_action=False)
     assert g.enemy_attack == 17 and ui.render(app).size[0] > 0   # the panel shows 10 + 7
     gs.hand.set_selection(["9C", "AS"])                # 9♣ selected first, the ace last
+    assert [gs.hand.views[c].order for c in ("9C", "AS")] == [1, 2]
     _tap_button(app, "Play")
-    # no question: the played cards go to the discard pile in the order they were selected,
-    # the ace on top, so the next experiment gains only 1
+    # the top of the discard pile feeds the next enemy: "What order?", the cards shown in the
+    # order they were selected; keeping it puts the ace on top, so the next experiment gains 1
+    assert isinstance(gs.overlay, OrderOverlay) and g.decision["kind"] == "played_discard_order"
+    assert gs.overlay.card_ids(g, g.decision) == ["9C", "AS"] and g.enemies_defeated == 0
+    texts = [v.text for v in _labels(gs.overlay)]
+    assert "What order?" in texts and any("Enemy defeated" in t and "strength adds to the enemy" in t for t in texts)
+    _assert_nothing_cut(gs.overlay)
+    assert not ui.button(app, "Confirm the order (0 of 2)").enabled and ui.render(app).size[0] > 0
+    _tap_button(app, "Keep the order played")
     assert g.decision is None and gs.overlay is None
     assert g.discard == ["AS", "9C", "LABJD", "7D"] and g.enemies_defeated == 1
     assert "A♠ ends on top of the discard pile" in gs.message_text and g.enemy_attack == 11
+
+
+def test_mission4_cleanup_what_order_takes_the_order_tapped(app):
+    from helpers import set_discard, set_mission_enemy
+    gs, g = _mission_attempt(app, 4)
+    set_mission_enemy(g, "LABJD", hp=10)
+    set_hand(g, ["AS", "9C", "3D", "2H"])
+    set_discard(g, ["7D"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["9C", "AS"])
+    _tap_button(app, "Play")
+    ui.tap(app, *ui.root_point(app, gs.overlay.card_views["AS"]))
+    ui.tap(app, *ui.root_point(app, gs.overlay.card_views["9C"]))
+    assert [gs.overlay.card_views[c].badge for c in ("AS", "9C")] == ["1", "2"]
+    _tap_button(app, "Confirm the order (2 of 2)")
+    # the first tapped went first, the last (9♣) ends on top and feeds the next enemy
+    assert g.decision is None and gs.overlay is None and g.discard == ["9C", "AS", "LABJD", "7D"]
+    assert "9♣ ends on top of the discard pile" in gs.message_text and g.enemy_attack == 19
 
 
 def _mage_leftovers_to_order(app):

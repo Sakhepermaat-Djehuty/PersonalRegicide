@@ -2138,26 +2138,36 @@ def test_mission4_enemy_strength_follows_the_top_of_the_discard_pile():
     assert g.enemy_attack == 10 + 10
 
 
-def test_mission4_cleanup_puts_the_last_card_to_enter_play_on_top_without_a_question():
-    from helpers import set_discard, set_mission_enemy
+def test_mission4_cleanup_asks_what_order_offering_the_order_the_cards_entered_play():
+    from helpers import keep_played_order, set_discard, set_mission_enemy
     c, g = _mission4(seed=462)
     set_mission_enemy(g, "LABJD", hp=10)
     set_hand(g, ["AS", "9C", "3D", "2H"])
     set_discard(g, ["7D"])
     g.play(["AS", "9C"])                              # 10, doubled: 20, not exact
-    # p.19 "in any order you wish": the order the cards entered play (as selected), so
-    # nothing is asked; the experiment goes to the pile first, the played cards on top of
-    # it, 9♣ (selected last) on top
+    # p.19 "in any order you wish": the top of the discard pile feeds the next enemy, so the
+    # player names the order, offered in the order the cards entered play (as selected);
+    # keeping it, the experiment goes to the pile first, the played cards on top of it, 9♣
+    # (selected last) on top
+    d = g.decision
+    assert d["kind"] == "played_discard_order" and d["options"] == ["AS", "9C"] and d["resume"] == "defeat"
+    assert g.enemies_defeated == 0 and g.discard == ["7D"] and g.legal_actions()[0]["ordered"]
+    assert keep_played_order(g) == [["AS", "9C"]]
     assert g.decision is None and g.phase == PHASE_PLAY and g.active == 0 and g.enemies_defeated == 1
     assert g.discard == ["9C", "AS", "LABJD", "7D"] and g.enemy_attack == 10 + 9
     assert [ev for ev in g.last_events if ev["t"] == "cleanup_order"] == [
         {"t": "cleanup_order", "pile": "discard", "cards": ["AS", "9C"]}]
     assert any("A♠, 9♣ (9♣ ends on top)" in line for line in g.log[-6:])
-    # selected the other way round: the ace ends on top
+    # selected the other way round: the ace is offered last; naming 9♣ last puts it on top
     set_mission_enemy(g, "LABJS", hp=10)
     set_hand(g, ["AD", "9C", "2H"])
     g.play(["9C", "AD"])
-    assert g.decision is None and g.discard[:3] == ["AD", "9C", "LABJS"] and g.enemy_attack == 10 + 1
+    assert g.decision["options"] == ["9C", "AD"]
+    g.decide({"type": "played_discard_order", "cards": ["AD", "9C"]})
+    assert g.decision is None and g.discard[:3] == ["9C", "AD", "LABJS"] and g.enemy_attack == 10 + 9
+    assert [ev["cards"] for ev in g.last_events if ev["t"] in ("played_order", "cleanup_order")] == [
+        ["AD", "9C"], ["AD", "9C"]]
+    assert "played_order" not in g.extra
     # one played card: nothing to order; an exact kill puts the experiment on top of the reserve
     set_mission_enemy(g, "LABJC", hp=9)
     set_hand(g, ["9D", "2H", "3S"])
@@ -2174,6 +2184,7 @@ def test_mission4_cleanup_puts_the_last_card_to_enter_play_on_top_without_a_ques
     g.play([jester])
     g.choose_next(1)
     g.play(["9S"])
+    assert g.decision["player"] == 1 and keep_played_order(g) == [[jester, "9S"]]
     assert g.decision is None and g.discard[:2] == ["9S", jester] and g.enemy_attack == 10 + 9
     assert sorted(g.all_card_ids()) == sorted(g.cards)
 
@@ -2251,7 +2262,7 @@ def test_mission5_myla_starts_banished_and_the_banished_pile_feeds_the_zone():
 
 
 def test_mission5_defeat_shuffles_enemy_and_zone_into_the_banished_pile_and_exact_kills_carry_over():
-    from helpers import set_mission_enemy
+    from helpers import keep_played_order, set_mission_enemy
     c, g = _mission5(seed=471)
     set_mission_enemy(g, "GRJH", hp=12)
     set_hand(g, ["AC", "5D", "9S", "8S"])
@@ -2262,8 +2273,9 @@ def test_mission5_defeat_shuffles_enemy_and_zone_into_the_banished_pile_and_exac
     g.banished.remove("MYLA7")
     assert g.enemy_attack == 17
     g.play(["AC", "5D"])                              # 6 doubled: 12, exact
-    # solo with the Scarlet Whistle the top of the discard pile counts, yet nothing is asked:
-    # the played cards go in the order they entered play, 5♦ (selected last) on top (p.19)
+    # solo with the Scarlet Whistle the top of the discard pile counts: "What order?" (p.19);
+    # kept as they entered play, 5♦ (selected last) ends on top
+    assert keep_played_order(g) == [["AC", "5D"]]
     assert g.enemies_defeated == 1 and g.decision is None and g.discard[0] == "5D"
     assert set(g.banished) == {"MYLA7", "2C", "3C", "GRJH"} and len(g.banished) == 4   # shuffled in, without looking
     assert g.mission_zone == [] and set(g.discard[:2]) == {"AC", "5D"}
@@ -2290,6 +2302,7 @@ def test_mission5_defeat_shuffles_enemy_and_zone_into_the_banished_pile_and_exac
     g.enemy.hp = 20
     g.play(["10C"])                                   # 20: exact
     # two plays against this enemy: the second one's card entered play last, it ends on top
+    assert keep_played_order(g) == [["9S", "10C"]]
     assert g.decision is None and g.enemies_defeated == 1 and g.discard[:2] == ["10C", "9S"]
     assert [ev["amount"] for ev in g.last_events if ev["t"] == "carry_damage"] == [8]
     # a chain: the carry-over kills the next enemy exactly, whose own strength carries on
@@ -2478,9 +2491,10 @@ def test_forecast_reports_a_kill_that_pauses_on_the_missions_defeat_choice():
     set_mission_enemy(g, "LABJD", hp=10)
     set_hand(g, ["AS", "9C", "3D", "2H"])
     set_discard(g, ["7D"])
-    pv = g.preview_play(["AS", "9C"])                 # the clean-up asks nothing any more
-    assert pv["ok"] and pv["defeats"] and not pv["exact"] and pv["decision_kind"] is None and not pv["decision"]
+    pv = g.preview_play(["AS", "9C"])                 # the kill pauses on the clean-up's "What order?"
+    assert pv["ok"] and pv["defeats"] and not pv["exact"] and pv["decision_kind"] == "played_discard_order"
     assert pv["damage"] == 20 and pv["enemy_hp_after"] == 0 and g.phase == PHASE_PLAY and g.enemies_defeated == 0
+    assert g.discard == ["7D"] and "played_order" not in g.extra
     c, g = _mission6(seed=491)
     set_mission_enemy(g, "GDQH", hp=9)
     set_hand(g, ["9S", "8D", "AD"])

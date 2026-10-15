@@ -154,14 +154,14 @@ class LegacyRules(BaseRules):
     def discard_top_matters(self, game) -> bool:
         """Does the top card of the discard pile count: towards the enemy
         (``discard_top_feeds_enemy``) or, solo, for the Scarlet Whistle, which takes it into
-        an attack? The player then orders a mage's unchosen cards (``discard_order``); the
-        clean-up is never asked (the order the cards entered play)."""
+        an attack? The player then orders a mage's unchosen cards (``discard_order``) and the
+        played cards at clean-up (``played_discard_order``)."""
         return self.discard_top_feeds_enemy(game) or (self._whistle(game) and game.config.players == 1)
 
     def banished_top_matters(self, game) -> bool:
         """Missions 5, 11 and 12 (and some Evergreen setups) read the top of the banished
-        pile: the player then orders a reaver's revealed cards (``reaver_order``); a mage
-        attack's cards keep the order they entered play."""
+        pile: the player then orders a reaver's revealed cards (``reaver_order``) and a mage
+        attack's cards at clean-up (``played_banish_order``)."""
         return False
 
     @staticmethod
@@ -580,8 +580,9 @@ class LegacyRules(BaseRules):
             acts = self._actions_mother_banish(game, d)
             if acts:
                 return dict(acts[0], forecast=True)
-        if d and d.get("kind") in ("discard_order", "reaver_order"):
-            # the order nothing is asked in: as revealed (a reaver's chosen card last)
+        if d and d.get("kind") in ("discard_order", "reaver_order", "played_discard_order", "played_banish_order"):
+            # the order nothing is asked in: as revealed (a reaver's chosen card last), or
+            # the order the played cards entered play
             options = [str(c) for c in d.get("options", [])]
             chosen = str(d.get("reaver_card", ""))
             if chosen in options:
@@ -1864,18 +1865,89 @@ class LegacyRules(BaseRules):
     # ------------------------------------------------------------------ cleanup
     # Rulebook p.19 step 2: "Gather all cards played against the enemy and put them on top of
     # the discard pile in any order you wish" (and mission 5: the cards of a mage attack go to
-    # the banished pile in the order the current player chooses). Nothing is asked: the app
-    # takes the order the cards entered play as that order (the attacks in sequence; within
-    # an attack the order its cards were selected, then the cards added to it by a mage, the
-    # Scarlet Whistle or the Kinfolk Flute), so the last card to enter play ends on top of
-    # its pile (``Game._cleanup_played``; ``order_for_discard`` and ``order_for_banish``
-    # keep that order). Games saved while the app still asked which card ends on top
+    # the banished pile in the order the current player chooses). Where the top of that pile
+    # matters (``discard_top_matters`` / ``banished_top_matters``) and two or more cards go
+    # there, the current player names the whole order ("What order?": ``played_discard_order``
+    # / ``played_banish_order``, templates filled with the permutation: the first named goes
+    # first, the last ends on top; the options come in the order the cards entered play, so
+    # keeping that order is one tap). The answer waits in ``extra["played_order"]`` (with the
+    # defeated enemy) until the engine cleans up (``order_for_discard`` / ``order_for_banish``).
+    # Elsewhere nothing is asked: the order the cards entered play (the attacks in sequence;
+    # within an attack the order its cards were selected, then the cards added to it by a
+    # mage, the Scarlet Whistle or the Kinfolk Flute), the last card on top
+    # (``Game._cleanup_played``). Games saved while the app asked only which card ends on top
     # (``cleanup_top``, ``banish_top`` from the clean-up) resolve as before: the choice waits
     # in ``extra["cleanup_choice"]`` / ``extra["banish_choice"]`` until the engine cleans up.
     def _reach_banished(self, game, ids: Sequence[str]) -> List[str]:
         """The cards that would really land on the banished pile (mission 12's restored relic
         sends restored cards under the reserve instead)."""
         return [str(c) for c in ids if self.banish_redirect(game, game.cards[str(c)]) is None]
+
+    def before_cleanup(self, game, exact: bool, plan: Dict[str, Any], discard_ids: Sequence[str],
+                       banish_ids: Sequence[str]) -> Optional[Dict[str, Any]]:
+        if plan.get("played_to", "discard") != "discard" or game.enemy is None or not game.castle:
+            return None    # (the last enemy: the mission is won, nothing reads the piles any more)
+        named = game.extra.get("played_order")
+        if not isinstance(named, dict) or named.get("enemy") != game.enemy.card_id:
+            named = {}
+            game.extra.pop("played_order", None)    # an answer left over from another enemy
+        discard_ids = [str(c) for c in discard_ids]
+        if (len(discard_ids) >= 2 and "discard" not in named and self.discard_top_matters(game)
+                and not game.config.extra.get("discard_low_to_high")
+                and game.extra.get("cleanup_choice") not in discard_ids):
+            return {"kind": "played_discard_order", "player": game.active, "options": discard_ids}
+        reaching = self._reach_banished(game, banish_ids)
+        if (len(reaching) >= 2 and "banished" not in named and self.banished_top_matters(game)
+                and game.extra.get("banish_choice") not in reaching):
+            return {"kind": "played_banish_order", "player": game.active, "options": reaching}
+        return None
+
+    def _actions_played_discard_order(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        options = [str(c) for c in d.get("options", [])]
+        return [{"type": "played_discard_order", "player": int(d["player"]), "pick_from": options,
+                 "needs": len(options), "ordered": True,
+                 "label": "Put the played cards on the discard pile in this order (the last ends on top)"}]
+
+    def _decide_played_discard_order(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        self._played_order_named(game, d, action, "discard")
+
+    def _actions_played_banish_order(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        options = [str(c) for c in d.get("options", [])]
+        return [{"type": "played_banish_order", "player": int(d["player"]), "pick_from": options,
+                 "needs": len(options), "ordered": True,
+                 "label": "Banish the mage attack's cards in this order (the last ends on top)"}]
+
+    def _decide_played_banish_order(self, game, d: Dict[str, Any], action: Dict[str, Any]) -> None:
+        self._played_order_named(game, d, action, "banished")
+
+    def _played_order_named(self, game, d: Dict[str, Any], action: Dict[str, Any], pile: str) -> None:
+        """Record the clean-up order the player named for ``pile`` and go on with the
+        enemy-defeated steps (the engine announces the result once the cards are put away)."""
+        order = self._full_order(d, action, "Name every played card exactly once.")
+        enemy = game.enemy.card_id if game.enemy else None
+        named = game.extra.get("played_order")
+        if not isinstance(named, dict) or named.get("enemy") != enemy:
+            named = game.extra["played_order"] = {"enemy": enemy}
+        named[pile] = order
+        game._event("played_order", player=int(d["player"]), pile=pile, cards=list(order))
+        game.resume_defeat()
+
+    @staticmethod
+    def _named_played_order(game, pile: str, ids: Sequence[str]) -> Optional[List[str]]:
+        """The order the player named for this clean-up batch (``played_order``), once."""
+        named = game.extra.get("played_order")
+        if not isinstance(named, dict) or pile not in named:
+            return None
+        order = [str(c) for c in named.get(pile) or []]
+        batch = set(str(c) for c in ids)
+        # the discard batch is exactly the cards named; the banished one may also hold
+        # restored cards the mission 12 relic keeps off the pile
+        if not order or not (set(order) == batch if pile == "discard" else set(order) <= batch):
+            return None
+        del named[pile]
+        if not any(k in named for k in ("discard", "banished")):
+            game.extra.pop("played_order", None)
+        return order
 
     # --- questions of games saved before the clean-up stopped asking -----------------------
     def _actions_cleanup_top(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -1911,8 +1983,13 @@ class LegacyRules(BaseRules):
 
     def order_for_discard(self, game, cards: List[Card]) -> List[Card]:
         """A batch in the order given (the clean-up: the order the cards entered play), the
-        last on top; the campaign option ``discard_low_to_high`` puts the lowest on top
-        instead, and an old save's clean-up choice (``cleanup_choice``) goes on top."""
+        last on top, unless the player named the clean-up order (``played_discard_order``);
+        the campaign option ``discard_low_to_high`` puts the lowest on top instead, and an old
+        save's clean-up choice (``cleanup_choice``) goes on top."""
+        named = self._named_played_order(game, "discard", [c.id for c in cards])
+        if named is not None:
+            by_id = dict((c.id, c) for c in cards)
+            return [by_id[c] for c in named]
         if game.config.extra.get("discard_low_to_high"):
             # last inserted ends on top: insert highest first so the lowest is on top
             cards = sorted(cards, key=lambda c: -c.value)
@@ -1923,8 +2000,13 @@ class LegacyRules(BaseRules):
         return cards
 
     def order_for_banish(self, game, ids: List[str]) -> List[str]:
-        """A mage attack's cards in the order they entered play, the last on top (an old
-        save's clean-up choice, ``banish_choice``, goes on top)."""
+        """A mage attack's cards in the order the player named (``played_banish_order``;
+        restored cards the mission 12 relic keeps off the pile first) or else the order they
+        entered play, the last on top (an old save's clean-up choice, ``banish_choice``,
+        goes on top)."""
+        named = self._named_played_order(game, "banished", ids)
+        if named is not None:
+            return [c for c in ids if c not in named] + named
         top = game.extra.get("banish_choice")
         if top is not None and top in ids:
             game.extra.pop("banish_choice", None)

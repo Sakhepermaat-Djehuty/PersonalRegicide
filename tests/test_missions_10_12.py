@@ -4,7 +4,7 @@ import random
 
 import pytest
 
-from helpers import set_hand, set_mission_enemy, set_tavern_top, _pull
+from helpers import keep_played_order, set_hand, set_mission_enemy, set_tavern_top, _pull
 from regicide.bots import apply_action, greedy_policy, min_waste_discard, play_out, random_policy
 from regicide.campaign import CampaignState
 from regicide.campaign import missions as M
@@ -129,7 +129,8 @@ def test_mission10_paladin_reduces_damage_by_base_strength_and_exact_is_after_th
     zone = list(g.mission_zone)
     g.play(["9H"])
     # two cards were played against this enemy and a cleric enemy feeds the zone from the
-    # top of the discard pile: they go in the order they entered play, nothing is asked (p.19)
+    # top of the discard pile: "What order?" (p.19), offered in the order they entered play
+    assert keep_played_order(g) == [["2D", "9H"]]
     assert g.decision is None
     assert g.enemies_defeated == 1 and any(ev["t"] == "defeat" and ev["exact"] for ev in g.last_events)
     assert "2S" in g.discard and all(x in g.discard for x in zone) and not any(x in g.banished for x in zone)
@@ -233,7 +234,8 @@ def test_mission10_not_exact_banishes_the_zone_and_a_defeated_member_plays_from_
     g.enemy.hp = 9
     set_hand(g, ["9H", "AS"])
     g.play(["9H"])
-    assert g.decision is None and g.phase == PHASE_WON and g.discard[:2] == ["9H", "2S"]   # play order, no question
+    # the last enemy: nothing reads the pile any more, so nothing is asked (play order)
+    assert g.decision is None and g.phase == PHASE_WON and g.discard[:2] == ["9H", "2S"]
 
 
 # ---------------------------------------------------------------- Mission 11: Descent Into Darkness

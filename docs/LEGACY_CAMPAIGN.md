@@ -293,32 +293,37 @@ unspent coins on success, which the sticker does not say (unverified).
   damage was already paid one card at a time; feign death is unchanged. The base game
   keeps accepting surplus (the strict variant stays optional).
 * **Done (reworked after the owner's playtest):** the order cards go onto a pile. The
-  app numbers the cards as they are selected for play, so the order they enter play is
-  the order they are put away and nothing is asked at clean-up: p.19's "in any order you
-  wish" (and mission 5's mage attack banished "in the order the current player chooses")
-  is the attacks in sequence, within an attack the order its cards were selected, then
-  the cards added to it later (a mage's pick, the Scarlet Whistle, a Kinfolk Flute); the
-  last card to enter play ends on top of the discard pile, or of the banished pile for a
-  mage attack. Where the top of that pile counts the log and the message say which card
-  ended there (event `cleanup_order`). The campaign option `discard_low_to_high` still
-  sorts every batch the app puts on the discard pile, the lowest on top (an order the
-  player names below is kept as named). The player cannot order by selecting what comes
-  out of the reserve deck, so two questions remain, each a "What order?" (tap every card,
-  numbered as tapped: the first goes first, the last ends on top; a template the player
-  fills with the permutation): a mage's unchosen cards going to the discard pile (p.16,
-  `discard_order`) and a reaver's revealed cards going to the banished pile (p.17,
-  `reaver_order`; a restored card that the mission 12 relic sends under the reserve is
-  left out of it). They are asked only when two or more cards go and the top of that
-  pile counts: the discard pile in missions 4, 10 and 11, with Evergreen banes 10, 17 or
-  19, and in any solo game holding the Scarlet Whistle; the banished pile in missions 5,
+  app numbers the cards as they are selected (to play an attack or to pay damage), so the
+  order they enter play or are discarded is visible. p.19's "in any order you wish" (and
+  mission 5's mage attack banished "in the order the current player chooses") starts from
+  the order the cards entered play: the attacks in sequence, within an attack the order
+  its cards were selected, then the cards added to it later (a mage's pick, the Scarlet
+  Whistle, a Kinfolk Flute). Where the top of that pile counts and two or more cards go
+  there, the clean-up after a kill asks "What order?" (`played_discard_order` for the
+  discard pile, `played_banish_order` for a mage attack's cards; the cards shown in the
+  order they entered play with a one-tap "Keep the order played"); elsewhere, and after
+  the last enemy, nothing is asked and that order is used, the last card on top. The
+  answer waits in `extra["played_order"]` (with the defeated enemy) until the engine
+  cleans up; the log and the message then say which card ended on top (event
+  `cleanup_order`). The campaign option `discard_low_to_high` still sorts every batch the
+  app puts on the discard pile, the lowest on top, and then the clean-up does not ask (an
+  order the player names below is kept as named). The cards that come out of the reserve
+  deck are ordered with the same "What order?" (tap every card, numbered as tapped: the
+  first goes first, the last ends on top; a template the player fills with the
+  permutation): a mage's unchosen cards going to the discard pile (p.16, `discard_order`)
+  and a reaver's revealed cards going to the banished pile (p.17, `reaver_order`). A
+  restored card that the mission 12 relic sends under the reserve is left out of every
+  banish order. The questions are asked only when two or more cards go and the top of
+  that pile counts: the discard pile in missions 4, 10 and 11, with Evergreen banes 10, 17
+  or 19, and in any solo game holding the Scarlet Whistle; the banished pile in missions 5,
   11 and 12 and in Evergreen setups with the Forest, the Hills or banes 18 or 20.
   Elsewhere a mage's cards go in the order revealed and a reaver's with the chosen card
-  last. Forecasts assume those default orders. Legacy games move the enemy first and the
-  played cards on top of it (p.19). The bots name the card that weakens the enemy most
-  last (a Jester, a classless or the weakest card), the strongest first; where only the
-  solo Whistle reads the pile, the strongest last. Games saved on the earlier questions
-  ("which card ends on top?": `cleanup_top`, `discard_top`, `banish_top`) still load and
-  resolve with that question.
+  last. Forecasts assume those default orders (a kill that will ask still shows as a
+  kill). Legacy games move the enemy first and the played cards on top of it (p.19). The
+  bots name the card that weakens the enemy most last (a Jester, a classless or the
+  weakest card), the strongest first; where only the solo Whistle reads the pile, the
+  strongest last. Games saved on the earlier questions ("which card ends on top?":
+  `cleanup_top`, `discard_top`, `banish_top`) still load and resolve with that question.
 * **Done:** 2/5 and Wild Animal declarations (p.25). A Wild Animal entering play (played,
   or added by a Kinfolk Flute, a Scarlet Whistle or a mage) declares a basic class
   (`declare_class`), asked first among the effects of cards entering play; it has that
@@ -574,9 +579,10 @@ plus the strength of the top card of the discard pile, recomputed live (a cleric
 shuffle or a banish from the pile changes it) and frozen once damage is being suffered;
 a Jester on top counts 0, a 2/5 counts 2, a defeated experiment its printed strength. On
 a kill the experiment goes to the discard pile first (on top of the reserve on exact
-damage), then the played cards go on top of it in the order they entered play, the last
-one on top (a mage attack is banished instead), as rulebook p.19 orders the steps; a
-mage's unchosen cards go to the pile in the order the player names ("What order?"). The
+damage), then the played cards go on top of it in the order the player names ("What
+order?", offered in the order they entered play; a mage attack is banished instead), as
+rulebook p.19 orders the steps; a mage's unchosen cards go to the pile in the order the
+player names as well. The
 twelve experiments carry the corrupted flag, so one drawn from the reserve plays as a
 corrupted card (banishes the top reserve card, its own class ignores immunity). The
 rewards add Gøran, the four beasts (one may be chosen on the campaign screen for each
@@ -640,8 +646,9 @@ as the tracker showed it (printed, plus the zone, less paladin reductions, never
 0), and if that brings it to 0 or less it falls too (exactly only at 0) and the chain
 continues; the same player then takes the next turn. The Reaver ability is implemented
 (see above). Since the top banished card feeds the zone, the player names the order of a
-reaver's revealed cards ("What order?"); a mage attack's cards at clean-up ("Rules
-continued") go in the order they entered play, the card the mage added last on top.
+reaver's revealed cards and of a mage attack's cards at clean-up ("Rules continued"),
+each a "What order?" (the clean-up offers the order they entered play, the card the mage
+added last).
 
 ## Mission 6, Shards of Memory (second edition; confirmed, transcribed from the owner's photos)
 
@@ -1071,9 +1078,8 @@ a beast or a classless card grants its strength, 0 for the first two, and no imm
 corrupted card's own class still ignores the immunity). Enemy defeated: banished (it then
 grants its strength from the top of the pile); on exact damage no beast is revealed at
 the start of the next turn (`extra["skip_beast"]`, cleared after skipping). Since both
-pile tops count: the played cards and a mage attack go to their piles in the order they
-entered play, the last on top, and the player names the order of a mage's unchosen
-cards and of a reaver's revealed cards ("What order?").
+pile tops count, the player names the order of the played cards and a mage attack at
+clean-up, of a mage's unchosen cards and of a reaver's revealed cards ("What order?").
 
 ## Mission 12, Decay to Growth (confirmed, transcribed from the owner's photos)
 
@@ -1136,8 +1142,8 @@ its classes. Enemy defeated: the zone is banished in the order the player choose
 top and feeds the zone next turn; the bots put the weakest or a classless card last),
 then the enemy, then the whole discard pile in its order (its top ends on top), and only
 then the played cards go on the new discard pile. A reaver's revealed cards are banished
-in the order the player names as well ("What order?"); a mage attack's cards in the
-order they entered play, the last on top. The restored relic is implemented once
+in the order the player names as well ("What order?"), and so are a mage attack's cards
+at clean-up. The restored relic is implemented once
 in the engine: every banish goes through `Game.banish_cards`, and `banish_redirect`
 sends a restored card under the reserve deck instead (clean-up of a mage attack, the
 zone, the discard pile, a corrupted card's effect, a reaver's reveal, a druid's slot, the

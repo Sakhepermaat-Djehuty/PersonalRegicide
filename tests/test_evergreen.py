@@ -5,7 +5,7 @@ import random
 
 import pytest
 
-from helpers import set_hand, set_mission_enemy, set_tavern_top, _pull
+from helpers import keep_played_order, set_hand, set_mission_enemy, set_tavern_top, _pull
 from regicide.bots import greedy_policy, min_waste_discard, play_out, random_policy
 from regicide.campaign import CampaignState
 from regicide.campaign import evergreen as E
@@ -587,8 +587,9 @@ def test_banes_17_to_20_pile_tops_grant_strength_and_immunity():
 
 def test_pile_tops_after_a_kill_follow_the_order_the_cards_entered_play():
     # the Forest with banes 17 and 18: both pile tops add their strength to the enemies; the
-    # enemy and the zone are shuffled into the banished pile first, then the played cards go
-    # on top in the order they entered play (no question), the mage's addition last
+    # player is asked "What order?" for each pile, offered in the order the cards entered play
+    # (the mage's addition last); then the enemy and the zone are shuffled into the banished
+    # pile first and the played cards go on top in the order kept
     c, g = _evergreen("C", banes=[17, 18])
     assert g.rules.discard_top_matters(g) and g.rules.banished_top_matters(g)
     _switch_enemy(g, "LABQH", hp=100)
@@ -602,6 +603,8 @@ def test_pile_tops_after_a_kill_follow_the_order_the_cards_entered_play():
     set_tavern_top(g, ["8C"])
     g.play(["AM"])
     g.decide({"type": "mage_pick", "card": "8C"})       # 9, doubled: 18, a kill
+    assert g.decision["kind"] == "played_discard_order" and g.enemies_defeated == 0
+    assert keep_played_order(g) == [["3S", "3C"], ["AM", "8C"]]
     assert g.decision is None and g.enemies_defeated == 1 and "LABQH" in g.banished
     assert g.discard[:3] == ["3C", "3S", "10S"] and g.banished[-2:] == ["AM", "8C"]
     kinds = [ev["t"] for ev in g.last_events]
