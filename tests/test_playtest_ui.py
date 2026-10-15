@@ -639,9 +639,13 @@ def test_choice_boxes_offer_hold_to_view_the_game(app):
     assert not ov.peeking and [v for v in ov.panel.subviews if not v.hidden] == shown
     assert ov.background_color[3] > 0.5 and gs.overlay is ov
     assert json.dumps(g.to_dict(), sort_keys=True) == before and g.decision["kind"] == "mage_peek"
-    # a hold the phone cancels: any tap brings the box back
+    # a second finger on the screen during the hold does not bring the box back
     ov.peek_btn.touch_began(None)
     ov.touch_ended(None)
+    assert ov.peeking and ov.peek_btn.held
+    # a hold the phone lost (no release came): a tap on the button brings the box back
+    ov.peek_btn.touch_began(None)
+    ov.peek_btn.touch_ended(None)
     assert not ov.peeking and not ov.peek_btn.held and ui.button(ov, "Game menu")
     # a rebuild while held brings it back too
     ov.peek_btn.touch_began(None)
@@ -726,3 +730,98 @@ def test_with_hidden_hands_the_reserve_is_shown_with_the_other_hands(app):
     gs._show_piles("reserve")
     assert sorted(gs.overlay.card_views) == sorted(g.tavern)
     assert ui.find(gs.overlay, lambda v: isinstance(v, ui.SegmentedControl))[0].segments[1] == "Tavern %d" % len(g.tavern)
+
+
+
+def test_the_table_under_a_choice_box_is_current_and_public(app):
+    """Holding "Hold to view game" shows the table: it is never stale and never shows what
+    a pass-and-play player selected and kept."""
+    from app.screens import DecisionOverlay, ChooseNextOverlay, GameMenuOverlay, MagePeekOverlay
+    from helpers import set_enemy, set_hand, set_mission_enemy, set_tavern_top
+    app.settings["rules_card"] = False
+    app.new_campaign(3, ["Ana", "Ben", "Cleo"])
+    app.campaign.relics.append("flute")
+    app.start_attempt()
+    gs, g = app.current, app.game
+    set_enemy(g, "J", "H")
+    set_hand(g, ["3C", "9S", "8S"], player=0)
+    set_hand(g, ["3D", "3H", "7C", "AS"], player=1)
+    set_hand(g, ["3S", "6C", "10D"], player=2)
+    gs.reveal_hand()
+    gs.hand.set_selection(["3C"])
+    _tap(app, "Play")
+    _tap(app, "Show my hand")
+    gs.hand.set_selection(["3D", "3H"])            # Ben thinks about adding, then passes
+    assert "3♦" in gs.message.text
+    _tap(app, "Pass")
+    ov = gs.overlay
+    assert isinstance(ov, DecisionOverlay) and g.deciding == 2
+    ov.peek_btn.touch_began(None)
+    # under the box: no hand, no trace of Ben's selection, nothing to tap
+    assert gs.hand.cards == [] and "3♦" not in gs.message.text and "3♥" not in gs.message.text
+    assert not gs.left_btn.enabled and not gs.mid_btn.enabled and not gs.right_btn.enabled
+    ov.peek_btn.touch_ended(None)
+
+    # the Jester's "who goes next" after an undo: the hand that had been shown is cleared
+    app.new_campaign(3, ["Ana", "Ben", "Cy"])
+    app.start_attempt()
+    gs, g = app.current, app.game
+    jester = [x for x in g.cards if g.cards[x].is_jester][0]
+    set_enemy(g, "J", "H")
+    set_hand(g, [jester, "9S"], player=0)
+    gs.reveal_hand()
+    gs.hand.set_selection([jester])
+    _tap(app, "Play")
+    assert isinstance(gs.overlay, ChooseNextOverlay)
+    assert gs.hand.cards == []                     # the phone may be with anyone
+    _tap(app, "Cy (%d cards)" % len(g.players[2].hand))
+    _tap(app, "Show my hand") if ui.find(app, lambda v: isinstance(v, ui.Button) and v.title == "Show my hand") else None
+    gs.reveal_hand()
+    assert gs.hand.cards                           # Cy's hand, on Cy's turn
+    gs._menu(None)
+    gs.overlay._undo(None)
+    assert isinstance(gs.overlay, ChooseNextOverlay) and gs.hand.cards == []
+
+    # solo: the card just played is not left in the hand under a mage's box
+    app.settings["rules_card"] = False
+    from regicide.campaign import missions as M
+    from regicide.campaign import party as P
+    app.new_campaign(1, ["Solo"])
+    app.campaign.mission, app.campaign.completed = 4, [1, 2, 3]
+    for d in M.MAGE_DECK:
+        P.add_card(app.campaign.party, dict(d))
+    app.save_campaign()
+    app.start_attempt()
+    gs, g = app.current, app.game
+    while g.decision is not None:
+        g.decide(g.legal_actions()[0])
+    set_mission_enemy(g, "LABJD", hp=100)
+    set_hand(g, ["3M", "9S", "8S"])
+    set_tavern_top(g, ["4C", "10H", "2D"])
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["3M"])
+    _tap(app, "Play")
+    assert isinstance(gs.overlay, MagePeekOverlay)
+    assert sorted(c.id for c in gs.hand.cards) == ["8S", "9S"] and gs.hand.selected == []
+    assert "reveals 3 cards" not in gs.message.text      # not the forecast made before the play
+
+
+def test_tall_choice_boxes_scroll_their_options_and_keep_the_hold_button_on_screen(app):
+    from app.screens import ChanterDeclareOverlay, PickOverlay
+    ui.set_screen_size(320, 568)
+    try:
+        app.frame = (0, 0, 320, 568)
+        gs, g = _piles_game(app)
+        assert gs.height == 568
+        g.decision = {"kind": "chanter_declare", "player": 0, "max": len(g.tavern), "play_index": 0}
+        from regicide.engine import PHASE_DECIDE
+        g.phase = PHASE_DECIDE
+        ov = ChanterDeclareOverlay(gs)
+        gs._show_overlay(ov)
+        assert ov.panel.y + ov.panel.height <= gs.height + 1          # the box fits on the screen
+        scrolls = [v for v in ov.panel.subviews if isinstance(v, ui.ScrollView)]
+        assert scrolls and scrolls[0].content_size[1] > scrolls[0].height
+        menu = ui.button(ov, "Game menu")
+        assert ov.peek_btn.y == menu.y and ov.panel.y + ov.peek_btn.y + ov.peek_btn.height <= gs.height
+    finally:
+        ui.set_screen_size(390, 844)

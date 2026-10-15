@@ -626,6 +626,7 @@ class GameScreen(Screen):
             self.zone.set_cards(zone_cards, title)
             self.zone.set_needs_display()
         if g.is_over:
+            self._table_under_box(None if self._hand_hidden() else self.shown_player)
             if self.app.in_campaign:
                 if not hasattr(self, "campaign_result"):
                     self.campaign_result = self.app.finish_attempt()
@@ -634,6 +635,8 @@ class GameScreen(Screen):
                 self._show_overlay(ResultOverlay(self))
             return
         if g.phase == PHASE_CHOOSE_NEXT:
+            # the phone may be with any player: no hand under the box when hands are hidden
+            self._table_under_box(None if self._hand_hidden() else g.active)
             self._show_overlay(ChooseNextOverlay(self))
             return
         if self.rules_pending:
@@ -649,11 +652,11 @@ class GameScreen(Screen):
             # Mission 9's end of turn: pick the pile (or rotate) first, then a hand card.
             seat = g.deciding
             if g.n_players > 1 and self.shown_player != seat and not g.config.open_hands:
-                self.hand.set_cards([])
+                self._table_under_box(None)
                 self._show_overlay(HandoverOverlay(self))
                 return
             self.shown_player = seat
-            self.hand.set_cards([])
+            self._table_under_box(seat)
             self._show_overlay(PileRescueOverlay(self))
             return
         if kind is not None and kind not in HAND_DECISIONS:
@@ -665,10 +668,11 @@ class GameScreen(Screen):
             # Whistle or Azure Emblem decision came first): hand it back first.
             seat = g.deciding
             if g.n_players > 1 and self.shown_player != seat and not g.config.open_hands:
-                self.hand.set_cards([])
+                self._table_under_box(None)
                 self._show_overlay(HandoverOverlay(self))
                 return
             self.shown_player = seat
+            self._table_under_box(seat)
             self._show_overlay(PICK_OVERLAYS.get(kind, PickOverlay)(self))
             return
         # The seat whose hand is shown: the attacker, or whoever must decide (Kinfolk
@@ -677,7 +681,7 @@ class GameScreen(Screen):
         needs_handover = (g.n_players > 1 and self.shown_player != seat
                           and (not g.config.open_hands or g.phase == PHASE_DECIDE))
         if needs_handover:
-            self.hand.set_cards([])
+            self._table_under_box(None)
             self._show_overlay(DecisionOverlay(self) if g.phase == PHASE_DECIDE else HandoverOverlay(self))
             return
         self._hide_overlay()
@@ -701,6 +705,25 @@ class GameScreen(Screen):
         self.shown_player = self.game.deciding
         self.refresh(after_action=False)
 
+    def _table_under_box(self, seat: Optional[int]) -> None:
+        """Before a box covers the table, make what lies under it current and public (it shows
+        when the player holds "Hold to view game"): ``seat``'s hand as it is now, or no hand
+        while the phone may be passing to another player; the last public message instead
+        of what a selection would do (a pass-and-play player's selection names cards they
+        kept); the action buttons off (the box decides)."""
+        g = self.game
+        self.hand.badges = {}
+        self.hand.set_cards(g.hand(seat) if seat is not None else [], keep_selection=False)
+        self.message.text = self.message_text
+        for b, primary in ((self.left_btn, False), (self.mid_btn, False), (self.right_btn, True)):
+            set_enabled(b, False, primary)
+        self.special_btn.hidden = True
+
+    def _hand_hidden(self) -> bool:
+        """Pass-and-play with hidden hands: a hand is shown only to the player holding it."""
+        g = self.game
+        return g.n_players > 1 and not g.config.open_hands
+
     def _refresh_team_damage(self) -> None:
         """Mission 6: Myla's team damage is discarded one card at a time by any player.
         Solo, the hand is shown at once; in pass-and-play a seat picker names who discards
@@ -709,12 +732,12 @@ class GameScreen(Screen):
         seat = 0 if g.n_players == 1 else self.team_seat
         if seat is None or not g.players[seat].hand:
             self.team_seat = None
-            self.hand.set_cards([])
+            self._table_under_box(None)
             self._show_overlay(TeamDamageOverlay(self))
             return
         if g.n_players > 1 and not g.config.open_hands and self.shown_player != seat:
             # pass the phone first: nobody else sees that hand
-            self.hand.set_cards([])
+            self._table_under_box(None)
             self._show_overlay(HandoverOverlay(self, seat=seat))
             return
         self._hide_overlay()
@@ -1225,12 +1248,10 @@ class Overlay(ui.View):
             self._peek_saved = ()
 
     def touch_ended(self, touch) -> None:
-        # a hold the phone cancelled (a notification, a system gesture) leaves the box
-        # away: any tap brings it back
-        if self.peeking:
-            if self.peek_btn is not None:
-                self.peek_btn.held = False
-                self.peek_btn.set_needs_display()
+        # a second finger on the screen while the button is held does not end the hold; a
+        # hold the phone lost (a notification) ends with a tap on the button, which still
+        # shows "Release to return"
+        if self.peeking and (self.peek_btn is None or not self.peek_btn.held):
             self._peek(False)
 
     def build(self) -> List[ui.View]:
@@ -1414,8 +1435,11 @@ class PickOverlay(Overlay):
         g = self.screen.game
         d = g.decision or {}
         title, text = self.heading(g, d)
+        size = 20
+        while size > 13 and text_size(title, 0, size, True)[0] > self.text_width():
+            size -= 1                       # a long title shrinks rather than being cut off
         head: List[ui.View] = [
-            make_label(title, (0, 0, 10, 36), 20, True, T.ACCENT, ui.ALIGN_CENTER),
+            make_label(title, (0, 0, 10, 36), size, True, T.ACCENT, ui.ALIGN_CENTER),
             self.text(text, 13),
         ]
         strip = self.strip(g, d)
@@ -1458,14 +1482,30 @@ class PickOverlay(Overlay):
         gap = 8 if cols > 1 else 12
         bw = (pw - 40 - gap * (cols - 1)) / cols
         bh = 40 if cols > 1 else 44
+        rows = (len(options) + cols - 1) // cols
+        grid_h = rows * (bh + gap) - gap if rows else 0
+        # the option buttons scroll when the box would be taller than the screen, so the
+        # heading, the closing buttons and "Hold to view game" stay in view
+        tail_h = sum(v.height + 12 for v in tail) + (48 if not tail else 0)
+        room = self.height - T.TOP_INSET - T.BOTTOM_INSET - 8 - y - tail_h - 12
+        holder = self.panel
+        oy, x0 = y, 20
+        if rows and grid_h > room and room >= bh:
+            # cut through a button, never between two, so the hidden ones are hinted at
+            cut = room - (((room + gap) // (bh + gap)) * (bh + gap) - gap)
+            if cut < bh * 0.35:
+                room = max(bh, room - bh * 0.5)
+            holder = ui.ScrollView(frame=(20, y, pw - 40, room))
+            holder.content_size = (pw - 40, grid_h)
+            self.panel.add_subview(holder)
+            oy, x0 = 0, 0
         for i, b in enumerate(options):
             r, c = divmod(i, cols)
-            b.frame = (20 + c * (bw + gap), y + r * (bh + gap), bw, bh)
+            b.frame = (x0 + c * (bw + gap), oy + r * (bh + gap), bw, bh)
             fit_title(b)
-            self.panel.add_subview(b)
-        rows = (len(options) + cols - 1) // cols
+            holder.add_subview(b)
         if rows:
-            y += rows * (bh + gap) - gap + 12
+            y += (holder.height if holder is not self.panel else grid_h) + 12
         for v in tail:
             v.frame = (20, y, pw - 40, v.height)
             if isinstance(v, ui.Button):
