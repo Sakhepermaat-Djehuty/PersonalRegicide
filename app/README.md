@@ -31,7 +31,10 @@ game menu too. In a game, a tap on the status line ("Reserve 54 · Discard 17"),
 "Discard and reserve piles" in the in-game Menu, shows the piles: the discard pile and the
 banished pile in order (the top card first) and the reserve deck sorted like the deck list
 (what is left, never its order). Every choice box has "Hold to view game": while it is held the box fades
-away and the table shows; letting go brings the box back.
+away and the table shows; letting go brings the box back. Settings: "Classic card faces"
+lays numbered cards out like playing cards (a 7 shows seven class icons, the number and
+icon in two corners, the lower half turned; royals show a big letter); cards above 10,
+beasts, 2/5s, Wild Animals, Jesters and the deck list's small cards keep the simple face.
 
 ## What the client offers
 

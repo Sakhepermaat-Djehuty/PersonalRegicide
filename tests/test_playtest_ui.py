@@ -879,3 +879,79 @@ def test_review_recheck_toast_class_box_scroll_cut_and_the_game_log(app):
     sv = [v for v in ov.panel.subviews if isinstance(v, ui.ScrollView)][0]
     assert sv.content_offset[1] == max(0.0, sv.content_size[1] - sv.height)
     app.frame = (0, 0, 390, 844)
+
+
+def test_classic_card_faces_lay_numbered_cards_out_like_playing_cards(app):
+    from regicide.cards import Card
+    calls = []
+    real_draw, real_ctm = ui.draw_string, ui.concat_ctm
+    ui.draw_string = lambda text, rect=None, font=None, color=None, *a, **kw: (calls.append((text, rect, font)), real_draw(text, rect, font, color, *a, **kw))[1]
+    turns = []
+    ui.concat_ctm = lambda t: (turns.append(t), real_ctm(t))[1]
+    card = lambda d: P.to_card(dict(d, flags=d.get("flags", [])))   # noqa: E731
+    try:
+        assert widgets.FACE_STYLE == "simple"            # the default
+        assert widgets.classic_kind(card({"id": "7H", "rank": "7", "suits": ["H"], "value": 7})) == "pips"
+        assert widgets.classic_kind(card({"id": "AS", "rank": "A", "suits": ["S"], "value": 1})) == "pips"
+        assert widgets.classic_kind(card({"id": "KH", "rank": "K", "suits": ["H"], "value": 20})) == "royal"
+        for d in ({"id": "M12H", "rank": "12", "suits": ["H"], "value": 12},            # above 10
+                  {"id": "B_H", "rank": "B", "suits": ["H"], "value": 0},               # a beast
+                  {"id": "M25C", "rank": "2", "suits": ["C"], "value": 2, "flags": ["twofive"]},
+                  {"id": "MA_1", "rank": "A", "suits": [], "value": 1, "flags": ["choosable"]},
+                  {"id": "PIL4_1", "rank": "4", "suits": [], "value": 4, "flags": ["pilgrim"]}):
+            assert widgets.classic_kind(card(d)) == "", d["id"]
+        assert widgets.classic_kind(P.to_card(dict(M.GORAN))) == ""                      # a named card
+        widgets.FACE_STYLE = "classic"
+        v = CardView(card({"id": "7H", "rank": "7", "suits": ["H"], "value": 7}), frame=(0, 0, 86, 122))
+        del calls[:]
+        del turns[:]
+        ui.render(v)
+        hearts = [c for c in calls if c[0] == "♥"]
+        big = [c for c in hearts if abs(c[2][1] - 86 * 0.2) < 0.01]
+        assert len(big) == 7                             # seven hearts in the middle
+        assert len(hearts) == 9 and [c[0] for c in calls].count("7") == 2   # and the two corners
+        assert len(turns) == 2 * (2 + 1)                 # the two lower pips and a corner, turned
+        # an ace: one big symbol; a royal: its letter big in a frame
+        del calls[:]
+        ui.render(CardView(card({"id": "AS", "rank": "A", "suits": ["S"], "value": 1}), frame=(0, 0, 86, 122)))
+        assert [c for c in calls if c[0] == "♠" and abs(c[2][1] - 43) < 0.01]
+        del calls[:]
+        ui.render(CardView(card({"id": "KH", "rank": "K", "suits": ["H"], "value": 20}), frame=(0, 0, 86, 122)))
+        assert [c for c in calls if c[0] == "K" and c[2][1] >= 40]
+        # small cards (the deck list's rows) and cards above 10 keep the simple face
+        small = CardView(card({"id": "7H", "rank": "7", "suits": ["H"], "value": 7}), frame=(0, 0, 50, 71))
+        small.small = True
+        del calls[:]
+        ui.render(small)
+        assert [c[0] for c in calls].count("♥") == 1
+        del calls[:]
+        ui.render(CardView(card({"id": "M12H", "rank": "12", "suits": ["H"], "value": 12}), frame=(0, 0, 86, 122)))
+        assert [c[0] for c in calls].count("♥") == 2
+    finally:
+        ui.draw_string, ui.concat_ctm = real_draw, real_ctm
+        widgets.FACE_STYLE = "simple"
+
+
+def test_the_classic_faces_setting(app, tmp_path):
+    from app import store
+    from app.screens import App, SettingsScreen
+    app.show(SettingsScreen(app))
+    sw = [v for v in ui.find(app, lambda v: isinstance(v, ui.Switch))]
+    labels = _texts(app)
+    i = [n for n, t in enumerate(labels) if t.startswith("Classic card faces")]
+    assert i and not app.settings.get("classic_faces")
+    switch = sw[-1]
+    switch.value = True
+    switch.action(switch)
+    try:
+        assert widgets.FACE_STYLE == "classic" and store.load_settings()["classic_faces"] is True
+        assert ui.render(app).size[0] > 0
+        # a new start of the app reads it back
+        widgets.FACE_STYLE = "simple"
+        App()
+        assert widgets.FACE_STYLE == "classic"
+        switch.value = False
+        switch.action(switch)
+        assert widgets.FACE_STYLE == "simple"
+    finally:
+        widgets.FACE_STYLE = "simple"

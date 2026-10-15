@@ -127,6 +127,12 @@ class Screen(ui.View):
         pass
 
 
+def apply_face_style(settings: dict) -> None:
+    """Card faces follow the "classic_faces" setting (see ``widgets.FACE_STYLE``)."""
+    from . import widgets
+    widgets.FACE_STYLE = "classic" if settings.get("classic_faces") else "simple"
+
+
 class App(ui.View):
     """Root view; shows one Screen at a time."""
 
@@ -137,6 +143,7 @@ class App(ui.View):
         self.background_color = T.BG
         self.name = "PersonalRegicide"
         self.settings = store.load_settings()
+        apply_face_style(self.settings)
         self.game: Optional[Game] = None
         self.undo_stack: List[dict] = []
         self.current: Optional[Screen] = None
@@ -4032,6 +4039,7 @@ class SettingsScreen(Screen):
             ("jester_may_choose_self", "Jester's player may choose themselves", False),
             ("open_hands", "Open hands by default (pass and play)", False),
             ("rules_card", "Show a mission's rules card when it first loads", True),
+            ("classic_faces", "Classic card faces: a 7 shows seven symbols, like a playing card", False),
         ]
         for key, label, default in rows:
             self.add_subview(make_label(label, (m, y, w - 2 * m - 60, 44), 15, False, T.TEXT, lines=2))
@@ -4046,6 +4054,7 @@ class SettingsScreen(Screen):
     def _toggle(self, key: str, value: bool) -> None:
         self.app.settings[key] = bool(value)
         self.app.save_settings()
+        apply_face_style(self.app.settings)
 
 
 RULES_TEXT = """Defeat all 12 enemies: four Jacks (20 health, 10 attack), then four Queens (30/15), then four Kings (40/20).

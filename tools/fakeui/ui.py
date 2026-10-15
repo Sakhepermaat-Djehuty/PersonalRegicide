@@ -149,6 +149,8 @@ class _Ctx:
         self.oy = oy
         self.clip = clip
         self.color = (0, 0, 0, 255)
+        self.ctm = Transform()      # the view's user space -> its own coordinates (concat_ctm)
+        self.saved: List[Transform] = []
 
 
 _ctx_stack: List[_Ctx] = []
@@ -162,7 +164,48 @@ def _ctx() -> _Ctx:
 
 def _pt(x: float, y: float) -> Tuple[float, float]:
     c = _ctx()
+    x, y = c.ctm.apply(x, y)
     return ((c.ox + x) * SCALE, (c.oy + y) * SCALE)
+
+
+class Transform:
+    """An affine transform like Pythonista's ui.Transform (CoreGraphics' convention: a point
+    maps to (a*x + c*y + tx, b*x + d*y + ty); ``t1.concat(t2)`` applies t1, then t2)."""
+
+    def __init__(self, a: float = 1.0, b: float = 0.0, c: float = 0.0, d: float = 1.0, tx: float = 0.0, ty: float = 0.0):
+        self.a, self.b, self.c, self.d, self.tx, self.ty = a, b, c, d, tx, ty
+
+    @staticmethod
+    def rotation(rad: float) -> "Transform":
+        import math
+        co, si = math.cos(rad), math.sin(rad)
+        return Transform(co, si, -si, co, 0.0, 0.0)
+
+    @staticmethod
+    def translation(tx: float, ty: float) -> "Transform":
+        return Transform(1.0, 0.0, 0.0, 1.0, tx, ty)
+
+    @staticmethod
+    def scale(sx: float, sy: float) -> "Transform":
+        return Transform(sx, 0.0, 0.0, sy, 0.0, 0.0)
+
+    def concat(self, other: "Transform") -> "Transform":
+        o = other
+        return Transform(self.a * o.a + self.b * o.c, self.a * o.b + self.b * o.d,
+                         self.c * o.a + self.d * o.c, self.c * o.b + self.d * o.d,
+                         self.tx * o.a + self.ty * o.c + o.tx, self.tx * o.b + self.ty * o.d + o.ty)
+
+    def apply(self, x: float, y: float) -> Tuple[float, float]:
+        return (self.a * x + self.c * y + self.tx, self.b * x + self.d * y + self.ty)
+
+    def is_translation(self) -> bool:
+        return abs(self.a - 1) < 1e-9 and abs(self.d - 1) < 1e-9 and abs(self.b) < 1e-9 and abs(self.c) < 1e-9
+
+
+def concat_ctm(t: Transform) -> None:
+    """Like Pythonista: the new transform applies first, then the current one."""
+    c = _ctx()
+    c.ctm = t.concat(c.ctm)
 
 
 def set_color(color: Any) -> None:
@@ -214,8 +257,9 @@ class Path:
 
     def _pil_box(self):
         x, y, w, h = self.box
-        x0, y0 = _pt(x, y)
-        x1, y1 = _pt(x + w, y + h)
+        pts = [_pt(x, y), _pt(x + w, y), _pt(x, y + h), _pt(x + w, y + h)]
+        x0, y0 = min(p[0] for p in pts), min(p[1] for p in pts)
+        x1, y1 = max(p[0] for p in pts), max(p[1] for p in pts)
         return (x0, y0, max(x0, x1 - 1), max(y0, y1 - 1))
 
     def fill(self) -> None:
@@ -249,6 +293,38 @@ class Path:
 def draw_string(text: str, rect=(0, 0, 0, 0), font=None, color="black", alignment=ALIGN_LEFT,
                 line_break_mode=LB_WORD_WRAP) -> None:
     c = _ctx()
+    if not c.ctm.is_translation():
+        _draw_string_turned(c, text, rect, font, color, alignment, line_break_mode)
+        return
+    _draw_string_plain(c, text, rect, font, color, alignment, line_break_mode)
+
+
+def _draw_string_turned(c, text, rect, font, color, alignment, line_break_mode) -> None:
+    """The string drawn upright in its rect on a scratch image, which is turned by the
+    current transform's angle and pasted where the rect's centre lands."""
+    import math
+    x, y, w, h = rect
+    if not w or not h:
+        w = w or measure_string(text, 0, font)[0]
+        h = h or measure_string(text, 0, font)[1]
+    pad = 4
+    W, H = int(math.ceil(w * SCALE)) + 2 * pad, int(math.ceil(h * SCALE)) + 2 * pad
+    scratch = PILImage.new("RGBA", (W, H), (0, 0, 0, 0))
+    sc = _Ctx(scratch, ImageDraw.Draw(scratch), pad / float(SCALE), pad / float(SCALE), (0, 0, w, h))
+    _ctx_stack.append(sc)
+    try:
+        _draw_string_plain(sc, text, (0, 0, w, h), font, color, alignment, line_break_mode)
+    finally:
+        _ctx_stack.pop()
+    angle = math.degrees(math.atan2(c.ctm.b, c.ctm.a))
+    turned = scratch.rotate(-angle, resample=PILImage.BICUBIC, expand=True)
+    cx, cy = _pt(x + w / 2.0, y + h / 2.0)
+    layer = PILImage.new("RGBA", c.img.size, (0, 0, 0, 0))
+    layer.paste(turned, (int(round(cx - turned.size[0] / 2.0)), int(round(cy - turned.size[1] / 2.0))), turned)
+    c.img.alpha_composite(layer)
+
+
+def _draw_string_plain(c, text, rect, font, color, alignment, line_break_mode) -> None:
     f = _pil_font(font)
     x, y, w, h = rect
     lines = _wrap(text, f, w * SCALE if w else 0, line_break_mode)
@@ -271,8 +347,17 @@ def draw_string(text: str, rect=(0, 0, 0, 0), font=None, color="black", alignmen
 
 
 class GState:
-    def __enter__(self): return self
-    def __exit__(self, *a): return False
+    """Saves the drawing state (the transform) and restores it on exit, like Pythonista."""
+
+    def __enter__(self):
+        c = _ctx()
+        c.saved.append(c.ctm)
+        return self
+
+    def __exit__(self, *a):
+        c = _ctx()
+        c.ctm = c.saved.pop() if c.saved else Transform()
+        return False
 
 
 # ----------------------------------------------------------------------------- views

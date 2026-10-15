@@ -140,6 +140,78 @@ def draw_tree(x: float, y: float, w: float, h: float, color: str) -> None:
     ui.Path.rect(cx - w * 0.08, y + h * 0.8, w * 0.16, h * 0.2).fill()
 
 
+# Card faces (a setting): "simple" draws the number, a small class icon and one big icon;
+# "classic" lays numbered cards out like playing cards (a 7 shows seven icons, the number
+# and icon in two corners, the lower half turned) and gives a royal a big letter.
+FACE_STYLE = "simple"
+
+# pip positions (x, y in 0..1 of the pip area), the standard playing-card layouts
+_PL, _PR = 0.18, 0.82
+PIP_LAYOUT = {
+    2: [(0.5, 0.0), (0.5, 1.0)],
+    3: [(0.5, 0.0), (0.5, 0.5), (0.5, 1.0)],
+    4: [(_PL, 0.0), (_PR, 0.0), (_PL, 1.0), (_PR, 1.0)],
+    5: [(_PL, 0.0), (_PR, 0.0), (0.5, 0.5), (_PL, 1.0), (_PR, 1.0)],
+    6: [(_PL, 0.0), (_PR, 0.0), (_PL, 0.5), (_PR, 0.5), (_PL, 1.0), (_PR, 1.0)],
+    7: [(_PL, 0.0), (_PR, 0.0), (0.5, 0.25), (_PL, 0.5), (_PR, 0.5), (_PL, 1.0), (_PR, 1.0)],
+    8: [(_PL, 0.0), (_PR, 0.0), (0.5, 0.25), (_PL, 0.5), (_PR, 0.5), (0.5, 0.75), (_PL, 1.0), (_PR, 1.0)],
+    9: [(_PL, 0.0), (_PR, 0.0), (_PL, 1 / 3.0), (_PR, 1 / 3.0), (0.5, 0.5), (_PL, 2 / 3.0), (_PR, 2 / 3.0),
+        (_PL, 1.0), (_PR, 1.0)],
+    10: [(_PL, 0.0), (_PR, 0.0), (0.5, 1 / 6.0), (_PL, 1 / 3.0), (_PR, 1 / 3.0), (_PL, 2 / 3.0), (_PR, 2 / 3.0),
+         (0.5, 5 / 6.0), (_PL, 1.0), (_PR, 1.0)],
+}
+
+
+def classic_kind(card: Card) -> str:
+    """How a card is drawn with classic faces: "pips" (an ace to a 10 with a class, its
+    value as printed), "royal" (a Jack, Queen or King: a big letter) or "" (the simple face:
+    cards above 10, beasts, 2/5s, Wild Animals, Jesters, classless and named cards)."""
+    if card.is_jester or card.name or card.has("twofive") or card.has("choosable"):
+        return ""
+    if card.is_royal:
+        return "royal"
+    if not card.suits:
+        return ""
+    if card.rank == "A" and card.value == 1:
+        return "pips"
+    if card.rank.isdigit() and 2 <= int(card.rank) <= 10 and card.value == int(card.rank):
+        return "pips"
+    return ""
+
+
+def turned(cx: float, cy: float):
+    """Draw the next things turned upside down about (cx, cy): ``with turned(x, y):`` then
+    draw centred on (0, 0). Without transforms (an old ui module) they stay upright."""
+    import contextlib
+
+    @contextlib.contextmanager
+    def ctx():
+        if not (hasattr(ui, "GState") and hasattr(ui, "concat_ctm") and hasattr(ui, "Transform")):
+            yield False
+            return
+        with ui.GState():
+            ui.concat_ctm(ui.Transform.translation(cx, cy))
+            ui.concat_ctm(ui.Transform.rotation(math.pi))
+            yield True
+    return ctx()
+
+
+def draw_symbol(sym: str, cx: float, cy: float, size: float, color: str, upside_down: bool = False) -> None:
+    """One class icon (or the Evergreen tree) of font size ``size`` centred on (cx, cy)."""
+    def draw(x: float, y: float) -> None:
+        if sym == TREE_PIP:
+            draw_tree(x - size * 0.45, y - size * 0.5, size * 0.9, size, T.EVERGREEN)
+            return
+        ui.draw_string(SUIT_SYMBOL.get(sym, sym), (x - size, y - size * 0.62, size * 2, size * 1.3),
+                       (T.FONT_BOLD, size), T.SUIT_COLOR.get(sym, color), ui.ALIGN_CENTER)
+    if upside_down:
+        with turned(cx, cy) as ok:
+            if ok:
+                draw(0.0, 0.0)
+                return
+    draw(cx, cy)
+
+
 def card_caption(card: Card) -> str:
     """The small word under a card's pips: a story character's name, "pilgrim" on a
     pilgrim; nothing on a plain card (a Wild Animal shows a class icon in each corner). An enemy card (a royal)
@@ -291,6 +363,10 @@ class CardView(ui.View):
         suits = list(c.suits)
         pips = face_pips(c)
         caption = card_caption(c)
+        kind = classic_kind(c) if (FACE_STYLE == "classic" and not self.small) else ""
+        if kind:
+            self._draw_classic(c, kind, rank, pips, col, ox, oy, w, h)
+            return
         if c.has("choosable") and not suits:
             self._draw_wild(c, ox, oy, w, h, rank)
             return
@@ -339,6 +415,56 @@ class CardView(ui.View):
             ui.set_color(T.ACCENT)
             ui.Path.rounded_rect(ox + 3, oy + h - 3 - band, w - 6, band, 4).fill()
             ui.draw_string(badge, (ox + 3, oy + h - 3 - band, w - 6, band), (T.FONT_BOLD, max(8, h * 0.09)), T.BG,
+                           ui.ALIGN_CENTER)
+
+    def _draw_classic(self, c: Card, kind: str, rank: str, pips: List[str], col: str, ox: float, oy: float,
+                      w: float, h: float) -> None:
+        """A playing card's face: the rank and the class icons in the top-left corner and,
+        turned, in the bottom-right one; the rank's number of icons of the first class in
+        the usual layout (the lower half turned), one big icon on an ace, a big letter on
+        a royal. A tag ("stuck", "flute") takes a band along the bottom as on the simple face."""
+        band = max(12.0, h * 0.13) if self.badge else 0.0
+        hh = h - band
+        iw = w * 0.3                                  # the corner index's column
+        rs = w * (0.2 if len(rank) > 1 else 0.23)     # its rank (a 10 a little smaller)
+        ps = w * 0.17                                 # its class icons
+        icons = pips[:3]
+
+        def index(x: float, y: float) -> None:
+            ui.draw_string(rank, (x, y + w * 0.04, iw, rs * 1.25), (T.FONT_BOLD, rs), col, ui.ALIGN_CENTER)
+            for i, s in enumerate(icons):
+                draw_symbol(s, x + iw / 2.0, y + w * 0.04 + rs * 1.2 + ps * 0.62 + i * ps * 1.05, ps, col)
+
+        index(ox, oy)
+        tall = w * 0.04 + rs * 1.2 + ps * 1.05 * len(icons) + ps * 0.2
+        with turned(ox + w - iw / 2.0, oy + hh - tall / 2.0) as ok:
+            if ok:
+                index(-iw / 2.0, -tall / 2.0)
+            else:
+                index(ox + w - iw, oy + hh - tall)
+        if kind == "royal":
+            frame = ui.Path.rounded_rect(ox + w * 0.22, oy + hh * 0.16, w * 0.56, hh * 0.68, 4)
+            frame.line_width = 1
+            ui.set_color(col)
+            frame.stroke()
+            size = min(w * 0.5, hh * 0.5)
+            ui.draw_string(rank, (ox, oy + hh / 2.0 - size * 0.65, w, size * 1.3), (T.FONT_BOLD, size), col,
+                           ui.ALIGN_CENTER)
+        else:
+            sym = pips[0] if pips else ""
+            n = 1 if rank == "A" else int(rank)
+            if n == 1:
+                draw_symbol(sym, ox + w / 2.0, oy + hh / 2.0, w * 0.5, col)
+            else:
+                spots = PIP_LAYOUT[n]
+                size = w * (0.24 if n <= 3 else 0.2 if n <= 8 else 0.18)
+                x0, x1, y0, y1 = ox + w * 0.3, ox + w * 0.7, oy + hh * 0.2, oy + hh * 0.8
+                for px, py in spots:
+                    draw_symbol(sym, x0 + (x1 - x0) * px, y0 + (y1 - y0) * py, size, col, upside_down=py > 0.5)
+        if self.badge:
+            ui.set_color(T.ACCENT)
+            ui.Path.rounded_rect(ox + 3, oy + h - 3 - band, w - 6, band, 4).fill()
+            ui.draw_string(self.badge, (ox + 3, oy + h - 3 - band, w - 6, band), (T.FONT_BOLD, max(8, h * 0.09)), T.BG,
                            ui.ALIGN_CENTER)
 
     def _draw_wild(self, c: Card, ox: float, oy: float, w: float, h: float, rank: str) -> None:
