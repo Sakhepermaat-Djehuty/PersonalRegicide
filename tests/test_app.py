@@ -1019,7 +1019,14 @@ def test_mission6_team_damage_seat_picker_flow(app):
     assert gs.hand.selected == ["4D"]                 # one card at a time
     _tap_button(app, "Players")                        # back to the picker without discarding
     assert isinstance(gs.overlay, TeamDamageOverlay) and g.decision["paid"] == 0
-    _tap_button(app, "Ben (4 cards)")                   # Ben still holds the phone: no handover
+    # at the picker the phone may be with anyone: no hand counts as the holder's, so the
+    # piles viewer counts Ben's cards as unseen, and picking Ben again goes through a handover
+    assert gs.shown_player is None and gs.hand.cards == []
+    from app.screens import PilesOverlay
+    assert set(["3H", "4D", "7S", "2C"]) <= set(PilesOverlay(gs).unseen(g))
+    _tap_button(app, "Ben (4 cards)")
+    assert isinstance(gs.overlay, HandoverOverlay) and gs.hand.cards == []
+    _tap_button(app, "Show my hand")
     assert gs.overlay is None
     _tap_card(app, gs, "3H")
     _tap_button(app, "Discard")

@@ -825,3 +825,57 @@ def test_tall_choice_boxes_scroll_their_options_and_keep_the_hold_button_on_scre
         assert ov.peek_btn.y == menu.y and ov.panel.y + ov.peek_btn.y + ov.peek_btn.height <= gs.height
     finally:
         ui.set_screen_size(390, 844)
+
+
+
+def test_review_recheck_toast_class_box_scroll_cut_and_the_game_log(app):
+    from app.screens import ClassChoiceOverlay, LogOverlay
+    from regicide.rules import GameConfig
+    # a Hint toast never stays up under a choice box
+    app.settings["rules_card"] = False
+    _tap(app, "New game")
+    _tap(app, "Start")
+    app.start_attempt()
+    gs, g = app.current, app.game
+    gs.show_toast("Hint: 7♦")
+    gs._table_under_box(None)
+    assert gs.toast.hidden
+    # the solo Jester attack's class box: the selection and its forecast are gone under it
+    gs.refresh(after_action=False)
+    gs.hand.set_selection([g.players[0].hand[0]])
+    forecast = gs.message.text
+    _tap(app, gs.mid_btn.title)
+    assert isinstance(gs.overlay, ClassChoiceOverlay)
+    assert gs.hand.selected == [] and gs.message.text != forecast and not gs.right_btn.enabled
+    # every scrolled grid of options ends halfway through a button
+    from app.screens import ChanterDeclareOverlay
+    from regicide.engine import PHASE_DECIDE
+    for w, h in ((320, 568), (375, 667), (390, 844), (430, 932)):
+        app.frame = (0, 0, w, h)
+        app.start_attempt() if app.game is None else None
+        gs = app.current
+        g = gs.game
+        g.tavern.extend([c for c in list(g.discard)])
+        g.decision = {"kind": "chanter_declare", "player": 0, "max": len(g.tavern), "play_index": 0}
+        g.phase = PHASE_DECIDE
+        ov = ChanterDeclareOverlay(gs)
+        gs._show_overlay(ov)
+        for sv in [v for v in ov.panel.subviews if isinstance(v, ui.ScrollView)]:
+            bh, gap = 40, 8
+            shown = (sv.height % (bh + gap))
+            assert abs(shown - bh * 0.5) < 0.01, (w, h, sv.height)
+        assert ov.panel.y + ov.panel.height <= h + 1
+    app.frame = (0, 0, 390, 844)
+    # the game log keeps its Back button on the smallest screen, the newest lines in view
+    app.frame = (0, 0, 320, 568)
+    app.start_game(GameConfig(players=1), seed=4)
+    gs, g = app.current, app.game
+    g.log.extend(["A long line of the game log that wraps over several lines of the small screen %d." % i
+                  for i in range(14)])
+    ov = LogOverlay(gs)
+    gs._show_overlay(ov)
+    back = ui.button(ov, "Back")
+    assert ov.panel.y + back.y + back.height <= 568
+    sv = [v for v in ov.panel.subviews if isinstance(v, ui.ScrollView)][0]
+    assert sv.content_offset[1] == max(0.0, sv.content_size[1] - sv.height)
+    app.frame = (0, 0, 390, 844)

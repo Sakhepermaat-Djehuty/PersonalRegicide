@@ -718,6 +718,7 @@ class GameScreen(Screen):
         for b, primary in ((self.left_btn, False), (self.mid_btn, False), (self.right_btn, True)):
             set_enabled(b, False, primary)
         self.special_btn.hidden = True
+        self.toast.hidden = True      # a Hint names a card of the hand that was shown
 
     def _hand_hidden(self) -> bool:
         """Pass-and-play with hidden hands: a hand is shown only to the player holding it."""
@@ -732,6 +733,10 @@ class GameScreen(Screen):
         seat = 0 if g.n_players == 1 else self.team_seat
         if seat is None or not g.players[seat].hand:
             self.team_seat = None
+            if self._hand_hidden():
+                # whoever is picked next, even the same player, takes the phone through a
+                # handover; until then no hand counts as the holder's (the piles viewer)
+                self.shown_player = None
             self._table_under_box(None)
             self._show_overlay(TeamDamageOverlay(self))
             return
@@ -1087,6 +1092,7 @@ class GameScreen(Screen):
     def _mid(self, sender) -> None:
         g = self.game
         if g.n_players == 1 and g.rules.solo_jester_mode(g) == "attack":
+            self._table_under_box(g.active)
             self._show_overlay(ClassChoiceOverlay(self))
         elif g.n_players == 1 or g.phase == PHASE_SUFFER:
             self._act(g.use_solo_jester)
@@ -1491,10 +1497,11 @@ class PickOverlay(Overlay):
         holder = self.panel
         oy, x0 = y, 20
         if rows and grid_h > room and room >= bh:
-            # cut through a button, never between two, so the hidden ones are hinted at
-            cut = room - (((room + gap) // (bh + gap)) * (bh + gap) - gap)
-            if cut < bh * 0.35:
-                room = max(bh, room - bh * 0.5)
+            # end halfway through a button (never between two, never on a sliver), so the
+            # hidden ones are hinted at; the area only ever shrinks
+            k = int((room - bh * 0.5) // (bh + gap))
+            if k >= 1:
+                room = k * (bh + gap) + bh * 0.5
             holder = ui.ScrollView(frame=(20, y, pw - 40, room))
             holder.content_size = (pw - 40, grid_h)
             self.panel.add_subview(holder)
@@ -2461,9 +2468,18 @@ class LogOverlay(Overlay):
         g = self.screen.game
         lines = g.log[-14:]
         text = "\n".join(lines) if lines else "Nothing yet."
+        body = self.text(text, 12, align=ui.ALIGN_LEFT)
+        # the lines scroll when they would push Back off the screen; the newest show first
+        room = self.height - T.TOP_INSET - T.BOTTOM_INSET - 30 - 44 - 3 * 12 - 28
+        tw = self.text_width()
+        sv = ui.ScrollView(frame=(0, 0, tw, max(60.0, min(body.height, room))))
+        body.frame = (0, 0, tw, body.height)
+        sv.add_subview(body)
+        sv.content_size = (tw, body.height)
+        sv.content_offset = (0, max(0.0, body.height - sv.height))
         return [
             make_label("Game log", (0, 0, 10, 30), 18, True, T.TEXT, ui.ALIGN_CENTER),
-            self.text(text, 12, align=ui.ALIGN_LEFT),
+            sv,
             make_button("Back", lambda s: self.screen._back_to_game(), (0, 0, 10, 44)),
         ]
 
