@@ -1044,9 +1044,6 @@ def test_during_team_damage_the_attack_card_and_the_header_show_what_is_owed(app
     assert atk[:2] == ["SUFFER", "7"] and "covered" in atk and not any(t.startswith("shield") for t in atk)
 
 
-@pytest.mark.xfail(strict=True, reason="app bug: a paladin play whose card left play (moved into mission 6's "
-                   "zone, then rescued) has no row on the attack card, but its value still counts in the "
-                   "SHIELD total (the rows show 4, the total -9): Game.shield still counts the emptied Play")
 def test_the_attack_cards_shield_total_matches_the_rows_it_shows(app):
     gs, g = _team_damage_with_a_shield(app)
     pop = _open_attack(app, gs)
@@ -1093,10 +1090,6 @@ def test_a_flute_pair_stays_selected_without_a_hand_card(app):
     assert gs.hand.selected == ["3C", "3H"] and gs.right_btn.enabled
 
 
-@pytest.mark.xfail(strict=True, reason="app bug: in the solo play step, a stored flute card left selected on its "
-                   "own (tap 3♦, the flute's 3♣, then 3♦ again) stays selected with Play greyed; the new "
-                   "clearing in _update_controls only runs when no legal play contains the selection, and "
-                   "3♦ + 3♣ still does")
 def test_a_lone_flute_card_left_without_its_hand_card_is_dropped_from_the_selection(app):
     gs, g = _flute_mission(app)
     set_hand(g, ["5S", "3D", "7C", "9D", "2H"])
@@ -1160,9 +1153,6 @@ def test_the_piles_viewer_counts_a_single_card_as_one_card(app):
     assert any(t.startswith("1 card left in the reserve deck") for t in _texts(gs.overlay)), _texts(gs.overlay)
 
 
-@pytest.mark.xfail(strict=True, reason="app bug: the buttons that name a player with a card count say 'Ana (1 cards)' "
-                   "(ChooseNextOverlay; mission 9's 'Rescue ... (pile 2, 1 cards)' too): the singular reached "
-                   "the piles viewer's notes (cards_n) but not these buttons")
 def test_a_one_card_hand_is_counted_as_one_card_on_the_choose_next_buttons(app):
     gs, g, jester = _claimed_jester_game(app)
     gs.hand.set_selection([jester])

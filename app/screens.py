@@ -915,8 +915,9 @@ class GameScreen(Screen):
             chosen = set(sel)
             fits = [p for p in plays if chosen <= p]
             flute_only = set(c for p in plays if not (p & hand_ids) for c in p)
-            if chosen and not (chosen & hand_ids) and not fits:
+            if chosen and not (chosen & hand_ids) and not any(chosen <= p for p in plays if not (p & hand_ids)):
                 # the hand card that held the flute cards in a kinfolk set went: they go too
+                # (unless they make a set on their own), as a flute card cannot begin one
                 self.hand.set_selection([])
                 return
             self.hand.selectable = lambda c: c.id in chosen or (
@@ -2150,7 +2151,7 @@ class PileRescueOverlay(Overlay):
         for k, pile in enumerate(piles):
             if not pile:
                 continue
-            b = make_button("Rescue %s (pile %d, %d cards)" % (g.card(pile[0]).label(), k + 1, len(pile)),
+            b = make_button("Rescue %s (pile %d, %s)" % (g.card(pile[0]).label(), k + 1, cards_n(len(pile))),
                             (lambda idx: lambda s: self.screen.pick_pile(idx))(k), (0, 0, 10, 44))
             set_enabled(b, can)
             items.append(b)
@@ -2337,7 +2338,7 @@ class ChooseNextOverlay(Overlay):
         for a in g.legal_actions():
             if a["type"] == "choose_next":
                 i = a["player"]
-                title = "%s (%d cards)" % (g.players[i].name, len(g.players[i].hand))
+                title = "%s (%s)" % (g.players[i].name, cards_n(len(g.players[i].hand)))
                 items.append(make_button(title, (lambda idx: lambda s: self.screen.choose_next(idx))(i), (0, 0, 10, 46)))
         return items
 
@@ -2607,9 +2608,10 @@ def shield_rows(g: Game) -> List[tuple]:
     to the shield, or why it adds nothing (the enemy's immunity), as ``Game.shield`` counts."""
     rows = []
     for p in g.plays:
-        if "S" not in p.suits or not p.card_ids:
-            continue      # (a play whose cards have left play: none of it shows)
-        cards = " + ".join(g.card(c).label() for c in p.card_ids)
+        if "S" not in p.suits:
+            continue
+        # (a play whose cards have left play, into a mission zone, still counts)
+        cards = " + ".join(g.card(c).label() for c in p.card_ids) or "A card gone from play"
         counts = not g.rules.fixed_immunity(g, "S") and (
             p.jester or not g.rules.immune(g, "S", [g.card(c) for c in p.card_ids]))
         rows.append((cards, p.value, counts))
