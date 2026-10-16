@@ -1095,13 +1095,14 @@ class TableStrip(ui.View):
     def __init__(self, label: str = "", **kw) -> None:
         super().__init__(**kw)
         self.label = label
+        self.label_h = self.LABEL_H      # (a little less on a very short screen)
         self.cards: List[Card] = []
         self.on_more: Optional[Callable[[], None]] = None
         self.background_color = None
 
     def top(self) -> float:
         """Where the cards start, under the name."""
-        return self.LABEL_H if self.label else 0.0
+        return self.label_h if self.label else 0.0
 
     def card_size(self) -> tuple:
         ch = max(16.0, self.height - self.top() - 4)
@@ -1153,7 +1154,7 @@ class TableStrip(ui.View):
         cw, ch = self.card_size()
         y = self.top() + 2
         if self.label:
-            ui.draw_string(self.label, (0, 0, self.width, self.LABEL_H), (T.FONT, 11), T.MUTED)
+            ui.draw_string(self.label, (0, 0, self.width, self.label_h), (T.FONT, min(11.0, self.label_h - 2)), T.MUTED)
         if not self.cards:
             slot = ui.Path.rounded_rect(1, y + 1, cw - 2, ch - 2, max(4.0, cw * 0.12))
             slot.line_width = 1.5

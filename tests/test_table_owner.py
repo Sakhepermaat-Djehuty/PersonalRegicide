@@ -212,7 +212,7 @@ def _new_campaign(app, names, seed=4242):
     return app.campaign
 
 
-def _mission_attempt(app, number, names=("Solo",), relics=(), corrupted=()):
+def _mission_attempt(app, number, names=("Solo",), relics=(), corrupted=(), restored=()):
     """A Legacy mission attempt with the party it would have (Gøran from 5, Myla from 6) and
     these party cards corrupted; the start's decisions are taken."""
     _new_campaign(app, names)
@@ -232,6 +232,8 @@ def _mission_attempt(app, number, names=("Solo",), relics=(), corrupted=()):
     for cid in corrupted:
         P.add_flag(camp.party, cid, "corrupted")
         camp.corrupted.append(cid)
+    for cid in restored:
+        P.add_flag(camp.party, cid, "restored")
     app.save_campaign()
     app.start_attempt()
     gs, g = app.current, app.game
@@ -463,6 +465,43 @@ def test_the_mission_zone_overflows_behind_a_back_that_lists_the_whole_zone(app)
     assert gs.overlay is None and gs.hand.selected == sel and gs.enemy.projection is not None
 
 
+def _own_strings(strip):
+    """The strings a row draws itself (its name, a card back's total), not its face cards'."""
+    from app.widgets import CardView
+    calls = []
+    real_draw, real_card = ui.draw_string, CardView.draw
+    ui.draw_string = lambda text, *a, **k: calls.append(str(text))
+    CardView.draw = lambda self: None
+    try:
+        ui.render(strip)
+    finally:
+        ui.draw_string, CardView.draw = real_draw, real_card
+    return calls
+
+
+def test_the_rows_draw_their_names_and_a_backs_total_and_no_words_about_their_cards(app):
+    from app.screens import MISSION_ZONE, PLAY_ZONE
+    gs, g = _mission_attempt(app, 3)
+    set_mission_enemy(g, g.enemy.card_id, hp=200)
+    gs.refresh(after_action=False)
+    zone, strip = gs.zone, gs.strip
+    assert zone.label in ("", MISSION_ZONE) and strip.label in ("", PLAY_ZONE)
+    names = dict((s, [s.label] if s.label else []) for s in (zone, strip))
+    assert _own_strings(zone) == names[zone] and _own_strings(strip) == names[strip]      # empty rows
+    fill = list(g.tavern)[:zone.capacity() + 1]
+    for c in fill + ["4C"]:
+        _pull(g, c)
+    g.mission_zone.extend(fill[:2])
+    g.plays.append(Play(player=0, card_ids=["4C"], suits=("C",), value=4, jester=False))
+    gs.refresh(after_action=False)
+    assert len(zone.cards) == 2 and len(strip.cards) == 1
+    assert _own_strings(zone) == names[zone] and _own_strings(strip) == names[strip]      # a few cards
+    g.mission_zone.extend(fill[2:])
+    gs.refresh(after_action=False)
+    assert zone.overflows()
+    assert _own_strings(zone) == names[zone] + ["%d" % len(g.mission_zone)]              # a full row
+
+
 # ---------------------------------------------------------------------------- 2. the layout
 def _rect(v):
     return (v.x, v.y, v.x + v.width, v.y + v.height)
@@ -677,6 +716,28 @@ def test_a_paladin_played_before_the_enemy_turns_immune_is_immune_from_then_on(a
     assert shield_rows(g) == [("5", 5, False, "immune"), ("6", 6, True, "corrupted")]
     rows, total, texts = _attack_shield(app, gs)
     assert rows == [("5 (immune)", "0"), ("6 (corrupted)", "6")] and total == 6
+
+
+def test_a_restored_paladin_ignores_the_zones_immunity_and_says_restored(app):
+    """Mission 3 with a paladin in the zone: the enemy is immune to paladins. A plain one
+    would add nothing; a restored one shields its value, and its row says why."""
+    from app.screens import shield_rows
+    gs, g = _mission_attempt(app, 3, restored=("6S",))
+    set_mission_enemy(g, g.enemy.card_id, hp=100)
+    assert g.card("6S").has("restored") and not g.card("6S").has("corrupted")
+    printed = g.enemy.attack
+    _pull(g, "9S")
+    g.mission_zone.append("9S")
+    set_hand(g, ["6S", "5S", "9D", "8C"])
+    gs.refresh(after_action=False)
+    assert "S" in g.rules.immune_suits(g) and "S" not in g.enemy.suits
+    assert g.rules.immune(g, "S", [g.card("5S")]) and not g.rules.immune(g, "S", [g.card("6S")])
+    _tap_card(app, gs, "6S")
+    _tap_button(app, "Play")
+    assert g.shield == 6 and g.enemy_attack == printed - 6
+    assert shield_rows(g) == [("6", 6, True, "restored")]
+    rows, total, _ = _attack_shield(app, gs)
+    assert rows == [("6 (restored)", "6")] and total == 6
 
 
 def test_a_claimed_jester_attacks_paladin_says_jester_and_counts(app):
@@ -894,7 +955,9 @@ print(json.dumps({
 
 PURGE_REPLACES = r'''
 import json, os, runpy, sys
-root, other = sys.argv[1], sys.argv[2]
+root, other, root_on_path = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
+if root_on_path:
+    sys.path.insert(0, root)               # this copy ran earlier in the same Python, then the other
 sys.path.insert(0, other)
 import app.screens, regicide               # the other copy, run first in the same Python
 before = [os.path.abspath(sys.modules[n].__file__) for n in ("app", "app.screens", "regicide")]
@@ -918,12 +981,13 @@ def test_main_drops_modules_another_copy_left_loaded_and_keeps_its_own(tmp_path)
     assert out["ui"].startswith(os.path.join(ROOT, "tools") + os.sep)
 
 
-def test_main_replaces_another_copys_app_with_its_own(tmp_path):
+@pytest.mark.parametrize("root_on_path", [False, True])
+def test_main_replaces_another_copys_app_with_its_own(tmp_path, root_on_path):
     other = tmp_path / "PersonalRegicide"
     for rel, text in (("app/__init__.py", ""), ("app/screens.py", "COPY = 'other'\n"),
                       ("regicide/__init__.py", "COPY = 'other'\n")):
         _write(str(other / rel), text)
-    out = _run_python(PURGE_REPLACES, tmp_path, ROOT, str(other))
+    out = _run_python(PURGE_REPLACES, tmp_path, ROOT, str(other), "1" if root_on_path else "0")
     assert all(p.startswith(str(other) + os.sep) for p in out["before"])
     assert out["left"] == []
     assert out["first_app"] == ROOT

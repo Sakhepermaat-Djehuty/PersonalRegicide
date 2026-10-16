@@ -224,10 +224,8 @@ def test_suffering_shows_the_tally_and_greys_the_rest_once_one_at_a_time_is_cove
     assert ui.render(app).size[0] > 0
 
 
-@pytest.mark.parametrize("size", [(390, 844), (375, 667), pytest.param((320, 568), marks=pytest.mark.xfail(
-    strict=True, reason="app bug: on a 320x568 screen the row names added in 5fb3a30 (Mission Zone, Play Zone) "
-                        "shrink the hand's cards to 34pt wide, under the 40pt this layout held before"))])
-def test_the_played_cards_sit_under_the_hand_and_everything_fits(app, size):
+def _flute_table(app, size):
+    """Mission 5 with the Kinfolk Flute, laid out on a phone of this size."""
     w, h = size
     ui.set_screen_size(w, h)
     gs, g = _flute_mission(app)
@@ -235,6 +233,13 @@ def test_the_played_cards_sit_under_the_hand_and_everything_fits(app, size):
     gs.frame = (0, 0, w, h)
     gs.layout()
     gs.refresh(after_action=False)
+    return gs, g
+
+
+@pytest.mark.parametrize("size", [(390, 844), (375, 667), (320, 568)])
+def test_the_played_cards_sit_under_the_hand_and_everything_fits(app, size):
+    w, h = size
+    gs, g = _flute_table(app, size)
     hand, strip, bar = gs.hand, gs.strip, gs.left_btn
     assert hand.y + hand.height <= strip.y <= strip.y + strip.height <= bar.y
     piles = [gs.pile_views[k] for k in ("castle", "reserve", "discard", "banished")]
@@ -253,8 +258,13 @@ def test_the_played_cards_sit_under_the_hand_and_everything_fits(app, size):
     assert hand.y + hand.height <= strip.y <= strip.y + strip.height <= bar.y
     assert gs.zone.y + gs.zone.height <= hand.y
     assert ui.render(app).size[0] > 0
-    # the hand's cards stay readable (last: the smallest screen falls short of it)
-    assert min(v.width for v in hand.views.values()) >= 40
+
+
+@pytest.mark.parametrize("size", [(390, 844), (375, 667), (320, 568)])
+def test_the_hands_cards_stay_40pt_wide_beside_both_named_rows(app, size):
+    gs, g = _flute_table(app, size)
+    assert not gs.zone.hidden and gs.zone.label and gs.strip.label and gs.hand.views
+    assert min(v.width for v in gs.hand.views.values()) >= 40
 
 
 def _drawn_text(view):
@@ -342,7 +352,8 @@ def test_a_short_screen_keeps_the_zone_above_the_hand_and_a_full_row_behind_a_ca
         # mission 7's pilgrim, face up, oldest first; a row that is not full opens nothing
         assert [c.id for c in zone.cards] == g.mission_zone and len(g.mission_zone) == 1
         assert not zone.overflows() and [c.id for c in zone.shown()] == g.mission_zone
-        ui.tap(app, *ui.root_point(app, zone))
+        zx, zy = ui.root_point(app, zone)
+        ui.tap(app, zx - zone.width / 2.0 + zone.card_size()[0] / 2.0, zy)     # where a full row's back lies
         assert gs.overlay is None and not [v for v in gs.subviews if isinstance(v, CardPopup)]
         # a full row: a card back with the total first, then the newest cards
         extra = [c for c in g.tavern if c not in g.mission_zone][:zone.capacity()]
@@ -354,7 +365,8 @@ def test_a_short_screen_keeps_the_zone_above_the_hand_and_a_full_row_behind_a_ca
         assert [c.id for c in zone.cards] == ids and len(ids) == zone.capacity() + 1 and zone.overflows()
         assert [c.id for c in zone.shown()] == ids[-(zone.capacity() - 1):]
         cw = zone.card_size()[0]
-        assert [round(v.x, 3) for v in zone.subviews][0] == round(cw + zone.GAP, 3)
+        x0 = zone.subviews[0].x                       # the first face card: slot 1, the back's slot left free
+        assert round(x0, 3) == round(zone.slot_x(1), 3) and x0 >= cw + zone.GAP - 0.001
         assert "%d" % len(ids) in _drawn_text(zone)
         # one more card pushes the oldest shown out of sight
         newest = [c for c in g.tavern if c not in g.mission_zone][0]

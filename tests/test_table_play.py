@@ -17,7 +17,7 @@ from app import theme as T  # noqa: E402
 from regicide.campaign import missions as M  # noqa: E402
 from regicide.campaign import party as P  # noqa: E402
 from regicide.engine import PHASE_PLAY, PHASE_SUFFER  # noqa: E402
-from helpers import _pull, set_hand, set_mission_enemy  # noqa: E402
+from helpers import set_hand, set_mission_enemy  # noqa: E402
 
 
 @pytest.fixture

@@ -1059,7 +1059,9 @@ def test_during_team_damage_the_attack_card_and_the_header_show_what_is_owed(app
     _popup(gs).close()
     _tap_card(app, gs, "9C")                              # paying it: the header counts it down
     atk = _attack_side(gs)
-    assert atk[:2] == ["SUFFER", "7"] and "covered" in atk and not any(t.startswith("shield") for t in atk)
+    # 9 pays the 7: nothing left to pay, "of 7" under it, covered
+    assert atk[:2] == ["SUFFER", "0"] and "of 7" in atk and "covered" in atk
+    assert not any(t.startswith("shield") for t in atk)
 
 
 def _shield_total_matches_rows(pop):

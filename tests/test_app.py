@@ -818,7 +818,7 @@ def test_emblem_place_handover_flow_for_two_players(app):
     assert g.decision["kind"] == "emblem_place" and g.deciding == 1 and gs.shown_player == 1
     assert g.plays[-1].player == 0 and g.plays[-1].card_ids == ["5M"]
     _tap_card(app, gs, "7C")
-    assert gs.hand.selected == ["7C"] and gs.right_btn.enabled and g.decision["kind"] == "emblem_place"
+    assert gs.hand.selected == ["7C"] and gs.right_btn.enabled and gs.right_btn.title == "Place" and gs.shown_player == 1
     _tap_card(app, gs, "3D")                       # only one card may be placed
     assert gs.hand.selected == ["3D"] and gs.right_btn.enabled
     _tap_card(app, gs, "3D")

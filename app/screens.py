@@ -687,7 +687,7 @@ class GameScreen(Screen):
         # the header and the piles grow with the screen (their cards keep a playing card's
         # proportions); a very short screen trims both for the hand's sake
         tiny = h < 600
-        eh = max(96.0, h * 0.18) if tiny else max(112.0, min(190.0, h * 0.21))
+        eh = max(88.0, h * 0.16) if tiny else max(112.0, min(190.0, h * 0.21))
         self.enemy.frame = (m, y, w - 2 * m, eh)
         y += eh + 6
         # the piles in a row under the enemy, spread across the width
@@ -701,7 +701,10 @@ class GameScreen(Screen):
         bar_y = h - T.BOTTOM_INSET - bar_h
         full = w - 2 * m
         # the rows of cards: a name over cards as tall as a small card, smaller on a short screen
-        strip_h = (56.0 if h >= 760 else 44.0 if h >= 600 else 38.0) + TableStrip.LABEL_H
+        label_h = 11.0 if tiny else TableStrip.LABEL_H
+        for row in (self.zone, self.strip):
+            row.label_h = label_h
+        strip_h = (56.0 if h >= 760 else 44.0 if h >= 600 else 34.0) + label_h
         if not self.zone.hidden:
             # the mission zone above the hand
             self.zone.frame = (m, y, full, strip_h)
