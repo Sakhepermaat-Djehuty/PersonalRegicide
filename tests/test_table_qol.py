@@ -196,3 +196,22 @@ def test_a_random_order_is_a_real_shuffle(app):
     ids = gs.overlay.card_ids(g, g.decision)
     _tap_button(app, "Random order")
     assert sorted(g.discard[:2]) == sorted(ids) and g.decision is None
+
+
+def test_an_error_opening_the_attack_card_is_shown_on_the_phone(app, monkeypatch):
+    import console
+    from app import screens, store
+    from app.screens import CardPopup
+    app.new_campaign(1, ["Solo"])
+    app.start_attempt()
+    gs = app.current
+    gs.refresh(after_action=False)
+    monkeypatch.setattr(store, "_is_pythonista", lambda: True)
+
+    def broken(*a, **k):
+        raise ValueError("no attack")
+    monkeypatch.setattr(screens, "attack_face", broken)
+    del console.history[:]
+    gs._show_attack()
+    assert ("hud", "Opening the attack failed: ValueError no attack") in console.history
+    assert not ui.find(app, lambda v: isinstance(v, CardPopup))
