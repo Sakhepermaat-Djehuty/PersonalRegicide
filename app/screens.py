@@ -112,6 +112,10 @@ def status_text(g: Game, width: float, size: int = 13) -> str:
     return text if text_size(text, 0, size)[0] <= width else parts[1]
 
 
+# The table's two rows of cards
+MISSION_ZONE = "Mission Zone"
+PLAY_ZONE = "Play Zone"
+
 # The piles on the table, left to right, and their names (the base game's reserve deck is
 # the tavern deck)
 PILE_ORDER = ("castle", "reserve", "discard", "banished")
@@ -593,10 +597,11 @@ class GameScreen(Screen):
         self.enemy.on_attack = self._show_attack
         self.flute_slot: Optional[ui.Button] = None   # the action bar button standing in for the Flute
         # the cards played against the enemy (under the hand) and the mission zone (above
-        # it): rows of cards, no titles; a full row starts with a card back holding the total
-        self.strip = TableStrip()
+        # it): rows of cards under their names; a full row starts with a card back holding
+        # the total
+        self.strip = TableStrip(PLAY_ZONE)
         self.strip.on_more = lambda: self._show_strip("played")
-        self.zone = TableStrip()
+        self.zone = TableStrip(MISSION_ZONE)
         self.zone.on_more = lambda: self._show_strip("zone")
         self.zone.hidden = True
         self.hand = HandGrid()
@@ -641,8 +646,8 @@ class GameScreen(Screen):
         bar_h = 48
         bar_y = h - T.BOTTOM_INSET - bar_h
         full = w - 2 * m
-        # the rows of cards: as tall as a small card, smaller on a short screen
-        strip_h = 56.0 if h >= 760 else 44.0 if h >= 600 else 38.0
+        # the rows of cards: a name over cards as tall as a small card, smaller on a short screen
+        strip_h = (56.0 if h >= 760 else 44.0 if h >= 600 else 38.0) + TableStrip.LABEL_H
         if not self.zone.hidden:
             # the mission zone above the hand
             self.zone.frame = (m, y, full, strip_h)
@@ -1230,8 +1235,7 @@ class GameScreen(Screen):
             return
         strip = self.zone if which == "zone" else self.strip
         self._remember_place()
-        self._show_overlay(CardListOverlay(self, "Mission zone" if which == "zone" else "Played",
-                                           [c.id for c in strip.cards]))
+        self._show_overlay(CardListOverlay(self, strip.label, [c.id for c in strip.cards]))
 
     def _show_attack(self) -> None:
         """The attack's card (a tap on the attack number): the enemy's attack beside the shield."""

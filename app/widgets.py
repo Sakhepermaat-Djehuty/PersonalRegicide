@@ -1081,21 +1081,28 @@ class HandGrid(ui.View):
 
 class TableStrip(ui.View):
     """A row of small face-up cards on the table (the mission zone, the cards played against
-    the enemy), the oldest on the left, with no title. When more cards lie there than the row
-    holds, a card back with their total comes first and only the newest follow (each new
-    card pushes the oldest out of sight); a tap on that back calls ``on_more``. An empty row
-    shows an outlined slot."""
+    the enemy), the oldest on the left, under its name (``label``: "Mission Zone", "Play
+    Zone"; nothing about what is in it). When more cards lie there than the row holds, a
+    card back with their total comes first and only the newest follow (each new card pushes
+    the oldest out of sight); a tap on that back calls ``on_more``. An empty row shows an
+    outlined slot."""
 
     GAP = 6.0
+    LABEL_H = 13.0
 
-    def __init__(self, **kw) -> None:
+    def __init__(self, label: str = "", **kw) -> None:
         super().__init__(**kw)
+        self.label = label
         self.cards: List[Card] = []
         self.on_more: Optional[Callable[[], None]] = None
         self.background_color = None
 
+    def top(self) -> float:
+        """Where the cards start, under the name."""
+        return self.LABEL_H if self.label else 0.0
+
     def card_size(self) -> tuple:
-        ch = max(16.0, self.height - 4)
+        ch = max(16.0, self.height - self.top() - 4)
         return ch / 1.42, ch
 
     def capacity(self) -> int:
@@ -1125,8 +1132,9 @@ class TableStrip(ui.View):
             self.remove_subview(v)
         cw, ch = self.card_size()
         x = cw + self.GAP if self.overflows() else 0.0
+        y = self.top() + 2
         for c in self.shown():
-            v = CardView(c, frame=(x, 2, cw, ch))
+            v = CardView(c, frame=(x, y, cw, ch))
             v.small = True
             v.touch_enabled = False
             self.add_subview(v)
@@ -1134,13 +1142,16 @@ class TableStrip(ui.View):
 
     def draw(self) -> None:
         cw, ch = self.card_size()
+        y = self.top() + 2
+        if self.label:
+            ui.draw_string(self.label, (0, 0, self.width, self.LABEL_H), (T.FONT, 11), T.MUTED)
         if not self.cards:
-            slot = ui.Path.rounded_rect(1, 3, cw - 2, ch - 2, max(4.0, cw * 0.12))
+            slot = ui.Path.rounded_rect(1, y + 1, cw - 2, ch - 2, max(4.0, cw * 0.12))
             slot.line_width = 1.5
             ui.set_color(T.PANEL_2)
             slot.stroke()
         elif self.overflows():
-            draw_back(0, 2, cw, ch, len(self.cards))
+            draw_back(0, y, cw, ch, len(self.cards))
 
     def touch_ended(self, touch) -> None:
         x, _ = touch.location
