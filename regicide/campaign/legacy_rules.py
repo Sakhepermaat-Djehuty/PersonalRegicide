@@ -295,9 +295,17 @@ class LegacyRules(BaseRules):
         # whichever of 2 or 5 makes the set legal (p.25, ``kinfolk_values``): it pairs with
         # a 2 or with a 5, but 2/5 + 2 + 5 has no common strength and 2/5 + 5 + 5 is 15.
         as_value = None   # type: Optional[int]
+        # a 2/5 stored on the Kinfolk Flute keeps the value it was stored as (owner's
+        # ruling): it never takes the other cards' strength
+        held = {}         # type: Dict[str, int]
         if any(c.has("twofive") for c in cards):
+            for c in cards:
+                if c.has("twofive") and self._declared_value(game, c) is None:
+                    v = self._held_value(game, c)
+                    if v is not None:
+                        held[c.id] = v
             values = self.kinfolk_values(game, cards)
-            plain = set(self.strength(c) for c in cards if not c.has("twofive"))
+            plain = set(self.strength(c) for c in cards if not c.has("twofive")) | set(held.values())
             if values:
                 as_value = values[0]
             elif len(plain) == 1 and plain <= set(TWOFIVE_VALUES):
@@ -305,6 +313,8 @@ class LegacyRules(BaseRules):
             # otherwise the 2/5 counts 2 and the set reports the mismatch
 
         def strength(c: Card) -> int:
+            if c.id in held:
+                return held[c.id]
             return as_value if as_value is not None and c.has("twofive") else self.strength(c)
 
         kind, err = classify_combo(cards, strength=strength, max_cards=None,

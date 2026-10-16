@@ -3579,10 +3579,17 @@ class PartyScreen(Screen):
 
 # ============================================================================ descriptions
 def describe_preview(g: Game, pv: dict) -> str:
+    """A forecast in words. A number that depends on a card still face down (or a coming
+    shuffle) is a "?": the forecast never tells what such a card is."""
+    def n(v) -> str:
+        return "?" if v is None else "%d" % v
+
     parts: List[str] = []
     for suit, ev in pv["powers"].items():
         sym = SUIT_SYMBOL.get(suit, suit)
-        if ev.get("immune"):
+        if "immune" in ev and ev["immune"] is None:
+            parts.append("%s immune?" % sym)
+        elif ev.get("immune"):
             parts.append("%s immune" % sym)
         elif suit == "H":
             parts.append("%s heal %d" % (sym, ev.get("healed", 0)))
@@ -3600,7 +3607,8 @@ def describe_preview(g: Game, pv: dict) -> str:
             parts.append("%s sort the discard pile" % sym)
         elif suit == "T":
             parts.append("%s everyone draws" % sym)
-    s = "%d damage" % pv["damage"]
+    s = "%s damage" % n(pv["damage"])
+    suffer = pv.get("suffer")
     if pv["defeats"]:
         tail = ""
         if pv["exact"]:
@@ -3608,8 +3616,15 @@ def describe_preview(g: Game, pv: dict) -> str:
             to_deck = g.enemy is not None and g.rules.defeat_plan(g, True).get("enemy_to") == "tavern_top"
             tail = " exactly!" + (" (goes to the %s)" % ("reserve" if legacy else "tavern") if to_deck else "")
         s += " — defeats it%s" % tail
+    elif pv["defeats"] is None:
+        s += " — it may fall"
+    elif suffer == 0:
+        # the turn ends without damage (a Guardian, a shield that covers the attack)
+        s += " (%s left), nothing to suffer" % n(pv["enemy_hp_after"])
     else:
-        s += " (%d left), then suffer %d" % (pv["enemy_hp_after"], pv["enemy_attack_after"])
+        s += " (%s left), then suffer %s" % (n(pv["enemy_hp_after"]),
+                                            n(suffer if suffer is not None or pv.get("uncertain")
+                                              else pv["enemy_attack_after"]))
     if parts:
         s = ", ".join(parts) + ". " + s
     # Forecasts assume nobody adds anything: not the other players (Kinfolk Flute, Azure
