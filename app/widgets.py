@@ -276,7 +276,7 @@ def draw_count_circle(cx: float, cy: float, d: float, count: int, fill: str, ink
     ui.set_color(fill)
     ui.Path.oval(cx - d / 2.0, cy - d / 2.0, d, d).fill()
     text = "%d" % count
-    size = d * (0.52 if len(text) < 2 else 0.44 if len(text) < 3 else 0.34)
+    size = d * (0.56 if len(text) < 2 else 0.5 if len(text) < 3 else 0.36)
     ui.draw_string(text, (cx - d / 2.0, cy - size * 0.66, d, size * 1.32), (T.FONT_BOLD, size), ink, ui.ALIGN_CENTER)
 
 
@@ -764,35 +764,46 @@ class TableHeader(ui.View):
             if note:
                 ui.draw_string(note, (x, y + 1, side, 22), (T.FONT_BOLD, 15), note_color, ui.ALIGN_CENTER)
 
+        # A "?" marks what depends on a card still face down (the forecast never tells it), or
+        # follows from a value the player declares later (the forecast assumes one).
+        q = "?" if pv.get("decision_kind") in ("declare_value", "declare_class") else ""
         # the attack: what the enemy will deal (after shields), and with the selection what
-        # it would deal; while damage is paid, what is left to pay
+        # would be suffered; while damage is paid, what is left to pay (no shield line: it
+        # is counted already, and team damage ignores it)
         atk = g.enemy_attack
         note, note_col = "", T.ACCENT
         label, extra = "ATTACK", ("shield %d" % g.shield) if g.shield else ""
         if self.paying is not None:
             paid, need = self.paying
-            label, atk = "SUFFER", need
+            label, atk, extra = "SUFFER", need, ""
             if paid >= need:
                 note, note_col = "covered", T.OK
             elif paid:
                 note = "%d to go" % (need - paid)
-        elif pv and not pv.get("defeats"):
-            # what is left to suffer: nothing when the turn ends without it (a Guardian)
-            after = 0 if pv.get("phase_after") in ("play", "choose_next") else pv.get("enemy_attack_after", atk)
-            if after != atk:
-                note = "→ %d" % after
+        elif pv and pv.get("defeats") is False:
+            suffer = pv.get("suffer")
+            if suffer is None and pv.get("uncertain"):
+                note = "→ ?"
+            else:
+                after_atk = suffer if suffer is not None else pv.get("enemy_attack_after")
+                if after_atk is None:
+                    note = "→ ?"
+                elif after_atk != atk:
+                    note = "→ %d%s" % (after_atk, q)
         block(0, label, "%d" % atk, T.TEXT, note, note_col, extra)
         # the health: what is left, and with the selection what would be
         hp = max(0, e.hp)
-        after = int(pv.get("enemy_hp_after", hp)) if pv else hp
+        after = pv.get("enemy_hp_after", hp) if pv else hp
         note, note_col = "", T.ACCENT
         if pv:
             if pv.get("exact"):
-                note, note_col = "exact!", T.OK
+                note, note_col = "exact!" + q, T.OK
             elif pv.get("defeats"):
-                note, note_col = "defeated", T.OK
+                note, note_col = "defeated" + q, T.OK
+            elif after is None or pv.get("defeats") is None:
+                note, after = "→ ?", hp
             elif after != hp:
-                note = "→ %d" % after
+                note = "→ %d%s" % (after, q)
         block(cx + cw + 6, "HEALTH", "%d" % hp, T.DANGER, note, note_col, "of %d" % e.max_hp)
         # a thin health bar under the number
         bx, by, bw = cx + cw + 6 + side * 0.18, h - 10, side * 0.64
@@ -886,8 +897,11 @@ class PileView(ui.View):
         v.touch_enabled = False
         self.add_subview(v)
         self.top_view = v
-        d = max(18.0, w * 0.5)
-        badge = CountBadge(self.count, frame=(x + (w - d) / 2.0, y + h - d * 0.8, d, d))
+        # over the top card's bottom-right corner, big enough to read, never into the name
+        d = max(24.0, min(w * 0.55, 32.0))
+        bx = min(x + w - d * 0.7, self.width - d)
+        by = min(y + h - d * 0.8, self.height - self.LABEL_H - d)
+        badge = CountBadge(self.count, frame=(bx, by, d, d))
         self.add_subview(badge)
         self.badge_view = badge
 
@@ -1012,7 +1026,9 @@ class HandGrid(ui.View):
         # rows of four, or of five or six when that gives bigger cards (a short screen)
         cw, ch, cols = size(self.columns) if n > 3 else size(max(1, n))
         if n > self.columns:
-            cw, ch, cols = max([size(k) for k in range(self.columns, self.columns + 3)], key=lambda t: (round(t[0], 1), -t[2]))
+            # (a Chanter's draw can make a hand of 13 or more: up to half of it in a row)
+            widest = max(self.columns + 3, int(math.ceil(n / 2.0)) + 1)
+            cw, ch, cols = max([size(k) for k in range(self.columns, widest)], key=lambda t: (round(t[0], 1), -t[2]))
         total_w = cols * cw + gap * (cols - 1)
         x0 = (self.width - total_w) / 2
         # at the bottom of the grid's room, near the thumb and the action bar (8pt above
@@ -1082,6 +1098,7 @@ class CardStrip(ui.View):
         self.title = ""
         self.dimmed: List[str] = []   # ids drawn greyed out (e.g. revealed cards that may not be picked)
         self.empty_text = "nothing played yet"
+        self.on_tap: Optional[Callable[[], None]] = None
 
     def title_height(self) -> float:
         """The room the title takes: one line (14pt) or two (28pt)."""
@@ -1122,9 +1139,24 @@ class CardStrip(ui.View):
             v.frame = (4 + i * step, top, cw, ch)
             self.add_subview(v)
 
+    def shown_title(self) -> str:
+        """The title as drawn: cut to two lines with "…" when it is longer."""
+        w = max(1.0, self.width - 8)
+        text = self.title
+        if text_size(text, w, self.TITLE_FONT)[1] <= self.LINE * 2.4:
+            return text
+        words = text.split(" ")
+        while len(words) > 1 and text_size(" ".join(words) + "…", w, self.TITLE_FONT)[1] > self.LINE * 2.4:
+            words.pop()
+        return " ".join(words).rstrip(" ·,:") + "…"
+
+    def touch_ended(self, touch) -> None:
+        if self.on_tap is not None:
+            self.on_tap()
+
     def draw(self) -> None:
         th = self.title_height()
         if self.title:
-            ui.draw_string(self.title, (4, 0, self.width - 8, th), (T.FONT, self.TITLE_FONT), T.MUTED)
+            ui.draw_string(self.shown_title(), (4, 0, self.width - 8, th), (T.FONT, self.TITLE_FONT), T.MUTED)
         if not self.cards and self.empty_text:
             ui.draw_string(self.empty_text, (4, max(20.0, th + 4), self.width - 8, 20), (T.FONT, 12), T.MUTED)

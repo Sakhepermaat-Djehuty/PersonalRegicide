@@ -44,7 +44,7 @@ def _fill_poly(pts: Sequence[Point]) -> None:
 def _count(cx: float, cy: float, d: float, count: int, ink: str, scale: float = 1.0) -> None:
     """The count, centred in a circle of diameter ``d``."""
     txt = "%d" % count
-    size = d * scale * (0.52 if len(txt) == 1 else 0.44 if len(txt) == 2 else 0.33)
+    size = d * scale * (0.56 if len(txt) == 1 else 0.5 if len(txt) == 2 else 0.36)
     font = (T.FONT_BOLD, size)
     measure = getattr(ui, "measure_string", None)
     lh = (measure(txt, 0, font)[1] if measure else 0) or size * 1.2

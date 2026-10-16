@@ -136,7 +136,7 @@ def test_the_attack_and_the_enemy_open_their_cards_on_a_tap(app):
     assert pop
     texts = _texts(pop[0])
     assert "ENEMY" in texts and "SHIELD" in texts and "You suffer 10" in texts
-    assert "4♠ immune" in texts                        # a spade against a spade enemy adds nothing
+    assert "4♠ (immune)" in texts and "0" in texts     # a spade against a spade enemy adds nothing
     assert "With 9♦" in texts and any("9 damage" in t for t in texts)
     pop[0].close()
     # the enemy's card itself: health, immunity, the castle and the selection's forecast
@@ -287,26 +287,29 @@ def test_a_guardian_play_shows_nothing_left_to_suffer(app):
     assert "then suffer %d" % g.enemy_attack in gs.forecast
 
 
-def test_a_short_screen_shares_the_row_only_when_the_zone_title_fits(app):
-    from app.screens import GameScreen
+def test_a_short_screen_shares_the_zone_row_and_cuts_a_long_title(app):
+    from app.screens import CardPopup
     from app.widgets import CardStrip, text_size
-    ui.set_screen_size(375, 667)
-    gs, g = _flute_mission(app, 7)
-    app.frame = gs.frame = (0, 0, 375, 667)
-    gs.layout()
-    gs.refresh(after_action=False)
-    zone, strip = gs.zone, gs.strip
-    lines = text_size(zone.title, zone.width - 8, CardStrip.TITLE_FONT)[1]
-    assert lines <= CardStrip.LINE * 2.4                # whatever the layout, the title fits
-    if gs._strips_shared():
-        assert zone.y == strip.y
-    else:
-        assert zone.y + zone.height <= gs.hand.y and zone.width > strip.width / 2
-    # a long title at half width stacks the zone above the message, a short one shares
-    long_title = "Mission zone · 1 pilgrim, total 3 · 23 in the pilgrim deck"
-    zone.set_cards([], long_title)
-    gs.layout()
-    assert not gs._strips_shared() and zone.y + zone.height <= gs.hand.y
-    zone.set_cards([], "Mission zone (empty)")
-    gs.layout()
-    assert gs._strips_shared() and zone.y == strip.y
+    for w, h in ((375, 667), (320, 568)):
+        ui.set_screen_size(w, h)
+        gs, g = _flute_mission(app, 7)
+        app.frame = gs.frame = (0, 0, w, h)
+        gs.layout()
+        gs.refresh(after_action=False)
+        zone, strip, hand = gs.zone, gs.strip, gs.hand
+        assert gs._strips_shared() and zone.y == strip.y and zone.x + zone.width <= strip.x
+        # mission 7's pilgrim title is too long for half the width: two lines, cut with "…"
+        zone.set_cards([], "Mission zone · 1 pilgrim, total 3 · 23 in the pilgrim deck")
+        gs.layout()
+        shown = zone.shown_title()
+        assert text_size(shown, zone.width - 8, CardStrip.TITLE_FONT)[1] <= CardStrip.LINE * 2.4
+        assert shown.endswith("…") and shown != zone.title
+        # the hand never runs under the strip or the buttons, its cards stay readable
+        assert hand.y + hand.height <= strip.y
+        for v in hand.views.values():
+            assert v.y + v.height <= hand.height + 0.5 and v.width >= 32
+        # a tap on the zone shows its whole title
+        ui.tap(app, *ui.root_point(app, zone))
+        pop = [v for v in gs.subviews if isinstance(v, CardPopup)]
+        assert pop and any(zone.title in t for t in _texts(pop[0]))
+        pop[0].close()

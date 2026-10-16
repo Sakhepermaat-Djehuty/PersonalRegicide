@@ -54,6 +54,12 @@ def _said(gs):
     return gs.message.text + " " + gs.forecast
 
 
+def _logged(g):
+    """The engine's game log (Menu > Game log): what an action did lives there, the table
+    carries no running text."""
+    return "\n".join(g.log)
+
+
 def _tap_card(app, gs, card_id):
     v = gs.hand.views[card_id]
     ui.tap(app, *ui.root_point(app, v))
@@ -410,7 +416,8 @@ def test_kinfolk_flute_decision_overlay_add(app, tmp_path):
     assert isinstance(gs.overlay, HandoverOverlay) and ui.button(app, "Show my hand")
     assert store.load_attempt(app.campaign.slot).to_dict() == g.to_dict()
     _tap_button(app, "Show my hand")
-    assert "Ben adds 3♦ (attack 6)" in gs.message_text and gs.right_btn.title.startswith("Discard")
+    assert "Ben adds 3♦ to the attack (Kinfolk Flute): strength 6." in _logged(g)
+    assert gs.right_btn.title.startswith("Discard")
     assert gs.right_btn.title == "Discard 0/10"
 
 
@@ -644,7 +651,7 @@ def test_mission3_zone_strip_and_exact_kill_pick_overlay(app):
     _tap_button(app, "Discard")
     assert g.mission_zone == ["4H"] and "immune: Cleric" in gs.zone.title
     texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
-    assert "mission zone" in gs.message_text           # (the game log's line; the table says nothing)
+    assert "End of turn: 4♥ goes into the mission zone." in _logged(g)   # (the game log; the table says nothing)
     # exact kill: the pick overlay offers each zone card
     g.enemy.hp = 10
     set_hand(g, ["5C", "2D", "AS"])
@@ -701,7 +708,8 @@ def test_mage_peek_overlay_then_emblem_keep_overlay(app):
     assert store.load_attempt(app.campaign.slot).phase == PHASE_DECIDE  # autosaved mid-peek
     _tap_button(app, "Add 6♣ to the attack")
     assert g.plays[0].card_ids == ["5M", "6C"] and g.plays[0].value == 11
-    assert "adds 6♣ to the attack (Mage, strength 11)" in gs.message_text and "Azure Emblem" in gs.message_text
+    assert "Solo adds 6♣ to the attack (Mage): strength 11." in _logged(g)
+    assert "Azure Emblem: Solo may put one of the other revealed cards back on top of the reserve" in _logged(g)
     # Azure Emblem, solo: one of the other revealed cards may go back on top of the reserve
     assert g.phase == PHASE_DECIDE and g.decision["kind"] == "emblem_keep"
     assert isinstance(gs.overlay, EmblemKeepOverlay)
@@ -716,7 +724,8 @@ def test_mage_peek_overlay_then_emblem_keep_overlay(app):
     assert g.tavern[:2] == ["4H", "AD"] and {"7D", "3S", "2S"} <= set(g.discard)
     assert g.decision is None and g.phase == PHASE_SUFFER and g.enemy.hp == 40 - 22
     assert gs.overlay is None and gs.right_btn.title.startswith("Discard")
-    assert "4♥ goes back on top of the reserve" in gs.message_text and "22 damage" in gs.message_text
+    assert "Azure Emblem: Solo puts 4♥ back on top of the reserve deck." in _logged(g)
+    assert "22 damage to King of H (18/40)." in _logged(g)
     assert store.load_attempt(app.campaign.slot).to_dict() == g.to_dict()
     # undo steps back into the keep decision, then (through the overlay's own menu button,
     # the decision cannot be dismissed) into the peek; Resume brings the overlay back
@@ -746,7 +755,7 @@ def test_mage_peek_overlay_with_nothing_to_add(app):
     assert not ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Add"))
     _tap_button(app, "Nothing to add")
     assert g.decision is None and g.phase == PHASE_SUFFER and g.enemy.hp == 39 and "7D" in g.discard
-    assert "nothing may join the attack" in gs.message_text
+    assert "Mage: nothing may join the attack; 7♦ to the discard pile." in _logged(g)
 
 
 def test_emblem_place_handover_flow_for_two_players(app):
@@ -782,7 +791,7 @@ def test_emblem_place_handover_flow_for_two_players(app):
     _tap_button(app, "Place")
     # Ben was the last to ask, so the mage looks at once: his card is the first revealed
     assert "7C" not in g.players[1].hand and g.tavern[0] == "2D"
-    assert "Ben places a card on top of the reserve" in gs.message_text
+    assert "Ben places a card from hand on top of the reserve deck (Azure Emblem)." in _logged(g)
     # the phone goes back to Ana before her secret look
     assert g.phase == PHASE_DECIDE and g.decision["kind"] == "mage_peek" and g.deciding == 0
     assert isinstance(gs.overlay, HandoverOverlay) and gs.hand.cards == []
@@ -905,8 +914,9 @@ def test_reaver_count_grid_then_pick_overlay(app):
     _tap_button(app, "Confirm the order (2 of 2)")
     assert g.decision is None and g.enemy.hp == 100 - 68 and g.banished == ["MYLA7", "7H", "2D"]
     assert gs.overlay is None and gs.right_btn.title.startswith("Discard")
-    assert "doubled to 34" in gs.message_text and "68 damage" in gs.message_text
-    assert "2♦ on top of the banished pile" in gs.message_text
+    assert "10 + 7 = 17, doubled to 34. 7♥ + 2♦ banished." in _logged(g)
+    assert "68 damage to Sporeling (32/40)." in _logged(g)
+    assert "Solo banished them in the order 7♥, 2♦: 2♦ ends on top of the banished pile." in _logged(g)
     assert gs.right_btn.title == "Discard 0/10"
 
 
@@ -950,10 +960,10 @@ def test_scarlet_whistle_solo_pick_overlay_and_the_beast_choice(app):
     # shown in the order they entered play; keeping it puts the Whistle's 6♦ (added last) on top
     assert isinstance(gs.overlay, OrderOverlay) and g.decision["kind"] == "played_discard_order"
     assert g.decision["options"] == ["B_C", "6D"] and "What order?" in [v.text for v in _labels(gs.overlay)]
-    assert "adds 6♦ from the discard pile (Scarlet Whistle, attack 12)" in gs.message_text
+    assert "Solo adds 6♦ from the discard pile to the attack (Scarlet Whistle): strength 12." in _logged(g)
     _tap_button(app, "Keep the order played")
     assert g.decision is None and g.enemies_defeated == 1 and gs.overlay is None and g.discard[:2] == ["6D", "B_C"]
-    assert "6♦ ends on top of the discard pile" in gs.message_text
+    assert "The played cards go on top of the discard pile in this order: B♣, 6♦ (6♦ ends on top)." in _logged(g)
 
 
 def test_scarlet_whistle_two_players_hand_decision_overlay(app):
@@ -1054,7 +1064,8 @@ def test_mission6_team_damage_seat_picker_flow(app):
     assert gs.right_btn.title == "Discard 8/4" and gs.enemy.paying == (8, 4)   # enough
     _tap_button(app, "Discard")
     assert g.decision is None and g.enemies_defeated == 1 and g.phase == PHASE_PLAY and g.active == 0
-    assert "Team damage satisfied" in gs.message_text and gs.overlay is None
+    # the team damage is satisfied: the last discard brought the total past the 7 owed
+    assert "Ana discards 8♦ for the team damage (11 of 7)." in _logged(g) and gs.overlay is None
     assert [c.id for c in gs.hand.cards] == ["AD"] and gs.right_btn.title == "Play"
     assert "Myla's team damage 7" in gs.zone.title
 
@@ -1100,7 +1111,8 @@ def test_mission4_cleanup_follows_the_selection_order_and_enemy_bonus(app):
     _tap_button(app, "Keep the order played")
     assert g.decision is None and gs.overlay is None
     assert g.discard == ["AS", "9C", "LABJD", "7D"] and g.enemies_defeated == 1
-    assert "A♠ ends on top of the discard pile" in gs.message_text and g.enemy_attack == 11
+    assert "The played cards go on top of the discard pile in this order: 9♣, A♠ (A♠ ends on top)." in _logged(g)
+    assert g.enemy_attack == 11
 
 
 def test_mission4_cleanup_what_order_takes_the_order_tapped(app):
@@ -1118,7 +1130,8 @@ def test_mission4_cleanup_what_order_takes_the_order_tapped(app):
     _tap_button(app, "Confirm the order (2 of 2)")
     # the first tapped went first, the last (9♣) ends on top and feeds the next enemy
     assert g.decision is None and gs.overlay is None and g.discard == ["9C", "AS", "LABJD", "7D"]
-    assert "9♣ ends on top of the discard pile" in gs.message_text and g.enemy_attack == 19
+    assert "The played cards go on top of the discard pile in this order: A♠, 9♣ (9♣ ends on top)." in _logged(g)
+    assert g.enemy_attack == 19
 
 
 def _mage_leftovers_to_order(app):
@@ -1162,7 +1175,7 @@ def test_mage_leftovers_what_order_overlay_numbers_the_cards_as_tapped(app):
     # the first tapped went first, the last ends on top: 10 + 2 against the next attack
     assert g.decision is None and gs.overlay is None and g.discard[:3] == ["2D", "10H", "2S"]
     assert g.phase == PHASE_SUFFER and g.pending_damage == 12
-    assert "10♥ + 2♦ to the discard pile, 2♦ on top." in gs.message_text
+    assert "10♥ + 2♦ go to the discard pile in that order, 2♦ on top." in _logged(g)
 
 
 def test_a_game_saved_on_the_old_top_card_question_still_shows_it(app):
@@ -1181,7 +1194,7 @@ def test_a_game_saved_on_the_old_top_card_question_still_shows_it(app):
     assert ui.render(app).size[0] > 0
     _tap_button(app, "Put 2♦ on top")
     assert g.decision is None and gs.overlay is None and g.discard[:3] == ["2D", "10H", "2S"]
-    assert g.phase == PHASE_SUFFER and "10♥ + 2♦ to the discard pile, 2♦ on top." in gs.message_text
+    assert g.phase == PHASE_SUFFER and "10♥ + 2♦ to the discard pile, 2♦ on top." in _logged(g)
 
 
 
@@ -1243,7 +1256,8 @@ def test_druid_overlay_assigns_the_dealt_cards_to_four_slots(app):
     assert g.decision is None and gs.overlay is None
     assert g.banished[-1] == "AD" and "7C" in g.players[0].hand and g.tavern[0] == "6C" and g.tavern[-1] == "4H"
     assert sorted(g.discard) == ["2H", "3H"] and g.enemy.hp == 95 and g.phase == PHASE_SUFFER
-    assert "Druid: Solo: A♦ banished, 7♣ to hand" in gs.message_text and "2 cards back to the discard pile" in gs.message_text
+    assert "Druid: Solo sorts: A♦ banished, 7♣ to hand, 6♣ on top of the reserve, 4♥ under the reserve." in _logged(g)
+    assert "Druid: the 2 other cards go back to the discard pile, shuffled." in _logged(g)
     assert [c.id for c in gs.hand.cards] == g.players[0].hand
 
 
@@ -1270,7 +1284,7 @@ def test_chanter_declare_grid_then_the_other_players_discard_down(app):
     assert isinstance(gs.overlay, DecisionOverlay) and gs.hand.cards == []
     texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
     assert any("Ben: discard down to 7 cards" in t for t in texts) and any("must discard 2" in t for t in texts)
-    assert "Chanter: Ana declares 3" in gs.message_text
+    assert "Chanter: Ana declares 3; Ana draws 3, Ben draws 3." in _logged(g)
     _tap_button(app, "Show my hand")
     assert gs.overlay is None and len(gs.hand.cards) == 9 and gs.right_btn.title == "Discard 0/2" and not gs.right_btn.enabled
     assert gs.left_btn.title == "Suggest" and gs.mid_btn.hidden
@@ -1282,7 +1296,7 @@ def test_chanter_declare_grid_then_the_other_players_discard_down(app):
     assert sorted(gs.hand.selected) == ["2C", "3C"]
     _tap_button(app, "Discard 2/2")
     assert g.decision is None and len(g.players[1].hand) == 7 and set(g.discard[:2]) == {"2C", "3C"}
-    assert g.phase == PHASE_SUFFER and g.active == 0 and "Ben discards 2♣ + 3♣" in gs.message_text
+    assert g.phase == PHASE_SUFFER and g.active == 0 and "Chanter: Ben discards 2♣ + 3♣." in _logged(g)
     # back to Ana for her damage
     from app.screens import HandoverOverlay
     assert isinstance(gs.overlay, HandoverOverlay)
@@ -1315,7 +1329,7 @@ def test_mission7_zone_title_and_pilgrim_banish_pick_overlay(app):
     assert ui.render(app).size[0] > 0
     _tap_button(app, "Banish Pilgrim 3")
     assert g.mission_zone == [] and "PIL3_1" in g.banished and g.decision is None and gs.overlay is None
-    assert "Pilgrim 3 banished from the mission zone" in gs.message_text
+    assert "Solo banishes Pilgrim 3 from the mission zone (matched by 3♥)." in _logged(g)
     assert gs.zone.title.startswith("Mission zone · 0 pilgrims, total 0")
 
 
@@ -1360,7 +1374,8 @@ def test_mission9_pile_strip_rescue_flow_and_exact_kill_overlay(app):
     assert g.decision is None and g.banished[-1] == "5D" and g.discard[0] == tops[1] and len(piles[1]) == sizes[1] - 1
     assert gs.pile_choice is None and g.turn == 2
     assert gs.zone.title == "Captured piles · %d / %d / %d" % (sizes[0], sizes[1] - 1, sizes[2])
-    assert "5♦ banished; %s rescued from pile 2" % g.card(tops[1]).label() in gs.message_text
+    assert ("Solo banishes 5♦ and rescues %s from captured pile 2 to the discard pile."
+            % g.card(tops[1]).label()) in _logged(g)
     # an exact kill: the pile-to-reserve overlay
     set_mission_enemy(g, "TTQD", hp=9)
     set_hand(g, ["9S", "2C"])
@@ -1547,7 +1562,7 @@ def test_mission11_beast_hand_pick_and_mission12_banish_order_overlay(app):
     assert gs.right_btn.enabled
     _tap_button(app, "Discard")
     assert g.decision is None and g.discard[0] == "2C" and g.phase == PHASE_PLAY
-    assert "2♣ discarded" in gs.message_text
+    assert "Solo discards 2♣ (Cleric beast)." in _logged(g)
     # mission 12: the banish order is picked by tapping the zone cards in order
     gs, g = _late_mission_attempt(app, 12)
     assert gs.zone.title == "Mission zone (empty)"
@@ -1572,7 +1587,7 @@ def test_mission11_beast_hand_pick_and_mission12_banish_order_overlay(app):
     assert gs.overlay.picked == ["4H", "6D"]
     _tap_button(app, "Confirm the order (2 of 2)")
     assert g.decision is None and g.banished[:3] == ["4H", "6D", "THQH"] and g.enemies_defeated == 1
-    assert "Mission zone banished, 6♦ on top" in gs.message_text and gs.overlay is None
+    assert "Solo banishes the mission zone in the order 4♥, 6♦ (6♦ on top)." in _logged(g) and gs.overlay is None
 
 
 def test_evergreen_mother_solo_pick_overlay_and_two_player_hand_banish(app):
@@ -1599,7 +1614,7 @@ def test_evergreen_mother_solo_pick_overlay_and_two_player_hand_banish(app):
     assert ui.button(app, "Banish 4♣, top of the discard pile") and ui.button(app, "Banish the top card of the reserve deck")
     assert ui.render(app).size[0] > 0
     _tap_button(app, "Banish 4♣, top of the discard pile")
-    assert g.banished == ["4C"] and g.decision is None and "7♦ is corrupted: 4♣ banished from the discard pile" in gs.message_text
+    assert g.banished == ["4C"] and g.decision is None and "7♦ is corrupted: 4♣ banished from the discard pile" in _logged(g)
     # two players: the other player's hand, no pass
     app.new_campaign(2, ["Ana", "Ben"])
     camp = app.campaign
@@ -1625,7 +1640,7 @@ def test_evergreen_mother_solo_pick_overlay_and_two_player_hand_banish(app):
     assert gs.right_btn.enabled and "Evergreen Mother: Ben banishes a card" in _said(gs)
     _tap_button(app, "Banish")
     assert g.banished == ["2C"] and "2C" not in g.players[1].hand and "5C" in g.players[1].hand and g.decision is None
-    assert "Ben banishes 2♣ from hand (Evergreen Mother)" in gs.message_text
+    assert "7♦ is corrupted: Ben banishes 2♣ from hand (Evergreen Mother)." in _logged(g)
 
 
 # ---------------------------------------------------------------------------- the review's UI findings
@@ -2038,7 +2053,8 @@ def test_finding_17_ui_declarations_use_pick_buttons(app):
     _assert_nothing_cut(gs.overlay)
     assert ui.render(app).size[0] > 0
     _tap_button(app, "♠ Paladin")
-    assert g.decision is None and g.plays[-1].suits == ("D", "S") and "Wild Animal is a Paladin" in gs.message_text
+    assert g.decision is None and g.plays[-1].suits == ("D", "S")
+    assert "Solo declares Wild Animal a Paladin." in _logged(g)
     # a 2/5 alone
     for play in g.plays:
         g.discard.extend(play.card_ids)

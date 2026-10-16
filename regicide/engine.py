@@ -30,7 +30,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .cards import (BASIC_SUITS, CLUBS, DIAMONDS, HEARTS, MAGE, SPADES, SUIT_NAME, SUIT_SYMBOL,
+from .cards import (BASIC_SUITS, CLASS_NAME, CLUBS, DIAMONDS, HEARTS, MAGE, SPADES, SUIT_NAME, SUIT_SYMBOL,
                     Card)
 from .rules import BaseRules, GameConfig, get_rules
 
@@ -46,6 +46,21 @@ LOG_LIMIT = 300
 
 class IllegalAction(Exception):
     """Raised when an action is not legal in the current state."""
+
+
+def enemy_name(card: Card, legacy: bool = False) -> str:
+    """An enemy's name: its own (a Legacy enemy's), or its rank and suit ("Jack of Hearts",
+    "5 of Reavers"); a card of several classes (mission 10's party members with a sticker)
+    is named by its rank and classes ("4 · Bard / Druid")."""
+    if card.name:
+        return card.name
+    rank = {"J": "Jack", "Q": "Queen", "K": "King"}.get(card.rank, card.rank)
+    if len(card.suits) == 1:
+        return "%s of %s" % (rank, SUIT_NAME.get(card.suits[0], card.suits[0]))
+    if not card.suits:
+        return rank
+    names = CLASS_NAME if legacy else SUIT_NAME
+    return "%s · %s" % (rank, " / ".join(names.get(s_, s_) for s_ in card.suits))
 
 
 @dataclass
@@ -148,6 +163,7 @@ class Game:
         self.log: List[str] = []
         self.last_events: List[dict] = []
         self.extra: Dict[str, Any] = {}    # mission scratch state (serialised as-is)
+        self.forecast_copy = False         # a forecast's copy: stops when the acting player's turn ends
 
     @classmethod
     def new(cls, config: GameConfig, seed: Optional[int] = None,
@@ -246,7 +262,9 @@ class Game:
                 continue
             if self.rules.fixed_immunity(self, SPADES):
                 continue   # Legacy mission 9: nothing ignores Myla's paladin immunity
-            if p.jester or not self.immune(SPADES, [self.cards[c] for c in p.card_ids]):
+            # the rules' immunity, not a claimed Jester's override: only the claimed attack
+            # itself ignores immunity, not the paladins played before it (rulebook p.20)
+            if p.jester or not self.rules.immune(self, SPADES, [self.cards[c] for c in p.card_ids]):
                 total += p.value
         return total
 
@@ -386,9 +404,51 @@ class Game:
             return {"ok": False, "reason": "No decision pending."}
         return self._forecast(str(action.get("type")), lambda g: g.decide(action))
 
+    # The copies a forecast runs on: each shuffles its reserve deck and reseeds its random
+    # state from one of these (fixed, so forecasts repeat).
+    FORECAST_SEEDS = (101, 202, 303)
+
     def _forecast(self, kind: str, act: Callable[["Game"], None]) -> dict:
-        """Run ``act`` on a copy and summarise its events for a UI forecast."""
+        """Run ``act`` on copies of the game and summarise what it would do (UI forecasts).
+
+        The copies are not the game's real future: each shuffles its reserve deck and
+        reseeds its random state, so a forecast never shows what a face-down card or a
+        coming shuffle holds (a mage's reveal, a corrupted card banishing the reserve's top
+        card, a heal reshuffling a discard pile whose top feeds the enemy). A number the
+        copies disagree on depends on such a card: it is reported as None (a power's
+        ``immune`` too), with ``uncertain`` set. A copy stops where the acting player's turn
+        ends (the next turn's beasts and zone cards are not this play's doing). ``suffer``
+        is what the acting player would suffer: 0 when the turn ends without damage (a
+        Guardian, a shield that covers the attack, a kill, a Jester), None when it is not
+        known yet (a decision comes first)."""
+        runs = []
+        for seed in self.FORECAST_SEEDS:
+            run = self._forecast_once(kind, act, seed)
+            if not run.get("ok"):
+                return run
+            runs.append(run)
+        out = dict(runs[0])
+        out["powers"] = dict(out["powers"])
+        uncertain = False
+        for key in ("attack", "damage", "defeats", "exact", "enemy_hp_after", "enemy_attack_after", "suffer"):
+            if any(run[key] != out[key] for run in runs[1:]):
+                out[key] = None
+                uncertain = True
+        for suit, ev in list(out["powers"].items()):
+            if any(bool((run["powers"].get(suit) or {}).get("immune")) != bool(ev.get("immune")) for run in runs[1:]):
+                out["powers"][suit] = dict(ev, immune=None)
+                uncertain = True
+        out["uncertain"] = uncertain
+        return out
+
+    def _forecast_once(self, kind: str, act: Callable[["Game"], None], seed: int) -> dict:
+        """One forecast copy (see ``_forecast``)."""
         g = copy.deepcopy(self)
+        g.forecast_copy = True
+        shuffler = random.Random(seed)
+        shuffler.shuffle(g.tavern)
+        g.rng = random.Random(shuffler.random())
+        attacker = g.active
         enemy_hp_before = g.enemy.hp if g.enemy else 0
         try:
             act(g)
@@ -405,9 +465,15 @@ class Game:
             events.extend(g.last_events)
         damage = 0
         attack = 0
+        suffer = None   # type: Optional[int]
         powers: Dict[str, Any] = {}
         peeks: List[int] = []
         for ev in events:
+            if suffer is None and ev.get("player") == attacker:
+                if ev["t"] == "suffer_due":
+                    suffer = int(ev["damage"])
+                elif ev["t"] == "no_damage":
+                    suffer = 0
             if ev["t"] == "damage":
                 damage = ev["amount"]
             if ev["t"] in ("play", "add_to_play"):
@@ -424,12 +490,14 @@ class Game:
         defeated = any(ev["t"] == "defeat" for ev in events) or pending_defeat
         exact = any(ev["t"] == "defeat" and ev["exact"] for ev in events) or (
             pending_defeat and bool((g.decision or {}).get("exact")))
+        if suffer is None and (defeated or g.phase == PHASE_CHOOSE_NEXT):
+            suffer = 0     # a kill (another turn follows) or a Jester: no damage this turn
         return {"ok": True, "kind": kind, "attack": attack, "damage": damage, "powers": powers,
                 "defeats": defeated, "exact": exact, "decision": decision,
                 "decision_kind": decision_kind, "mage_peeks": peeks,
                 "enemy_hp_after": max(0, enemy_hp_before - damage),
                 "enemy_attack_after": g.enemy_attack if not defeated else 0,
-                "phase_after": g.phase}
+                "suffer": suffer, "phase_after": g.phase}
 
     # ---------------------------------------------------------------- actions
     def play(self, card_ids: Sequence[str], choice: Optional[dict] = None) -> None:
@@ -1167,8 +1235,7 @@ class Game:
         cid = self.castle.pop(0)
         card = self.cards[cid]
         attack, hp = self.rules.enemy_stats(self, card)
-        name = card.name or ("%s of %s" % ({"J": "Jack", "Q": "Queen", "K": "King"}.get(card.rank, card.rank),
-                                           SUIT_NAME.get(card.suit or "", "no suit")))
+        name = enemy_name(card, bool(getattr(self.rules, "legacy", False)))
         self.enemy = Enemy(cid, name, tuple(card.suits), attack, hp, hp)
         self._event("reveal", enemy=self.enemy.to_dict())
         self._say("%s appears (%d health, %d attack)." % (name, hp, attack))
@@ -1203,6 +1270,9 @@ class Game:
 
     def _end_turn(self) -> None:
         self.extra.pop("jester_attack", None)   # a claimed Jester's turn ends without an attack
+        if self.forecast_copy:
+            self.phase = PHASE_PLAY     # a forecast ends with the acting player's turn
+            return
         decision = self.rules.on_turn_end(self)
         if self.is_over:
             return
@@ -1225,6 +1295,9 @@ class Game:
 
     def _start_turn(self) -> None:
         if self.is_over:
+            return
+        if self.forecast_copy:
+            self.phase = PHASE_PLAY     # (after a kill: the forecast ends with this turn)
             return
         self.phase = PHASE_PLAY
         self.pending_damage = 0

@@ -11,7 +11,7 @@ import itertools
 import random
 from typing import Any, Dict, List, Optional
 
-from ..cards import BASIC_SUITS, CLASS_NAME, RANK_VALUE, SUIT_NAME, SUIT_SYMBOL
+from ..cards import BASIC_SUITS, CLASS_NAME, RANK_VALUE, SUIT_SYMBOL
 from . import party as P
 
 Step = Dict[str, Any]
@@ -772,8 +772,8 @@ def strip_game_names(game) -> int:
     enemy = getattr(game, "enemy", None)
     if enemy is not None and enemy.card_id in ids:
         card = game.cards[enemy.card_id]
-        enemy.name = card.name or ("%s of %s" % ({"J": "Jack", "Q": "Queen", "K": "King"}.get(card.rank, card.rank),
-                                                SUIT_NAME.get(card.suit or "", "no suit")))
+        from ..engine import enemy_name
+        enemy.name = enemy_name(card, bool(getattr(game.rules, "legacy", False)))
     return changed
 
 
