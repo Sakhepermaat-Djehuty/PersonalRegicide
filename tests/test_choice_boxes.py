@@ -214,3 +214,16 @@ def test_the_headless_ui_clips_what_a_scroll_view_holds():
     s = ui.SCALE
     assert img.getpixel((int(30 * s), int(50 * s))) == (255, 0, 0)       # inside: drawn
     assert img.getpixel((int(30 * s), int(75 * s))) == (0, 0, 0)         # below the scroll view: clipped
+
+
+def test_a_grid_shown_whole_does_not_scroll_and_an_empty_one_is_left_out(tmp_path, monkeypatch):
+    from app.screens import DiscardPickOverlay
+    app = _app(tmp_path, monkeypatch, (390, 844))
+    gs, g = _discard_pick(app, n=8)
+    sv = gs.overlay.grid_view
+    assert sv.content_size[1] <= sv.height                 # nothing to drag
+    g.discard = []
+    gs.overlay.layout()
+    ov = gs.overlay
+    assert isinstance(ov, DiscardPickOverlay) and ov.grid_view is None and ov.card_views == {}
+    assert not ui.find(ov.panel, lambda v: isinstance(v, ui.ScrollView))

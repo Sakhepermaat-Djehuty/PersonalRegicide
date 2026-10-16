@@ -1821,14 +1821,19 @@ class CardGridOverlay(Overlay):
         # beside "Game menu"): every row when they fit, else whole rows and part of the next
         room = (self.height - T.TOP_INSET - T.BOTTOM_INSET - 28
                 - sum(v.height + 12 for v in head + tail) - 12)
-        shown = grid_view_height(need, ch + gap, room) if ids else 24
+        if not ids:
+            # nothing to show (a mage's look at an empty reserve): no empty grid
+            self.grid_view = None
+            self.card_views = {}
+            return head + tail
+        shown = grid_view_height(need, ch + gap, room)
         old = getattr(self, "grid_view", None)
         try:
             keep_y = float(old.content_offset[1]) if old is not None else 0.0
         except Exception:
             keep_y = 0.0
         sv = ui.ScrollView(frame=(0, 0, pw, shown))
-        sv.content_size = (pw, need + 4)
+        sv.content_size = (pw, need + 4 if shown < need else shown)   # a grid shown whole does not scroll
         # a tap rebuilds the box: the grid stays where it was scrolled
         sv.content_offset = (0, max(0.0, min(keep_y, need + 4 - shown)))
         self.grid_view = sv
