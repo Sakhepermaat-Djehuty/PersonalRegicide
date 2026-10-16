@@ -113,6 +113,8 @@ def test_an_error_while_hiring_is_shown_and_logged_on_the_phone(app, monkeypatch
         _tap_button(app, "Hire for 1 coin")
     monkeypatch.setattr(store, "_is_pythonista", lambda: True)
     del console.history[:]
+    assert not _popups(app)                           # the card closed as Hire was tapped
+    ui.tap(app, *ui.root_point(app, app.current.card_views["merc_12H"]))
     _tap_button(app, "Hire for 1 coin")
     assert ("hud", "Hiring failed: RuntimeError purse jammed") in console.history
     log = (tmp_path / "errors.log").read_text()

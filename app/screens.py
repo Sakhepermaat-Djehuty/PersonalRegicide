@@ -217,6 +217,9 @@ class App(ui.View):
         self.in_campaign = False
 
     def show(self, screen: Screen) -> None:
+        for v in list(self.subviews):
+            if isinstance(v, CardPopup):      # a pop-up belongs to the screen being left
+                self.remove_subview(v)
         if self.current is not None:
             self.remove_subview(self.current)
         T.apply_safe_area(self)
@@ -232,6 +235,10 @@ class App(ui.View):
             T.apply_safe_area(self)
             cur.frame = (0, 0, self.width, self.height)
             cur.layout()
+            for v in list(self.subviews):
+                if isinstance(v, CardPopup):
+                    v.frame = (0, 0, self.width, self.height)
+                    v.layout()
 
     # ------------------------------------------------------------- game flow
     def start_game(self, config: GameConfig, seed: Optional[int] = None) -> None:
@@ -2744,8 +2751,16 @@ def attack_face(g: Game, pv: Optional[dict], width: float, max_height: float):
 class CardPopup(ui.View):
     """A pop-up drawn as a playing card (``card_face``: name and icon at the top, the text
     below) over a dimmed screen, with its buttons under the card. A button is (title,
-    action, primary) or (title, action, primary, enabled). With ``dismissable`` a tap
-    beside the card closes it."""
+    action, primary) or (title, action, primary, enabled); a tap on one closes the pop-up,
+    then runs its action. With ``dismissable`` a tap beside the card closes it.
+
+    On the phone these pop-ups did not appear over the game menu or the mercenary camp,
+    while the game's own boxes (``Overlay``) did. A pop-up is now kept safe from the ways
+    it could vanish there: ``show_card_popup`` puts it on the app's root view, above the
+    screen (a screen removes every subview whenever its ``layout`` runs); it builds its
+    card and buttons once per size (a ``layout`` run again at the same size replaces
+    nothing, so a button under a finger stays); and only a whole tap on the dimmed screen
+    closes it, never the end of a touch that began elsewhere (the tap that opened it)."""
 
     def __init__(self, title: str, text: str, buttons, icon=None, edge: str = "", subtitle: str = "",
                  corner=None, dismissable: bool = False, make_face=None, **kw) -> None:
@@ -2760,11 +2775,17 @@ class CardPopup(ui.View):
         self.corner = corner
         self.dismissable = dismissable
         self.face: Optional[ui.View] = None
+        self.built_for: Optional[tuple] = None   # the size the card and buttons were laid out for
+        self.touch_here = False                  # a touch began on the dimmed screen itself
         self.background_color = (0, 0, 0, 0.72)
 
     def layout(self) -> None:
         if not hasattr(self, "buttons"):
             return
+        size = (float(self.width), float(self.height))
+        if self.face is not None and self.built_for == size:
+            return
+        self.built_for = size
         for v in list(self.subviews):
             self.remove_subview(v)
         pw = min(300, self.width - 2 * T.MARGIN)
@@ -2781,15 +2802,27 @@ class CardPopup(ui.View):
         y += face.height + 12
         for spec in self.buttons:
             title_, action, primary = spec[0], spec[1], spec[2]
-            b = make_button(title_, action, (x, y, pw, 46), primary)
+            b = make_button(title_, self._closing(action), (x, y, pw, 46), primary)
             fit_title(b)
             if len(spec) > 3 and not spec[3]:
                 set_enabled(b, False, primary)
             self.add_subview(b)
             y += 58
 
+    def _closing(self, action: Callable) -> Callable:
+        """A button's action: the pop-up closes, then ``action`` runs (it may rebuild the
+        screen or show another)."""
+        def run(sender) -> None:
+            self.close()
+            action(sender)
+        return run
+
+    def touch_began(self, touch) -> None:
+        self.touch_here = True
+
     def touch_ended(self, touch) -> None:
-        if not self.dismissable:
+        began, self.touch_here = self.touch_here, False
+        if not self.dismissable or not began:
             return
         x, y = touch.location
         f = self.face
@@ -2805,9 +2838,11 @@ class CardPopup(ui.View):
 
 
 def show_card_popup(screen: ui.View, popup: CardPopup) -> CardPopup:
-    """Lay ``popup`` over the whole of ``screen``."""
-    popup.frame = (0, 0, screen.width, screen.height)
-    screen.add_subview(popup)
+    """Lay ``popup`` over the whole of ``screen``'s app: on the root view, above the screen,
+    where the screen rebuilding itself cannot take it away. ``App.show`` closes it."""
+    host = screen.superview if screen.superview is not None else screen
+    popup.frame = (0, 0, host.width, host.height)
+    host.add_subview(popup)
     popup.layout()
     return popup
 
@@ -3188,6 +3223,7 @@ class CampaignScreen(Screen):
             y += row_h + gap
 
 
+    @shows_errors("Opening the reward")
     def _show_choice_card(self) -> None:
         """The pending reward (or setup) choice as a card: what it is and what it does, then
         Choose (the choice screen) or Later."""
@@ -3202,6 +3238,7 @@ class CampaignScreen(Screen):
                           icon=choice_icon(choice), edge=T.ACCENT, subtitle=heading)
         show_card_popup(self, popup)
 
+    @shows_errors("Opening the rules")
     def _show_rules_card(self) -> None:
         """The mission's rules card as a card pop-up over the game menu."""
         head, subtitle, text, corner = rules_card(self.app.campaign)
@@ -3470,6 +3507,7 @@ class MercenaryScreen(Screen):
         camp = self.app.campaign
         if camp is None:
             return
+        self._keep_scroll()              # the grid keeps its place if the camp is rebuilt under the card
         coins, hired = camp._purse(self._scope())
         merc = by_id(mid)
         card = P.to_card(merc["card"])
