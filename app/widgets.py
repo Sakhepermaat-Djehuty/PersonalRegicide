@@ -1110,6 +1110,14 @@ class TableStrip(ui.View):
         cw, _ = self.card_size()
         return max(1, int((self.width + self.GAP) // (cw + self.GAP)))
 
+    def slot_x(self, i: int) -> float:
+        """Where slot ``i`` starts: the slots spread over the whole width, so a full row
+        lines up with both edges of the table (the piles and the buttons)."""
+        cap = self.capacity()
+        cw, _ = self.card_size()
+        step = (self.width - cw) / float(cap - 1) if cap > 1 else 0.0
+        return i * step
+
     def overflows(self) -> bool:
         return len(self.cards) > self.capacity()
 
@@ -1131,14 +1139,13 @@ class TableStrip(ui.View):
         for v in list(self.subviews):
             self.remove_subview(v)
         cw, ch = self.card_size()
-        x = cw + self.GAP if self.overflows() else 0.0
+        first = 1 if self.overflows() else 0      # (the card back takes the first slot)
         y = self.top() + 2
-        for c in self.shown():
-            v = CardView(c, frame=(x, y, cw, ch))
+        for i, c in enumerate(self.shown()):
+            v = CardView(c, frame=(self.slot_x(first + i), y, cw, ch))
             v.small = True
             v.touch_enabled = False
             self.add_subview(v)
-            x += cw + self.GAP
 
     def draw(self) -> None:
         cw, ch = self.card_size()
@@ -1156,7 +1163,7 @@ class TableStrip(ui.View):
     def touch_ended(self, touch) -> None:
         x, _ = touch.location
         cw, _ = self.card_size()
-        if self.overflows() and x <= cw + self.GAP / 2.0 and self.on_more is not None:
+        if self.overflows() and x <= (cw + self.slot_x(1)) / 2.0 and self.on_more is not None:
             self.on_more()
 
 
