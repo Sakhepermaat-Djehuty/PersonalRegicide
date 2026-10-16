@@ -714,6 +714,12 @@ def _mage_attempt(app, names=("Solo",), relics=("emblem",), corrupted=()):
     return gs, app.game
 
 
+def _random_order_first(app) -> bool:
+    """Nothing tapped yet: the order box offers "Random order" in the confirm button's place."""
+    titles = [b.title for b in ui.find(app, lambda v: isinstance(v, ui.Button) and not v.hidden)]
+    return ui.button(app, "Random order").enabled and not any(t.startswith("Confirm the order") for t in titles)
+
+
 def test_mage_peek_overlay_then_emblem_keep_overlay(app):
     from app import store
     from app.screens import EmblemKeepOverlay, MagePeekOverlay
@@ -748,11 +754,16 @@ def test_mage_peek_overlay_then_emblem_keep_overlay(app):
     assert isinstance(gs.overlay, EmblemKeepOverlay)
     texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
     assert "Azure Emblem" in texts
-    keeps = [b.title for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Keep"))]
-    assert keeps == ["Keep 7♦ on top of the reserve", "Keep 4♥ on top of the reserve",
-                     "Keep 3♠ on top of the reserve", "Keep 2♠ on top of the reserve"]
+    # the other revealed cards as a grid (as revealed): tap one, then keep it
+    assert list(gs.overlay.card_views) == ["7D", "4H", "3S", "2S"]
+    keeps = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Keep"))]
+    assert [b.title for b in keeps] == ["Keep a card on top of the reserve"] and not keeps[0].enabled
     assert ui.button(app, "Discard them all")
     assert ui.render(app).size[0] > 0
+    ui.tap(app, *ui.root_point(app, gs.overlay.card_views["7D"]))
+    ui.tap(app, *ui.root_point(app, gs.overlay.card_views["4H"]))        # one card at a time
+    assert gs.overlay.picked == ["4H"] and gs.overlay.card_views["4H"].selected
+    assert not gs.overlay.card_views["7D"].selected
     _tap_button(app, "Keep 4♥ on top of the reserve")
     assert g.tavern[:2] == ["4H", "AD"] and {"7D", "3S", "2S"} <= set(g.discard)
     assert g.decision is None and g.phase == PHASE_SUFFER and g.enemy.hp == 40 - 22
@@ -944,7 +955,7 @@ def test_reaver_count_grid_then_pick_overlay(app):
     assert "What order?" in texts
     assert any("banished in any order" in t and "into the mission zone at the end of the turn" in t for t in texts)
     _assert_nothing_cut(gs.overlay)
-    assert not ui.button(app, "Confirm the order (0 of 2)").enabled and ui.render(app).size[0] > 0
+    assert _random_order_first(app) and ui.render(app).size[0] > 0
     ui.tap(app, *ui.root_point(app, gs.overlay.card_views["7H"]))
     ui.tap(app, *ui.root_point(app, gs.overlay.card_views["2D"]))
     assert gs.overlay.picked == ["7H", "2D"] and gs.overlay.card_views["2D"].badge == "2"
@@ -1150,7 +1161,7 @@ def test_mission4_cleanup_follows_the_selection_order_and_enemy_bonus(app):
     texts = [v.text for v in _labels(gs.overlay)]
     assert "What order?" in texts and any("Enemy defeated" in t and "strength adds to the enemy" in t for t in texts)
     _assert_nothing_cut(gs.overlay)
-    assert not ui.button(app, "Confirm the order (0 of 2)").enabled and ui.render(app).size[0] > 0
+    assert _random_order_first(app) and ui.render(app).size[0] > 0
     _tap_button(app, "Keep the order played")
     assert g.decision is None and gs.overlay is None
     assert g.discard == ["AS", "9C", "LABJD", "7D"] and g.enemies_defeated == 1
@@ -1203,7 +1214,7 @@ def test_mage_leftovers_what_order_overlay_numbers_the_cards_as_tapped(app):
     assert "What order?" in texts
     assert any("did not choose" in t and "the last ends on top" in t and "strength adds to the enemy" in t for t in texts)
     _assert_nothing_cut(gs.overlay)
-    assert not ui.button(app, "Confirm the order (0 of 2)").enabled and ui.render(app).size[0] > 0
+    assert _random_order_first(app) and ui.render(app).size[0] > 0
     # a tap numbers a card, a second tap takes the number back
     ui.tap(app, *ui.root_point(app, gs.overlay.card_views["2D"]))
     assert gs.overlay.picked == ["2D"] and gs.overlay.card_views["2D"].badge == "1"
@@ -1640,8 +1651,7 @@ def test_mission11_beast_hand_pick_and_mission12_banish_order_overlay(app):
     assert _pv(gs)["defeats"] and _pv(gs)["exact"] and _rows(gs)["Enemy health"] == "exact"
     _tap_button(app, "Play")
     assert g.decision["kind"] == "banish_order" and isinstance(gs.overlay, OrderOverlay)
-    confirm = ui.button(app, "Confirm the order (0 of 2)")
-    assert not confirm.enabled and ui.render(app).size[0] > 0
+    assert _random_order_first(app) and ui.render(app).size[0] > 0
     ui.tap(app, *ui.root_point(app, gs.overlay.card_views["4H"]))
     assert gs.overlay.picked == ["4H"] and gs.overlay.card_views["4H"].badge == "1"
     ui.tap(app, *ui.root_point(app, gs.overlay.card_views["6D"]))

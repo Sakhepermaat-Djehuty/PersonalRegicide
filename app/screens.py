@@ -1781,18 +1781,6 @@ class MagePeekOverlay(PickOverlay):
         return strip
 
 
-class EmblemKeepOverlay(MagePeekOverlay):
-    """Azure Emblem, solo: after the pick, one of the other revealed cards may go back on
-    top of the reserve deck before the rest is discarded."""
-
-    def heading(self, g: Game, d: dict) -> tuple:
-        picked = g.card(str(d.get("picked", ""))).label() if d.get("picked") in g.cards else "the chosen card"
-        return ("Azure Emblem", "%s joined the attack. You may put one of the other revealed cards on top of the "
-                                "reserve deck before the rest goes to the discard pile." % picked)
-
-    def dimmed_ids(self, g: Game, d: dict) -> List[str]:
-        return []
-
 
 class ReaverPickOverlay(MagePeekOverlay):
     """Reaver, second step: the revealed cards in a row; one adds its strength to the damage,
@@ -2181,9 +2169,14 @@ class OrderOverlay(CardGridOverlay):
         return dict((cid, str(i + 1)) for i, cid in enumerate(self.picked))
 
     def buttons(self, g: Game, d: dict) -> List[ui.View]:
-        n, total = len(self.picked), len(self.card_ids(g, d))
-        b = make_button("Confirm the order (%d of %d)" % (n, total), lambda s: self.confirm(), (0, 0, 10, 46))
-        set_enabled(b, n == total and total > 0)
+        ids = self.card_ids(g, d)
+        n, total = len(self.picked), len(ids)
+        if n == 0 and total > 1:
+            # nothing tapped yet: the order may not matter, so one tap settles it at random
+            b = make_button("Random order", lambda s: self.confirm(random.sample(ids, total)), (0, 0, 10, 46))
+        else:
+            b = make_button("Confirm the order (%d of %d)" % (n, total), lambda s: self.confirm(), (0, 0, 10, 46))
+            set_enabled(b, n == total and total > 0)
         if str(d.get("kind")) in self.KEEP:
             # the cards are shown in the order they entered play: keep it in one tap
             keep = make_button("Keep the order played", lambda s: self.confirm(self.card_ids(g, d)), (0, 0, 10, 44), False)
@@ -2214,6 +2207,35 @@ class CloseCallOverlay(CardGridOverlay):
         b = make_button(title, lambda s: self.screen.decide({"type": "close_call", "card": self.picked[0]}), (0, 0, 10, 46))
         set_enabled(b, bool(self.picked))
         return [b]
+
+
+class EmblemKeepOverlay(CardGridOverlay):
+    """Azure Emblem, solo: after the pick, one of the other revealed cards may go back on
+    top of the reserve deck before the rest is discarded. The cards are a grid (as
+    revealed, the top first): tap one, then Keep; or discard them all."""
+
+    single = True
+
+    def heading(self, g: Game, d: dict) -> tuple:
+        picked = g.card(str(d.get("picked", ""))).label() if d.get("picked") in g.cards else "the chosen card"
+        return ("Azure Emblem", "%s joined the attack. You may put one of the other revealed cards on top of the "
+                                "reserve deck before the rest goes to the discard pile." % picked)
+
+    def card_ids(self, g: Game, d: dict) -> List[str]:
+        return [str(a["card"]) for a in g.legal_actions() if a["type"] == "emblem_keep"]
+
+    def buttons(self, g: Game, d: dict) -> List[ui.View]:
+        acts = g.legal_actions()
+        keep = [a for a in acts if a["type"] == "emblem_keep" and self.picked and str(a["card"]) == self.picked[0]]
+        b = make_button(keep[0]["label"] if keep else "Keep a card on top of the reserve",
+                        lambda s: self.screen.decide(keep[0]), (0, 0, 10, 46))
+        set_enabled(b, bool(keep))
+        out = [b]
+        for a in acts:
+            if a.get("skip"):
+                out.append(make_button(a.get("label", "Discard them all"),
+                                       (lambda act: lambda s: self.screen.decide(act))(a), (0, 0, 10, 44), False))
+        return out
 
 
 class RestoredArrowsOverlay(CardGridOverlay):
