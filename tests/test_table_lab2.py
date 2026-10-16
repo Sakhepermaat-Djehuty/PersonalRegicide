@@ -464,6 +464,7 @@ def test_an_unknown_stored_card_back_shows_as_lattice_and_moves_on_to_crowns(app
     from app.screens import App, MenuScreen, SettingsScreen
     app.settings["card_back"] = "velvet"                 # a style from another build
     app.save_settings()
+    widgets.BACK_STYLE = "crowns"                        # what was drawn before: the start must replace it
     a = App()                                            # a fresh start reads it
     a.show(MenuScreen(a))
     assert widgets.BACK_STYLE == "lattice"
@@ -719,6 +720,16 @@ def test_the_jester_power_lights_up_when_the_hand_cannot_pay(app):
     assert g.phase == PHASE_SUFFER and g.rules.solo_jester_mode(g) == "refresh"
     assert g.hand_defence_value() >= g.pending_damage
     assert not gs.mid_btn.hidden and gs.mid_btn.enabled and gs.mid_btn.background_color == T.PANEL_2
+    # what the hand is worth decides, not how many cards it holds: two cards that pay
+    # exactly leave it plain, five that fall one short light it
+    set_hand(g, ["10S", "10D"])
+    gs.refresh(after_action=False)
+    assert g.hand_defence_value() == g.pending_damage == 20
+    assert gs.mid_btn.enabled and gs.mid_btn.background_color == T.PANEL_2
+    set_hand(g, ["2D", "3H", "4D", "5C", "5H"])
+    gs.refresh(after_action=False)
+    assert g.hand_defence_value() == g.pending_damage - 1
+    assert gs.mid_btn.enabled and gs.mid_btn.background_color == T.BTN
     set_hand(g, ["2D", "3H"])                             # 5 cannot pay 20
     gs.refresh(after_action=False)
     assert g.hand_defence_value() < g.pending_damage
@@ -1044,11 +1055,44 @@ def test_during_team_damage_the_attack_card_and_the_header_show_what_is_owed(app
     assert atk[:2] == ["SUFFER", "7"] and "covered" in atk and not any(t.startswith("shield") for t in atk)
 
 
-def test_the_attack_cards_shield_total_matches_the_rows_it_shows(app):
-    gs, g = _team_damage_with_a_shield(app)
-    pop = _open_attack(app, gs)
+def _shield_total_matches_rows(pop):
+    """The SHIELD column's rows add up to its total ("−9", or "0" with no "−" at all)."""
     shown = sum(int(v.text) for r in _shield_rows(pop) for v in r[1:] if v.text.isdigit())
-    assert "−%d" % shown in _texts(pop), (_texts(pop), shown)
+    texts = _texts(pop)
+    if shown:
+        assert "−%d" % shown in texts, (texts, shown)
+    else:
+        assert not any(t.startswith("−") for t in texts), texts
+    return shown
+
+
+def test_the_attack_cards_shield_total_matches_the_rows_it_shows(app):
+    gs, g = _team_damage_with_a_shield(app)              # a paladin whose card has left play
+    assert _shield_total_matches_rows(_open_attack(app, gs)) == g.shield > 0
+    _popup(gs).close()
+    # a claimed Jester's attack: its own paladin counts, the immune one played before does not
+    app.start_game(GameConfig(players=1), seed=7)
+    gs, g = app.current, app.game
+    set_enemy(g, "J", "S")
+    for cid, value, jester in (("5S", 5, False), ("4S", 4, True)):
+        _pull(g, cid)
+        g.plays.append(Play(player=0, card_ids=[cid], suits=("S",), value=value, jester=jester))
+    g.extra["jester_attack"] = True
+    gs.refresh(after_action=False)
+    assert g.shield == 4
+    assert _shield_total_matches_rows(_open_attack(app, gs)) == 4
+    _popup(gs).close()
+    # Myla: nothing ignores her paladin immunity, not even a claimed Jester's attack
+    gs, g = _mission_attempt(app, 9)
+    while g.decision is not None:
+        g.decide(g.legal_actions()[0])
+    set_mission_enemy(g, "MYLA_BOSS")
+    _pull(g, "9S")
+    g.plays.append(Play(player=0, card_ids=["9S"], suits=("S",), value=9, jester=True))
+    g.extra["jester_attack"] = True
+    gs.refresh(after_action=False)
+    assert g.shield == 0 and g.rules.fixed_immunity(g, "S")
+    assert _shield_total_matches_rows(_open_attack(app, gs)) == 0
 
 
 # ---------------------------------------------------------------------------- 11. the Kinfolk Flute's greying

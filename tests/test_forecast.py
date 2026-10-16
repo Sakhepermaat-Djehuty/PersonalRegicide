@@ -89,6 +89,20 @@ def test_a_guardian_forecast_stops_with_the_turn_whatever_beast_comes_next():
         assert pv["suffer"] == 0 and pv["phase_after"] == PHASE_PLAY, top
         assert "nothing to suffer" in describe_preview(g, pv)
         assert g.extra["beast_deck"][0] == top                        # the real deck is untouched
+        # a kill: the player takes another turn, whose start reveals a beast; the forecast
+        # stops before it
+        g.enemy.hp = 5
+        pv = g.preview_play(["9S"])
+        assert pv["defeats"] and pv["phase_after"] == PHASE_PLAY and pv["decision_kind"] is None, top
+    # mission 5: the end of the turn moves the top banished card into the mission zone
+    # (enemy strength +); that is not this play's doing
+    g = _attempt(5, seed=1101, guardians=True)
+    assert g.banished and g.rules.zone_strength(g) == 0
+    set_hand(g, ["3G", "9S", "8S", "2C"])
+    g.phase = PHASE_PLAY
+    pv = g.preview_play(["3G"])
+    assert pv["suffer"] == 0 and pv["phase_after"] == PHASE_PLAY
+    assert pv["enemy_attack_after"] == g.enemy_attack
 
 
 def test_an_ordinary_play_forecasts_the_damage_to_suffer():
