@@ -5,6 +5,9 @@ callbacks as on the phone; ``render(view, path)`` paints the hierarchy to a PNG 
 Pillow and ``tap(view, x, y)`` delivers a touch the way Pythonista would, so screens
 and flows can be exercised on Linux. Install with ``install()`` before importing the
 app modules; on a real Pythonista the real ``ui`` is used and this package is unused.
+
+Layout follows the phone: adding or removing a subview marks the receiving view, whose
+``layout()`` runs later, after the tap (``ui.flush``); see ``ui.set_deferred_layout``.
 """
 from __future__ import annotations
 

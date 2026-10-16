@@ -17,6 +17,68 @@ _presented: List["View"] = []
 SCALE = 2  # render at 2x for legibility
 
 
+# Deferred layout, as on the phone: adding or removing a subview marks the receiving view,
+# and the UI loop later runs the layout() of every marked view (the outermost first). A
+# view's changes to its own subviews during its own layout() do not mark it again; ``tap``
+# ends with a ``flush`` of the root, like the run loop after a touch. On the phone this is
+# how a card pop-up added to a screen that rebuilds itself in layout() vanished before it
+# was drawn. On by default; FAKEUI_DEFERRED_LAYOUT=0 (or set_deferred_layout(False)) runs
+# layout() only when a size changes.
+_deferred = [os.environ.get("FAKEUI_DEFERRED_LAYOUT", "1") != "0"]
+_marked: List["View"] = []
+_laying_out: List["View"] = []
+
+
+def set_deferred_layout(on: bool) -> None:
+    _deferred[0] = bool(on)
+    del _marked[:]
+
+
+def _mark(v: "View") -> None:
+    if _deferred[0] and v not in _laying_out and v not in _marked:
+        _marked.append(v)
+
+
+def flush(root: "View", passes: int = 20) -> int:
+    """Run the layout() of every view marked by add/remove_subview under ``root``, the
+    outermost first, until none is marked; returns how many ran. Raises if it never
+    settles (a layout that marks its view again forever would hang the phone)."""
+    ran = 0
+    for _ in range(passes):
+        order: List[View] = []
+
+        def walk(v: "View") -> None:
+            order.append(v)
+            for sub in list(v.subviews):
+                walk(sub)
+        walk(root)
+        todo = [v for v in order if v in _marked]
+        if not todo:
+            return ran
+        for v in todo:
+            if v not in _marked:
+                continue                    # an outer view's layout already rebuilt or dropped it
+            _marked.remove(v)
+            if v is not root and not _attached(v, root):
+                continue
+            _laying_out.append(v)
+            try:
+                if callable(getattr(v, "layout", None)):
+                    v.layout()
+                    ran += 1
+            finally:
+                _laying_out.remove(v)
+    raise RuntimeError("layout never settles: %r" % [type(v).__name__ for v in _marked])
+
+
+def _attached(v: "View", root: "View") -> bool:
+    while v is not None:
+        if v is root:
+            return True
+        v = v.superview
+    return False
+
+
 def set_screen_size(w: float, h: float) -> None:
     _screen[0], _screen[1] = float(w), float(h)
 
@@ -434,10 +496,11 @@ class View:
 
     def _relayout(self):
         if hasattr(self, "layout") and callable(getattr(self, "layout")):
+            _laying_out.append(self)
             try:
                 self.layout()
-            except Exception:
-                raise
+            finally:
+                _laying_out.remove(self)
 
     # hierarchy ------------------------------------------------------------
     def add_subview(self, v: "View") -> None:
@@ -445,11 +508,13 @@ class View:
             v.superview.remove_subview(v)
         v.superview = self
         self.subviews.append(v)
+        _mark(self)
 
     def remove_subview(self, v: "View") -> None:
         if v in self.subviews:
             self.subviews.remove(v)
             v.superview = None
+            _mark(self)
 
     def remove_from_superview(self) -> None:
         if self.superview:
@@ -769,7 +834,18 @@ def _local(view: View, target: View, x: float, y: float) -> Tuple[float, float]:
 
 def tap(view: View, x: float, y: float) -> Optional[View]:
     """Deliver a tap at root coordinates, like Pythonista: Buttons fire ``action``,
-    custom views get touch_began/touch_ended with local coordinates."""
+    custom views get touch_began/touch_ended with local coordinates. With deferred
+    layout on, the marked views are laid out afterwards, as the run loop does."""
+    target = _deliver(view, x, y)
+    if _deferred[0]:
+        root = view
+        while root.superview is not None:
+            root = root.superview
+        flush(root)
+    return target
+
+
+def _deliver(view: View, x: float, y: float) -> Optional[View]:
     target = hit_test(view, x, y)
     if target is None:
         return None
