@@ -1462,7 +1462,7 @@ class PickOverlay(Overlay):
         return None
 
     def columns(self, n: int) -> int:
-        return 2 if n > self.MANY else 1
+        return 2 if n > self.MANY or getattr(self, "two_columns", False) else 1
 
     def is_option(self, a: dict) -> bool:
         return bool(a.get("card")) or "count" in a or ("pile" in a and not a.get("skip"))
@@ -1533,6 +1533,11 @@ class PickOverlay(Overlay):
         # heading, the closing buttons and "Hold to view game" stay in view
         tail_h = sum(v.height + 12 for v in tail) + (48 if not tail else 0)
         room = self.height - T.TOP_INSET - T.BOTTOM_INSET - 8 - y - tail_h - 12
+        if (cols == 1 and len(options) > 1 and grid_h > room and not getattr(self, "two_columns", False)
+                and type(self).columns is PickOverlay.columns):
+            self.two_columns = True      # one column would scroll: two, with short titles, may not
+            self.layout()
+            return
         holder = self.panel
         oy, x0 = y, 20
         if rows and grid_h > room and room >= bh:
@@ -1765,7 +1770,6 @@ class CardGridOverlay(Overlay):
     buttons follow. ``picked`` holds the selection in tap order."""
 
     columns = 6
-    grid_height = 196
     single = False
 
     def __init__(self, screen: GameScreen, **kw) -> None:
@@ -1799,19 +1803,35 @@ class CardGridOverlay(Overlay):
         g = self.screen.game
         d = g.decision or {}
         title, text = self.heading(g, d)
-        items: List[ui.View] = [make_label(title, (0, 0, 10, 36), 20, True, T.ACCENT, ui.ALIGN_CENTER)]
+        head: List[ui.View] = [make_label(title, (0, 0, 10, 36), 20, True, T.ACCENT, ui.ALIGN_CENTER)]
         if text:
-            items.append(self.text(text, 13))
+            head.append(self.text(text, 13))
+        tail: List[ui.View] = list(self.buttons(g, d))
+        tail.append(make_button("Game menu", lambda s: self.screen._menu(s), (0, 0, 10, 36), False, 13))
         ids = self.card_ids(g, d)
-        pw = min(340, self.width - 2 * T.MARGIN) - 40
+        pw = self.text_width()
         cols = self.columns
         gap = 5.0
         cw = (pw - gap * (cols - 1)) / cols
         ch = cw * 1.42
         rows = (len(ids) + cols - 1) // cols
         need = rows * (ch + gap)
-        sv = ui.ScrollView(frame=(0, 0, pw, min(self.grid_height, need) if ids else 24))
+        # the grid takes the room the screen leaves under the heading and above the buttons
+        # (Overlay.layout: 20 above, 12 under each item, 8 below; "Hold to view game" sits
+        # beside "Game menu"): every row when they fit, else whole rows and part of the next
+        room = (self.height - T.TOP_INSET - T.BOTTOM_INSET - 28
+                - sum(v.height + 12 for v in head + tail) - 12)
+        shown = grid_view_height(need, ch + gap, room) if ids else 24
+        old = getattr(self, "grid_view", None)
+        try:
+            keep_y = float(old.content_offset[1]) if old is not None else 0.0
+        except Exception:
+            keep_y = 0.0
+        sv = ui.ScrollView(frame=(0, 0, pw, shown))
         sv.content_size = (pw, need + 4)
+        # a tap rebuilds the box: the grid stays where it was scrolled
+        sv.content_offset = (0, max(0.0, min(keep_y, need + 4 - shown)))
+        self.grid_view = sv
         badges = self.badges(g, d)
         self.card_views = {}
         for i, cid in enumerate(ids):
@@ -1823,10 +1843,19 @@ class CardGridOverlay(Overlay):
             v.frame = (c * (cw + gap), r * (ch + gap) + (0 if v.selected else 3), cw, ch - 3)
             sv.add_subview(v)
             self.card_views[cid] = v
-        items.append(sv)
-        items.extend(self.buttons(g, d))
-        items.append(make_button("Game menu", lambda s: self.screen._menu(s), (0, 0, 10, 36), False, 13))
-        return items
+        return head + [sv] + tail
+
+
+def grid_view_height(need: float, row: float, room: float) -> float:
+    """How tall a scrolling grid of rows ``row`` apart is shown in ``room``: all of it when
+    it fits; else whole rows and about half of the next, so a cut row shows there is more;
+    on a screen too short for that, the room itself (never less than most of a row)."""
+    if need <= room:
+        return need
+    k = int((room - 0.45 * row) // row)
+    if k >= 1:
+        return k * row + 0.45 * row
+    return min(need, max(room, 0.8 * row))
 
 
 class DruidOverlay(CardGridOverlay):
@@ -2398,11 +2427,16 @@ def card_face(title: str, body: str, width: float, max_height: float, icon=None,
     face.add_subview(rule)
     y += 16
     bw = width - 44
-    _, th = text_size(body, bw - 4, body_size)
+    _, th = text_size(body, bw, body_size)        # wrapped at the label's own width
     th = float(th)
     bottom = 14 + (len(corner) * 17.0 * 1.05 + 4 if corner else 0)   # clear of the bottom-right index
     room = max(80.0, max_height - y - bottom)
-    bh = min(th + 10, room)
+    bh = th + 10
+    if bh > room:
+        # the text scrolls: show whole lines and half of the next, so it shows there is more
+        line = float(text_size("Ag", 0, body_size)[1]) or body_size * 1.25
+        k = int((room - 4 - 0.5 * line) // line)
+        bh = 4 + (k + 0.5) * line if k >= 1 else room
     sv = ui.ScrollView(frame=(22, y, bw, bh))
     sv.add_subview(make_label(body, (0, 0, bw, th + 8), body_size, False, T.CARD_INK, ui.ALIGN_LEFT, 0))
     sv.content_size = (bw, th + 10)
