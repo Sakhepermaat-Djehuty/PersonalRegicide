@@ -572,6 +572,59 @@ class NewGameScreen(Screen):
 
 
 # ============================================================================ game
+def _same_color(a, b) -> bool:
+    try:
+        ca, cb = ui.parse_color(a), ui.parse_color(b)
+    except Exception:
+        return a == b
+    return all(abs(float(x) - float(y)) < 0.002 for x, y in zip(ca, cb))
+
+
+class ButtonDraft(object):
+    """Stands in for an action-bar button while ``GameScreen._update_controls`` works out
+    its final title, state, colours, font and visibility; ``commit`` then sets on the real
+    button only what changed. Anything else (its frame, its width) goes straight through."""
+
+    KEYS = ("title", "enabled", "background_color", "tint_color", "hidden", "font")
+
+    def __init__(self, real) -> None:
+        object.__setattr__(self, "_real", real)
+        object.__setattr__(self, "_vals", dict((k, getattr(real, k)) for k in self.KEYS))
+        object.__setattr__(self, "_set", set())
+
+    def __getattr__(self, name):
+        vals = object.__getattribute__(self, "_vals")
+        if name in vals:
+            return vals[name]
+        return getattr(object.__getattribute__(self, "_real"), name)
+
+    def __setattr__(self, name, value) -> None:
+        if name in ButtonDraft.KEYS:
+            self._vals[name] = value
+            self._set.add(name)
+        else:
+            setattr(self._real, name, value)
+
+    def real_button(self):
+        return self._real
+
+    def commit(self, fonts: dict) -> None:
+        """Set what changed. A font reads back on iOS under the system's internal name, so
+        it is compared with the one set last (``fonts``, by button)."""
+        real = self._real
+        for k in self._set:
+            v = self._vals[k]
+            if k == "font":
+                if fonts.get(id(real)) != v:
+                    real.font = v
+                    fonts[id(real)] = v
+            elif k in ("background_color", "tint_color"):
+                if not _same_color(getattr(real, k), v):
+                    setattr(real, k, v)
+            elif getattr(real, k) != v:
+                setattr(real, k, v)
+
+
 class GameScreen(Screen):
     def __init__(self, app: "App", **kw) -> None:
         super().__init__(app, **kw)
@@ -596,6 +649,7 @@ class GameScreen(Screen):
         self.enemy = TableHeader()
         self.enemy.on_attack = self._show_attack
         self.flute_slot: Optional[ui.Button] = None   # the action bar button standing in for the Flute
+        self.button_fonts: Dict[int, tuple] = {}     # the font each action-bar button was given last
         # the cards played against the enemy (under the hand) and the mission zone (above
         # it): rows of cards under their names; a full row starts with a card back holding
         # the total
@@ -855,6 +909,23 @@ class GameScreen(Screen):
         self.refresh(after_action=False)
 
     def _update_controls(self) -> None:
+        """Bring the action bar, the hand's greying and the header up to date with the game
+        and the selection. The buttons' final looks are worked out on stand-ins first and
+        set once, where they changed: a system button fades on every change of its title or
+        state, and resetting the Flute to "Yield" and back on each tap made it blink."""
+        real = (self.left_btn, self.mid_btn, self.right_btn, self.special_btn)
+        drafts = [ButtonDraft(b) for b in real]
+        self.left_btn, self.mid_btn, self.right_btn, self.special_btn = drafts
+        try:
+            self._work_out_controls()
+        finally:
+            self.left_btn, self.mid_btn, self.right_btn, self.special_btn = real
+            for d in drafts:
+                d.commit(self.button_fonts)
+            if isinstance(self.flute_slot, ButtonDraft):
+                self.flute_slot = self.flute_slot.real_button()
+
+    def _work_out_controls(self) -> None:
         g = self.game
         sel = list(self.hand.selected)
         self.flute_slot = None

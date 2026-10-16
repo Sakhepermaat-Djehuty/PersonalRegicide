@@ -754,8 +754,9 @@ class TableHeader(ui.View):
         top = 20 + max(0.0, (h - 14 - 20 - (big * 1.2 + 40)) / 2.0)
         pv = self.projection or {}
 
-        def block(x: float, label: str, value: str, color: str, note: str, note_color: str, extra: str = "") -> None:
-            ui.draw_string(label, (x, 4, side, 16), (T.FONT_BOLD, 11), T.MUTED, ui.ALIGN_CENTER)
+        def block(x: float, label: str, value: str, color: str, note: str, note_color: str, extra: str = "",
+                  label_color: str = T.MUTED) -> None:
+            ui.draw_string(label, (x, 4, side, 16), (T.FONT_BOLD, 11), label_color, ui.ALIGN_CENTER)
             ui.draw_string(value, (x, top, side, big * 1.25), (T.FONT_BOLD, big), color, ui.ALIGN_CENTER)
             y = top + big * 1.2
             if extra:
@@ -773,13 +774,14 @@ class TableHeader(ui.View):
         atk = g.enemy_attack
         note, note_col = "", T.ACCENT
         label, extra = "ATTACK", ("shield %d" % g.shield) if g.shield else ""
+        value_col, label_col = T.TEXT, T.MUTED
         if self.paying is not None:
+            # suffering: in red, what is still to pay, falling with each card selected
             paid, need = self.paying
-            label, atk, extra = "SUFFER", need, ""
+            label, atk, extra = "SUFFER", max(0, need - paid), "of %d" % need
+            value_col = label_col = T.DANGER
             if paid >= need:
-                note, note_col = "covered", T.OK
-            elif paid:
-                note = "%d to go" % (need - paid)
+                note, note_col, value_col = "covered", T.OK, T.OK
         elif pv and pv.get("defeats") is False:
             suffer = pv.get("suffer")
             if suffer is None and pv.get("uncertain"):
@@ -790,7 +792,7 @@ class TableHeader(ui.View):
                     note = "→ ?"
                 elif after_atk != atk:
                     note = "→ %d%s" % (after_atk, q)
-        block(0, label, "%d" % atk, T.TEXT, note, note_col, extra)
+        block(0, label, "%d" % atk, value_col, note, note_col, extra, label_col)
         # the health: what is left, and with the selection what would be
         hp = max(0, e.hp)
         after = pv.get("enemy_hp_after", hp) if pv else hp
