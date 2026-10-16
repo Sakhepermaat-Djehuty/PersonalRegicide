@@ -314,15 +314,21 @@ def test_a_small_card_back_takes_taps_across_the_rows_first_44pt():
     assert taps == [1]                                  # further along: a face card, nothing
 
 
-def test_the_piles_viewer_tabs_are_full_size_targets(app):
+@pytest.mark.parametrize("size", [(320, 568), (390, 844), (430, 932)])
+def test_the_piles_viewer_tabs_are_full_size_targets_inside_the_screen(tmp_path, monkeypatch, size):
     from app.screens import PilesOverlay
+    app = _app(tmp_path, monkeypatch, size)
     app.new_campaign(1, ["Solo"])
     app.start_attempt()
     gs = app.current
-    gs._show_piles()
-    assert isinstance(gs.overlay, PilesOverlay)
-    seg = ui.find(gs.overlay, lambda v: isinstance(v, ui.SegmentedControl))[0]
-    assert seg.height >= 36
+    for pile in ("reserve", "castle", "discard"):
+        gs._show_piles(pile)                              # the reserve: about forty cards from the start
+        assert isinstance(gs.overlay, PilesOverlay)
+        seg = ui.find(gs.overlay, lambda v: isinstance(v, ui.SegmentedControl))[0]
+        assert seg.height >= 36
+        px, py = _origin(gs.overlay.panel)
+        assert py >= T.TOP_INSET - 0.5 and py + gs.overlay.panel.height <= app.height - T.BOTTOM_INSET + 0.5, (size, pile)
+        gs._back_to_game()
 
 
 def test_a_lone_skip_is_the_main_button_and_a_skip_beside_a_pick_is_not(app):

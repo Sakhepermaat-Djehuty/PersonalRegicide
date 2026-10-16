@@ -1925,14 +1925,19 @@ class CardGridOverlay(Overlay):
         # beside "Game menu"): every row when they fit, else whole rows and part of the next
         room = (self.height - T.TOP_INSET - T.BOTTOM_INSET - 28
                 - sum(v.height + 12 for v in head + tail) - 12)
-        shown = grid_view_height(need, ch + gap, room) if ids else 24
+        if not ids:
+            # nothing to show (a mage's look at an empty reserve): no empty grid
+            self.grid_view = None
+            self.card_views = {}
+            return head + tail
+        shown = grid_view_height(need, ch + gap, room)
         old = getattr(self, "grid_view", None)
         try:
             keep_y = float(old.content_offset[1]) if old is not None else 0.0
         except Exception:
             keep_y = 0.0
         sv = ui.ScrollView(frame=(0, 0, pw, shown))
-        sv.content_size = (pw, need + 4)
+        sv.content_size = (pw, need + 4 if shown < need else shown)   # a grid shown whole does not scroll
         # a tap rebuilds the box: the grid stays where it was scrolled
         sv.content_offset = (0, max(0.0, min(keep_y, need + 4 - shown)))
         self.grid_view = sv
@@ -3080,7 +3085,7 @@ class PilesOverlay(Overlay):
         note_label = self.text(note, 12, color=T.MUTED, min_height=34)
         # the grid takes the room the screen has left and scrolls past it; it is as tall for
         # every pile (the biggest one's height), so switching piles does not move the panel
-        room = self.height - T.TOP_INSET - T.BOTTOM_INSET - 36 - 32 - note_label.height - 44 - 5 * 12 - 28
+        room = self.height - T.TOP_INSET - T.BOTTOM_INSET - 36 - seg.height - note_label.height - 44 - 5 * 12 - 28
         biggest = max(len(g.discard), len(self.unseen(g)) if self.hidden_hands(g) else len(g.tavern), len(g.banished),
                       len(enemy_deck(g)), 1)
         tallest = ((biggest + cols - 1) // cols) * (ch + gap)
