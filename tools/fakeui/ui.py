@@ -181,11 +181,12 @@ def _wrap(text: str, f, max_w_px: float, mode: int) -> List[str]:
     out: List[str] = []
     for para in str(text).split("\n"):
         if not max_w_px or mode in (LB_CLIP, LB_TRUNCATE_TAIL, LB_TRUNCATE_HEAD, LB_TRUNCATE_MIDDLE):
-            if max_w_px and mode == LB_TRUNCATE_TAIL:
+            if max_w_px and mode == LB_TRUNCATE_TAIL and f.getbbox(para)[2] > max_w_px:
+                # cut only what does not fit, as UILabel does
                 s = para
                 while s and f.getbbox(s + "…")[2] > max_w_px and len(s) > 1:
                     s = s[:-1]
-                out.append(s if s == para else s + "…")
+                out.append(s + "…")
             else:
                 out.append(para)
             continue
@@ -761,12 +762,24 @@ def _render_view(v: View, ox: float, oy: float) -> None:
         if isinstance(v, ScrollView):
             sub_ox -= v.content_offset[0]
             sub_oy -= v.content_offset[1]
+            # its content is drawn on a layer and only the visible rect is kept, as on the phone
+            layer = PILImage.new("RGBA", c.img.size, (0, 0, 0, 0))
+            _ctx_stack.append(_Ctx(layer, ImageDraw.Draw(layer), x0, y0, (x0, y0, v.width, v.height)))
+            try:
+                for s in list(v.subviews):
+                    sx, sy = s.x - v.content_offset[0], s.y - v.content_offset[1]
+                    if sx + s.width < 0 or sy + s.height < 0 or sx > v.width or sy > v.height:
+                        continue
+                    _render_view(s, sub_ox, sub_oy)
+            finally:
+                _ctx_stack.pop()
+            left, top = max(0, int(round(x0 * SCALE))), max(0, int(round(y0 * SCALE)))
+            right = min(c.img.size[0], int(round((x0 + v.width) * SCALE)))
+            bottom = min(c.img.size[1], int(round((y0 + v.height) * SCALE)))
+            if right > left and bottom > top:
+                c.img.alpha_composite(layer.crop((left, top, right, bottom)), dest=(left, top))
+            return
         for s in list(v.subviews):
-            if isinstance(v, ScrollView):
-                # crude clipping: skip subviews fully outside the visible area
-                sx, sy = s.x - v.content_offset[0], s.y - v.content_offset[1]
-                if sx + s.width < 0 or sy + s.height < 0 or sx > v.width or sy > v.height:
-                    continue
             _render_view(s, sub_ox, sub_oy)
     finally:
         _ctx_stack.pop()
