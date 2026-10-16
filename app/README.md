@@ -14,6 +14,10 @@ Home-screen icon: in Pythonista's script menu use "Shortcuts" → "Home Screen" 
 Requirements: Pythonista 3.4 or newer (Python 3.10). Only the `ui` and `console`
 modules are used.
 
+If something you tap fails, the app says so in a short message ("Hiring failed: ...")
+and writes the details to `errors.log` in the saves folder; send that file along with
+the report.
+
 ## Menus
 
 Main menu: Continue (last game), Load game (save slots), New game, Quick play (base

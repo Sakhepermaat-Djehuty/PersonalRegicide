@@ -1,6 +1,7 @@
 """Screens and app flow for the Pythonista client."""
 from __future__ import annotations
 
+import functools
 import os
 import random
 import re
@@ -21,7 +22,7 @@ from regicide.rules import GameConfig
 from . import store
 from . import theme as T
 from .widgets import (CardStrip, CardView, HandGrid, PileView, TableHeader, TableStrip, fit_label, fit_title, make_button, make_label,
-                      set_enabled, text_size)
+                      set_enabled, tap_cover, text_size)
 
 VERSION = "alpha 5.1"
 
@@ -149,6 +150,30 @@ def enemy_deck(g: Game) -> List[str]:
 
 
 # ============================================================================ base
+def shows_errors(what: str):
+    """For a tap's handler: an error in it is shown on screen ("Hiring failed: ...") and its
+    traceback kept in ``errors.log`` beside the saves. On the phone a traceback otherwise
+    goes only to the console, hidden under the full-screen app, and the tap seems to do
+    nothing. Off the phone (tests, desktop) the error is raised as usual."""
+    def wrap(fn):
+        @functools.wraps(fn)
+        def handler(*args, **kw):
+            try:
+                return fn(*args, **kw)
+            except Exception as e:
+                if not store._is_pythonista():
+                    raise
+                import traceback
+                try:
+                    store.log_error(traceback.format_exc())
+                except Exception:
+                    pass
+                import console
+                console.hud_alert("%s failed: %s %s" % (what, type(e).__name__, e), "error", 4)
+        return handler
+    return wrap
+
+
 class Screen(ui.View):
     def __init__(self, app: "App", **kw) -> None:
         super().__init__(**kw)
@@ -3427,6 +3452,7 @@ class MercenaryScreen(Screen):
             if mid == self.swapping:
                 v.badge = "swap"
             sv.add_subview(v)
+            sv.add_subview(tap_cover(v))
             self.card_views[mid] = v
         rows = (len(MERCENARIES) + cols - 1) // cols
         content_h = rows * (ch + gap) + 20
@@ -3436,6 +3462,7 @@ class MercenaryScreen(Screen):
         self.grid = sv
         self.add_subview(sv)
 
+    @shows_errors("Opening the card")
     def _tapped(self, mid: str) -> None:
         """A mercenary's card: what it is, then Hire (in the box), Swap (hired, after a
         failure) or Take (the one a hired mercenary is being swapped for)."""
@@ -3481,9 +3508,13 @@ class MercenaryScreen(Screen):
     def _keep_scroll(self) -> None:
         """Remember the grid's scroll position before the screen is rebuilt."""
         grid = getattr(self, "grid", None)
-        if grid is not None:
-            self.scroll_offset = tuple(grid.content_offset)
+        try:
+            off = grid.content_offset
+            self.scroll_offset = (float(off[0]), float(off[1]))
+        except Exception:
+            pass                  # no grid yet, or no offset to read: the grid starts at the top
 
+    @shows_errors("Hiring")
     def _hire(self, mid: str) -> None:
         self._keep_scroll()
         try:
@@ -3492,9 +3523,12 @@ class MercenaryScreen(Screen):
             import console
             console.hud_alert(str(e), "error")
             return
-        self.app.save_campaign()
-        self.layout()
+        try:
+            self.app.save_campaign()
+        finally:
+            self.layout()         # the camp shows the hire even if saving it failed (that error is shown)
 
+    @shows_errors("Swapping")
     def _begin_swap(self, mid: str) -> None:
         self._keep_scroll()
         self.swapping = mid
@@ -3505,6 +3539,7 @@ class MercenaryScreen(Screen):
         self.swapping = None
         self.layout()
 
+    @shows_errors("Swapping")
     def _swap(self, new_id: str) -> None:
         self._keep_scroll()
         try:
@@ -3514,8 +3549,10 @@ class MercenaryScreen(Screen):
             console.hud_alert(str(e), "error")
             return
         self.swapping = None
-        self.app.save_campaign()
-        self.layout()
+        try:
+            self.app.save_campaign()
+        finally:
+            self.layout()
 
 
 class EvergreenScreen(Screen):
@@ -3843,9 +3880,11 @@ class PartyScreen(Screen):
                 r, col = divmod(i, cols)
                 v = CardView(c, on_tap=on_tap)
                 v.small = True
-                v.touch_enabled = on_tap is not None
+                v.touch_enabled = False
                 v.frame = (col * (cw + gap), yy + r * (ch + gap), cw, ch)
                 sv.add_subview(v)
+                if on_tap is not None:
+                    sv.add_subview(tap_cover(v))
                 if views is not None:
                     views.append(v)
             rows = (len(cards) + cols - 1) // cols
@@ -3860,6 +3899,7 @@ class PartyScreen(Screen):
                 tile = RelicCard(r, on_tap=lambda v: self._show_relic(v.relic_id),
                                  frame=(col * (cw + gap), yy + row * (ch + gap), cw, ch))
                 sv.add_subview(tile)
+                sv.add_subview(tap_cover(tile))
             yy += ((len(relics) + cols - 1) // cols) * (ch + gap) + 8
         # mercenaries: the ones hired (they leave when the mission is won) and the camp
         bw = min(320, tw)
@@ -3946,6 +3986,7 @@ class PartyScreen(Screen):
         return ("%s joins the next attempt. Tap another to swap, or tap it again to go without." % chosen if chosen
                 else "No beast for the next attempt. Tap one to take it.")
 
+    @shows_errors("Choosing the beast")
     def _toggle_beast(self, beast_id: str) -> None:
         """Choose (or, tapped again, drop) the beast the next attempt takes; the cards show
         the choice with the gold selection border."""
@@ -3960,6 +4001,7 @@ class PartyScreen(Screen):
         if self.beast_note is not None:
             self.beast_note.text = self._beast_text(False)
 
+    @shows_errors("Opening the relic")
     def _show_relic(self, relic_id: str) -> None:
         """The relic's card: its icon and name on top, what it does below (the side for
         this number of players)."""

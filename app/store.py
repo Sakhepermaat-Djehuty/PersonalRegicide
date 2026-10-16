@@ -62,6 +62,7 @@ def _path(name: str) -> str:
 AUTOSAVE = "current_game.json"
 SETTINGS = "settings.json"
 HISTORY = "history.jsonl"
+ERRORS = "errors.log"
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "open_hands": False,
@@ -134,6 +135,12 @@ def load_history() -> List[dict]:
     except (OSError, ValueError):
         pass
     return out
+
+
+def log_error(text: str) -> None:
+    """Keep a traceback in ``errors.log`` beside the saves (the newest last)."""
+    with open(_path(ERRORS), "a") as f:
+        f.write("%s\n%s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), text.rstrip()))
 
 
 def _atomic_write(path: str, text: str) -> None:
