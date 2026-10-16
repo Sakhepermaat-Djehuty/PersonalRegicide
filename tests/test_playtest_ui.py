@@ -671,11 +671,17 @@ def test_back_from_the_piles_keeps_the_selection_and_the_choice_in_progress(app)
     # the bare table: the cards selected (and their order) are still selected after Back
     gs.hand.set_selection([g.players[0].hand[2], g.players[0].hand[0]])
     picked = list(gs.hand.selected)
-    message = gs.message.text
+
+    def table():
+        # what the table shows for the selection: the greyed cards, the buttons, the projection
+        return (sorted(c for c, v in gs.hand.views.items() if v.shaded),
+                [(b.title, b.enabled, b.hidden) for b in (gs.left_btn, gs.mid_btn, gs.right_btn)],
+                gs.enemy.projection, gs.enemy.warn)
+    shown = table()
     ui.tap(app, *ui.root_point(app, gs.pile_views["discard"]))
     assert isinstance(gs.overlay, PilesOverlay)
     _tap(app, "Back")
-    assert gs.overlay is None and gs.hand.selected == picked and gs.message.text == message
+    assert gs.overlay is None and gs.hand.selected == picked and table() == shown
     # the same through the menu, and the menu's Resume
     _tap(app, "Menu")
     _tap(app, "Discard and reserve piles")
@@ -754,14 +760,16 @@ def test_the_table_under_a_choice_box_is_current_and_public(app):
     _tap(app, "Play")
     _tap(app, "Show my hand")
     gs.hand.set_selection(["3D", "3H"])            # Ben thinks about adding, then passes
-    assert "3♦" in gs.forecast and gs.enemy.projection
+    assert g.decision["kind"] == "flute_add" and g.deciding == 1
+    pv = gs.enemy.projection                       # Ana's 3♣ with Ben's 3♦ 3♥
+    assert pv["kind"] == "flute_add" and pv["attack"] == 9
     _tap(app, "Pass")
     ov = gs.overlay
     assert isinstance(ov, DecisionOverlay) and g.deciding == 2
     ov.peek_btn.touch_began(None)
     # under the box: no hand, no trace of Ben's selection, nothing to tap
-    assert gs.hand.cards == [] and "3♦" not in gs.message.text and "3♥" not in gs.message.text
-    assert gs.forecast == "" and gs.enemy.projection is None
+    assert gs.hand.cards == [] and gs.hand.selected == [] and not gs.hand.warned
+    assert gs.enemy.projection is None and not gs.enemy.warn and gs.enemy.paying is None
     assert not gs.left_btn.enabled and not gs.mid_btn.enabled and not gs.right_btn.enabled
     ov.peek_btn.touch_ended(None)
 
@@ -803,11 +811,11 @@ def test_the_table_under_a_choice_box_is_current_and_public(app):
     set_tavern_top(g, ["4C", "10H", "2D"])
     gs.refresh(after_action=False)
     gs.hand.set_selection(["3M"])
+    assert gs.enemy.projection["mage_peeks"] == [3]      # the forecast made before the play
     _tap(app, "Play")
     assert isinstance(gs.overlay, MagePeekOverlay)
     assert sorted(c.id for c in gs.hand.cards) == ["8S", "9S"] and gs.hand.selected == []
-    assert "reveals 3 cards" not in gs.message.text      # not the forecast made before the play
-    assert gs.forecast == "" and gs.enemy.projection is None and not gs.enemy.warn
+    assert gs.enemy.projection is None and not gs.enemy.warn     # not left on the table
 
 
 def test_tall_choice_boxes_scroll_their_options_and_keep_the_hold_button_on_screen(app):
@@ -847,10 +855,10 @@ def test_review_recheck_toast_class_box_scroll_cut_and_the_game_log(app):
     # the solo Jester attack's class box: the selection and its forecast are gone under it
     gs.refresh(after_action=False)
     gs.hand.set_selection([g.players[0].hand[0]])
-    assert gs.forecast and gs.enemy.projection
+    assert gs.enemy.projection["ok"] and gs.right_btn.enabled
     _tap(app, gs.mid_btn.title)
     assert isinstance(gs.overlay, ClassChoiceOverlay)
-    assert gs.hand.selected == [] and not gs.forecast and gs.enemy.projection is None and not gs.right_btn.enabled
+    assert gs.hand.selected == [] and gs.enemy.projection is None and not gs.enemy.warn and not gs.right_btn.enabled
     # every scrolled grid of options ends halfway through a button
     from app.screens import ChanterDeclareOverlay
     from regicide.engine import PHASE_DECIDE

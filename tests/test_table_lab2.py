@@ -1,9 +1,11 @@
 """The lab table, part two: the castle view, the piles after real plays, the status line,
-the card backs, the decision captions (and the table under a handover box), the Jester
-power's cue, the header under a claimed Jester, clash warnings, the header's projection
-notes, the attack's card, the Kinfolk Flute's greying, a Chanter-sized hand and the piles
-viewer's notes. What happened lives in the game log; the table shows piles, the header and
-one caption line for a decision made with the hand."""
+the card backs, the decisions made with the hand (and the table under a handover box), the
+Jester power's cue, the header under a claimed Jester, clash warnings, the header's
+projection notes, the attack's card, the Kinfolk Flute's greying, a Chanter-sized hand and
+the piles viewer's notes. What happened lives in the game log; the table shows piles, the
+header, the rows of cards and the hand, with no running text: a decision made with the hand
+shows in whose hand is up, the action buttons and the greyed cards, what a selection would
+do in the header's projection and on the attack's card."""
 import os
 import re
 import sys
@@ -70,11 +72,6 @@ def _tap_card(app, gs, card_id):
     ui.tap(app, *ui.root_point(app, gs.hand.views[card_id]))
 
 
-def _shown(gs):
-    """The caption as the player sees it ("" while it is hidden)."""
-    return "" if gs.message.hidden else gs.message.text
-
-
 def _drawn_text(view):
     """The strings a view draws."""
     calls = []
@@ -103,10 +100,13 @@ def _open_attack(app, gs):
     return _popup(gs)
 
 
-def _open_enemy(app, gs):
-    """Tap the enemy's card in the header."""
-    ui.tap(app, *ui.root_point(app, gs.enemy))
-    return _popup(gs)
+def _this_play(app, gs):
+    """The attack card's rows for the selected cards ("THIS PLAY"): {name: value}. The card
+    is closed again."""
+    texts = _texts(_open_attack(app, gs))
+    _popup(gs).close()
+    rows = texts[texts.index("THIS PLAY") + 1:]
+    return dict(zip(rows[::2], rows[1::2]))
 
 
 def _new_campaign(app, names, seed=4242):
@@ -475,9 +475,10 @@ def test_an_unknown_stored_card_back_shows_as_lattice_and_moves_on_to_crowns(app
     assert widgets.BACK_STYLE == "crowns" and _back_button(a).title == "Crowns ›"
 
 
-# ---------------------------------------------------------------------------- 5. the captions
+# ---------------------------------------------------------------------------- 5. decisions made with the hand
 # Each flow plays to a decision made with a hand in a two-player game with hidden hands
-# and shows that hand ("Show my hand"); it returns the screen, the game and the decision.
+# and shows that hand ("Show my hand"); it returns the screen and the game. No caption names
+# the decision: whose hand is up, the action button and the greyed cards show it.
 def _cap_flute(app, names):
     _new_campaign(app, names)
     app.campaign.relics.append("flute")
@@ -626,10 +627,10 @@ CAPTION_FLOWS = {"flute_add": _cap_flute, "emblem_place": _cap_emblem, "whistle_
                  "chanter_discard": _cap_chanter, "mother_banish": _cap_mother, "team_discard": _cap_team,
                  "pile_rescue": _cap_rescue, "zone_feed": _cap_zone_feed, "beast_discard": _cap_beast}
 
-# what each caption is about, whatever form fits
-CAPTION_TOPIC = {"flute_add": "Kinfolk Flute", "emblem_place": "Azure Emblem", "whistle_add": "Scarlet Whistle",
-                 "chanter_discard": "Chanter", "mother_banish": "Evergreen Mother", "team_discard": "Team damage",
-                 "pile_rescue": "Rescue", "zone_feed": "mission zone", "beast_discard": "Cleric beast"}
+# the action button each decision puts on the right, before a card is picked
+DECISION_ACTION = {"flute_add": "Add", "emblem_place": "Place", "whistle_add": "Add",
+                   "chanter_discard": "Discard 0/2", "mother_banish": "Banish", "team_discard": "Discard 0/7",
+                   "pile_rescue": "Banish", "zone_feed": "To the zone", "beast_discard": "Discard"}
 
 
 def _show_hand(app, gs):
@@ -639,46 +640,48 @@ def _show_hand(app, gs):
 
 @pytest.mark.parametrize("size", [(375, 667), (320, 568)])
 @pytest.mark.parametrize("kind", sorted(CAPTION_FLOWS))
-def test_a_decision_made_with_the_hand_names_itself_in_a_caption_that_is_never_cut(app, kind, size):
-    from app import theme as T
+def test_a_decision_made_with_the_hand_shows_the_deciders_hand_and_its_action_never_cut(app, kind, size):
     from app.widgets import text_size
     for names in (("Ana", "Ben"), LONG_NAMES):
         _resize(app, *size)
         gs, g = CAPTION_FLOWS[kind](app, names)
         _show_hand(app, gs)
         assert g.phase == PHASE_DECIDE and g.decision["kind"] == kind and gs.overlay is None and gs.hand.cards
-        who = g.players[gs.shown_player].name            # whose hand it is (the team damage's chosen seat)
-        caption, m = _shown(gs), gs.message
-        assert CAPTION_TOPIC[kind] in caption, (names, caption)
-        assert not ui.label_truncated(m), (size, names, ui.label_lines(m))
-        assert m.width <= size[0] - 2 * T.MARGIN + 0.5 and gs.hand.y >= m.y + m.height    # the hand starts under it
-        if names == ("Ana", "Ben"):
-            # short names: one line; on a 375-pt phone it names whose hand decides (the
-            # rescue is the active player's own)
-            assert m.number_of_lines == 1, caption
-            assert size[0] < 375 or kind == "pile_rescue" or who in caption, caption
-        elif m.number_of_lines != 1:
-            # long names: a shorter form when the long one does not fit; two whole lines only
-            # when even the shortest is wider than the room at the smallest size
-            assert text_size(caption, 0, 11, True)[0] > m.width and m.height >= 36, caption
+        # whose hand is up: the deciding player's (the team damage's chosen seat; the rescue
+        # is the active player's own)
+        seat = gs.team_seat if kind == "team_discard" else g.deciding
+        assert gs.shown_player == seat and [c.id for c in gs.hand.cards] == [c.id for c in g.hand(seat)], names
+        assert kind != "pile_rescue" or seat == g.active
+        # the action is on the right button, whole, and waits for a card
+        b = gs.right_btn
+        assert b.title == DECISION_ACTION[kind] and not b.hidden and not b.enabled, (names, b.title)
+        assert text_size(b.title, 0, b.font[1], True)[0] <= b.width - 10, (size, b.title, b.font)
+        # the hand lies between the mission zone (when there is one) and the played row
+        assert gs.hand.x >= 0 and gs.hand.x + gs.hand.width <= size[0] + 0.5
+        assert gs.zone.hidden or gs.hand.y >= gs.zone.y + gs.zone.height
+        assert gs.hand.y + gs.hand.height <= gs.strip.y
+        for v in gs.hand.views.values():
+            assert v.y + v.height <= gs.hand.height + 0.5 and v.x + v.width <= gs.hand.width + 0.5
 
 
-def test_the_caption_comes_with_the_decision_and_goes_while_playing_and_suffering(app):
+def test_the_hand_keeps_its_place_through_a_decision_the_suffer_step_and_the_next_play(app):
     gs, g = _cap_flute(app, ("Ana", "Ben"))
     _show_hand(app, gs)
-    assert g.decision["kind"] == "flute_add" and _shown(gs) == "Kinfolk Flute: Ben may add to Ana's 3♣"
-    y_with = gs.hand.y
+    assert g.decision["kind"] == "flute_add" and g.deciding == 1 and gs.shown_player == 1    # Ben may add to Ana's 3
+    assert (gs.left_btn.title, gs.right_btn.title) == ("Pass", "Add")
+    frame = tuple(gs.hand.frame)
     _tap_button(app, "Pass")
-    assert _shown(gs) == ""                              # under the handover box: nothing
+    assert gs.hand.cards == []                           # under the handover box: no hand
     _show_hand(app, gs)
     assert g.phase == PHASE_SUFFER and g.active == 0 and gs.overlay is None
-    assert gs.message.hidden and gs.hand.y < y_with      # suffering: no caption, the hand takes the room
+    # no caption came or goes: the hand stays where it was
+    assert gs.right_btn.title.startswith("Discard") and tuple(gs.hand.frame) == frame
     _tap_button(app, "Suggest")
     _tap_button(app, "Discard")
     _show_hand(app, gs)
     assert g.phase == PHASE_PLAY and g.active == 1 and gs.overlay is None
     gs.hand.set_selection([gs.hand.cards[0].id])
-    assert gs.message.hidden and _shown(gs) == ""        # playing: none either
+    assert gs.right_btn.title == "Play" and tuple(gs.hand.frame) == frame
 
 
 def test_under_a_handover_box_the_action_buttons_lose_the_tally_picked_before(app):
@@ -692,7 +695,7 @@ def test_under_a_handover_box_the_action_buttons_lose_the_tally_picked_before(ap
     assert isinstance(gs.overlay, TeamDamageOverlay) and gs.hand.cards == []
     bar = (gs.left_btn, gs.mid_btn, gs.right_btn)
     assert not any(tally.search(b.title or "") for b in bar) and not any(b.enabled for b in bar)
-    assert gs.right_btn.title == "Discard" and gs.message.hidden
+    assert gs.right_btn.title == "Discard"
     # a suffer step paid in pass and play: the next player does not see what was picked
     app.start_game(GameConfig(players=2, names=("Ana", "Ben")), seed=6)
     gs, g = app.current, app.game
@@ -774,9 +777,10 @@ def test_a_claimed_jester_attack_drops_the_enemys_immunity_icons_and_its_card_sa
     assert g.extra.get("jester_attack") and not g.immunity_cancelled and g.active == 1
     assert gs.enemy.card_view.center_icons == []
     gs.hand.set_selection(["7S"])
-    assert not gs.enemy.warn and not gs.hand.warned and "shield +7" in gs.forecast
-    text = " ".join(_texts(_open_enemy(app, gs)))
-    assert "This attack ignores immunity" in text and "Immune to" not in text
+    shield = gs.enemy.projection["powers"]["S"]
+    assert not gs.enemy.warn and not gs.hand.warned and shield.get("shield") == 7 and not shield.get("immune")
+    # the attack's card says so: the paladin shields 7, not "immune"
+    assert _this_play(app, gs)["Shield"] == "+7"
 
 
 def test_mylas_fixed_immunity_keeps_its_icons_under_a_claimed_jester(app):
@@ -809,8 +813,8 @@ def test_mylas_fixed_immunity_keeps_its_icons_under_a_claimed_jester(app):
     assert gs.enemy.card_view.center_icons == ["D", "S"]           # nothing ignores Myla's immunity
     gs.hand.set_selection(["9S"])
     assert gs.enemy.warn and gs.hand.warned == {"9S"} and gs.hand.views["9S"].warn
-    text = " ".join(_texts(_open_enemy(app, gs)))
-    assert "This attack ignores immunity" in text and "but not to" in text and "Paladin" in text
+    assert gs.enemy.projection["powers"]["S"]["immune"] is True and g.rules.fixed_immunity(g, "S")
+    assert _this_play(app, gs)["Shield"] == "immune"          # the attack's card: the paladin adds nothing
 
 
 # ---------------------------------------------------------------------------- 8. clash warnings
@@ -872,12 +876,14 @@ def _mission11_top_discard_immunity(app, discard):
 
 
 def test_a_power_whose_immunity_hangs_on_a_hidden_shuffle_is_not_marked(app):
+    from app.screens import forecast_rows
     rest = ["9S", "10D", "7H", "10S", "3D", "6D", "8D", "5S", "2D", "3C", "10C"]
     for k in range(len(rest)):
         gs, g = _mission11_top_discard_immunity(app, ["2C"] + rest[k:] + rest[:k])
         assert "C" in g.rules.immune_suits(g)
         gs.hand.set_selection(["4C"])                     # the top discard decides: immune
-        assert gs.hand.warned == {"4C"} and gs.enemy.warn and "♣ immune." in gs.forecast
+        assert gs.hand.warned == {"4C"} and gs.enemy.warn and gs.enemy.projection["powers"]["C"]["immune"] is True
+        assert ("Double", "immune") in forecast_rows(g, gs.enemy.projection)     # the attack's card
         # 4♥ heals first and shuffles the discard pile: the new top card, and so the
         # warriors' immunity, may not be known
         gs.hand.set_selection(["4H", "4C"])
@@ -888,7 +894,7 @@ def test_a_power_whose_immunity_hangs_on_a_hidden_shuffle_is_not_marked(app):
         pytest.fail("no discard order left the warriors' immunity to the shuffle")
     assert pv["uncertain"]
     assert not gs.hand.warned and not gs.enemy.warn and not gs.hand.views["4C"].warn
-    assert "♣ immune?" in gs.forecast
+    assert ("Double", "?") in _this_play(app, gs).items()     # the attack's card: not known
 
 
 # ---------------------------------------------------------------------------- 9. the header's projection notes
@@ -923,10 +929,12 @@ def test_a_guardian_play_projects_no_attack_whatever_beast_comes_next(app, beast
     gs.hand.set_selection(["3G"])
     atk = _attack_side(gs)
     assert g.enemy_attack > 0 and atk[:2] == ["ATTACK", "%d" % g.enemy_attack] and "→ 0" in atk
-    assert "nothing to suffer" in gs.forecast and "then suffer" not in gs.forecast
+    pv = gs.enemy.projection                              # nothing to suffer
+    assert pv["defeats"] is False and pv["suffer"] == 0 and not pv["uncertain"]
     assert "→ %d" % (g.enemy.hp - 3) in _health_side(gs)
     gs.hand.set_selection(["9S"])                         # an ordinary play: the attack still comes
-    assert "→ 0" not in _attack_side(gs) and "then suffer" in gs.forecast
+    pv = gs.enemy.projection
+    assert "→ 0" not in _attack_side(gs) and pv["defeats"] is False and pv["suffer"] > 0
 
 
 def test_a_heal_that_reshuffles_what_feeds_the_enemy_projects_an_unknown_attack(app):
@@ -940,7 +948,7 @@ def test_a_heal_that_reshuffles_what_feeds_the_enemy_projects_an_unknown_attack(
     gs.hand.set_selection(["8H"])
     pv = gs.enemy.projection
     assert pv["uncertain"] and pv["suffer"] is None
-    assert "→ ?" in _attack_side(gs) and "then suffer ?" in gs.forecast
+    assert "→ ?" in _attack_side(gs) and _this_play(app, gs)["You suffer"] == "?"
     assert "→ 92" in _health_side(gs)                     # the damage itself is known
     gs.hand.set_selection(["9S"])                         # no shuffle: the number is known
     pv = gs.enemy.projection
@@ -998,7 +1006,7 @@ def test_the_attack_card_wraps_a_long_paladin_play_instead_of_cutting_it(app, si
     labels = [v for v in ui.find(pop, lambda v: isinstance(v, ui.Label) and not v.hidden)]
     assert not [v.text for v in labels if ui.label_truncated(v)]
     rows = _shield_rows(pop)
-    assert [r[0].text for r in rows] == ["2♠ + 2♣ + 2♥ + 2♦", "A♠ + 10♠", "3♠ + 3♦ + 3♣"]
+    assert [r[0].text for r in rows] == ["2 + 2 + 2 + 2", "A + 10", "3 + 3 + 3"]      # ranks alone
     assert [[v.text for v in r[1:]] for r in rows] == [["8"], ["11"], ["9"]]
     assert rows[0][0].height > 20                         # more than one line
     for upper, lower in zip(rows, rows[1:]):              # a wrapped row pushes the next one down
@@ -1019,8 +1027,7 @@ def test_the_attack_card_says_an_immune_paladin_play_adds_nothing(app):
     pop = _open_attack(app, gs)
     rows = _shield_rows(pop)
     assert len(rows) == 1                                 # the diamond adds no shield: no row
-    row = " ".join(v.text for v in rows[0])
-    assert "4♠" in row and "immune" in row and "4" not in [v.text for v in rows[0][1:]]
+    assert rows[0][0].text == "4 (immune)" and [v.text for v in rows[0][1:]] == ["0"]
     assert "You suffer 10" in _texts(pop)
 
 
@@ -1112,12 +1119,15 @@ def test_the_flute_decision_greys_a_card_that_would_pass_ten_with_the_one_picked
     lit = sorted(c for c, v in gs.hand.views.items() if not v.shaded)
     assert lit == ["3D", "3H"]
     _tap_card(app, gs, "3D")
-    assert gs.hand.selected == ["3D"] and gs.right_btn.enabled and "attack 9" in gs.forecast
+    assert gs.hand.selected == ["3D"] and gs.right_btn.enabled and gs.enemy.projection["attack"] == 9
     assert gs.hand.views["3H"].shaded and not gs.hand.views["3D"].shaded
-    _tap_card(app, gs, "3H")                              # a greyed card that may be added alone: a new pick
-    assert gs.hand.selected == ["3H"] and gs.right_btn.enabled and gs.hand.views["3D"].shaded
-    _tap_card(app, gs, "3H")
+    _tap_card(app, gs, "3H")                              # a greyed card: the tap does nothing
+    assert gs.hand.selected == ["3D"] and gs.right_btn.enabled and gs.hand.views["3H"].shaded
+    assert not gs.hand.views["3H"].selected and gs.enemy.projection["attack"] == 9
+    _tap_card(app, gs, "3D")                              # unpicked: both may be added again
     assert gs.hand.selected == [] and not any(gs.hand.views[c].shaded for c in ("3D", "3H"))
+    _tap_card(app, gs, "3H")
+    assert gs.hand.selected == ["3H"] and gs.right_btn.enabled and gs.hand.views["3D"].shaded
 
 
 def test_a_flute_pair_stays_selected_without_a_hand_card(app):
@@ -1160,14 +1170,16 @@ def test_a_thirteen_card_hand_after_a_chanters_draw_keeps_readable_cards_on_a_sm
     gs.hand.set_selection(["3T"])
     _tap_button(app, "Play")
     _tap_button(app, "6")                                 # 7 left + 6 drawn
-    assert g.decision["kind"] == "chanter_discard" and len(gs.hand.cards) == 13 and not gs.message.hidden
+    assert g.decision["kind"] == "chanter_discard" and len(gs.hand.cards) == 13
+    assert gs.right_btn.title == "Discard 0/%d" % (13 - g.config.max_hand)      # down to the hand limit
     hand = gs.hand
     cols = len(set(round(v.x, 1) for v in hand.views.values()))
     assert cols > 6                                       # more columns than a short screen's six
     for v in hand.views.values():
         assert v.width >= 40 and v.x >= 0 and v.x + v.width <= hand.width + 0.5
         assert v.y >= 0 and v.y + v.height <= hand.height + 0.5
-    assert hand.y >= gs.message.y + gs.message.height and hand.y + hand.height <= gs.strip.y
+    assert gs.zone.hidden or hand.y >= gs.zone.y + gs.zone.height
+    assert hand.y >= gs.pile_views["castle"].y + gs.pile_views["castle"].height and hand.y + hand.height <= gs.strip.y
 
 
 # ---------------------------------------------------------------------------- 13. the piles viewer's notes

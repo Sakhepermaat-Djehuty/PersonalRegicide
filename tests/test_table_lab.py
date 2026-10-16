@@ -1,7 +1,8 @@
 """The table's lab layout: the enemy large in the header with its attack and health beside
 it, cards greyed when they cannot join the selection, a red edge where a class power
 clashes with the enemy's immunity, the solo Kinfolk Flute in the Yield button's place,
-the played cards under the hand, and the attack's and the enemy's cards on a tap."""
+the mission zone above the hand and the played cards under it (a full row behind a card
+back), and the attack's card on a tap (the enemy's card opens nothing)."""
 import os
 import sys
 
@@ -76,13 +77,22 @@ def test_cards_that_cannot_join_the_selection_are_greyed(app):
     assert lit == ["5C", "5S", "AS"]                               # a pair of fives or the companion
     gs.hand.set_selection(["5C", "5S"])
     assert [c for c, v in gs.hand.views.items() if not v.shaded] == ["5S", "5C"]
-    # a tap on a greyed card does not join it; a card playable alone starts a new selection
+    # a tap on a greyed card does nothing: it neither joins nor starts a new selection
+    gs.hand._tapped(gs.hand.views["9D"])
+    assert gs.hand.selected == ["5C", "5S"]
+    assert [c for c, v in gs.hand.views.items() if not v.shaded] == ["5S", "5C"]
+    # what the pair would do is a projection (the header's numbers, the attack's card)
+    pv = gs.enemy.projection
+    assert pv["attack"] == 10 and pv["damage"] == 20 and pv["exact"]
+    # the selected cards still leave on a tap; then a card playable alone lights its companion
+    gs.hand._tapped(gs.hand.views["5S"])
+    gs.hand._tapped(gs.hand.views["5C"])
+    assert gs.hand.selected == [] and gs.enemy.projection is None
     gs.hand._tapped(gs.hand.views["9D"])
     assert gs.hand.selected == ["9D"]
     lit = sorted(c for c, v in gs.hand.views.items() if not v.shaded)
     assert lit == ["9D", "AS"]
-    # the message stays quiet while cards are selected; the forecast is on the attack's card
-    assert gs.message.text == "" and "damage" in gs.forecast
+    assert gs.enemy.projection["damage"] == 9 and gs.enemy.projection["enemy_hp_after"] == 11
 
 
 def test_a_clash_with_the_enemys_immunity_puts_a_red_edge_on_the_card_and_the_enemy(app):
@@ -116,12 +126,30 @@ def test_the_header_projects_what_the_selection_would_do(app):
     gs.hand.set_selection(["5C", "5D"])                 # 10, doubled by clubs: 20, exactly
     assert gs.enemy.projection["exact"]
     ui.render(app)
-    # under a choice box the projection is gone
+    assert "THIS PLAY" in _attack_card_texts(gs)
+    # under a choice box the projection is gone, from the header and from the attack's card
     gs._table_under_box(None)
-    assert gs.enemy.projection is None and gs.forecast == ""
+    assert gs.enemy.projection is None and not gs.enemy.warn and gs.enemy.paying is None
+    assert "THIS PLAY" not in _attack_card_texts(gs)
 
 
-def test_the_attack_and_the_enemy_open_their_cards_on_a_tap(app):
+def _attack_card_texts(gs):
+    """The labels of the attack's card (a tap left of the enemy), closed again."""
+    from app.screens import CardPopup
+    gs._show_attack()
+    pop = [v for v in gs.subviews if isinstance(v, CardPopup)]
+    assert pop
+    texts = _texts(pop[0])
+    pop[0].close()
+    return texts
+
+
+def _rows(texts):
+    """(name, value) for each name label followed by its value label on a card."""
+    return list(zip(texts, texts[1:]))
+
+
+def test_the_attack_opens_its_card_on_a_tap_and_the_enemy_does_nothing(app):
     from app.screens import CardPopup
     gs, g = _quick(app)
     set_hand(g, ["5C", "5D", "9D", "AS"])
@@ -136,17 +164,21 @@ def test_the_attack_and_the_enemy_open_their_cards_on_a_tap(app):
     assert pop
     texts = _texts(pop[0])
     assert "ENEMY" in texts and "SHIELD" in texts and "You suffer 10" in texts
-    assert "4♠ (immune)" in texts and "0" in texts     # a spade against a spade enemy adds nothing
-    assert "With 9♦" in texts and any("9 damage" in t for t in texts)
+    # a spade against a spade enemy adds nothing; the card is named by its rank alone
+    assert ("4 (immune)", "0") in _rows(texts)
+    assert not any(sym in t for t in texts for sym in "♠♥♦♣")
+    # what the 9 would do, as numbers
+    i = texts.index("THIS PLAY")
+    assert _rows(texts[i + 1:])[::2] == [("Attack", "9"), ("Draw", "5"), ("Damage", "9"), ("Enemy health", "11"),
+                                         ("You suffer", "10")]
     pop[0].close()
-    # the enemy's card itself: health, immunity, the castle and the selection's forecast
+    # the enemy's card itself opens nothing (no running text on the table): its health and
+    # immunity are on the header
     ui.tap(app, x0, y0)
-    pop = [v for v in gs.subviews if isinstance(v, CardPopup)]
-    assert pop
-    text = " ".join(_texts(pop[0]))
-    assert "Health 20 of 20" in text and "Immune to Spades" in text and "more in the castle" in text
-    assert "With 9♦" in text
-    pop[0].close()
+    assert not [v for v in gs.subviews if isinstance(v, CardPopup)] and gs.overlay is None
+    drawn = _drawn_text(gs.enemy)
+    assert "20" in drawn and "of 20" in drawn and gs.enemy.card_view.center_icons == ["S"]
+    assert gs.pile_views["castle"].count == len(g.castle) == 11
 
 
 def test_the_solo_flute_takes_the_yield_buttons_place_and_its_cards_wait_for_a_set(app):
@@ -207,19 +239,17 @@ def test_the_played_cards_sit_under_the_hand_and_everything_fits(app, size):
     for p in piles:                                     # the piles in a row between the enemy and the hand
         assert gs.enemy.y + gs.enemy.height <= p.y and p.y + p.height <= hand.y and p.card_rect()[2] >= (32 if h < 600 else 40)
     assert [p.x for p in piles] == sorted(p.x for p in piles) and piles[-1].x + piles[-1].width <= w
-    assert gs.message.hidden
     for v in hand.views.values():
         assert v.y >= 0 and v.y + v.height <= hand.height and v.width >= 40
-    if not gs.zone.hidden:
-        if h < 760:
-            assert gs.zone.y == strip.y                 # a short screen: side by side
-            assert gs.zone.x + gs.zone.width <= strip.x
-        else:
-            assert gs.zone.y + gs.zone.height <= hand.y
-    # the setting puts them back above the hand
+    # the mission zone above the hand on every screen, a row of its own as wide as the played row
+    assert not gs.zone.hidden
+    assert gs.pile_views["castle"].y + gs.pile_views["castle"].height <= gs.zone.y
+    assert gs.zone.y + gs.zone.height <= hand.y and gs.zone.x == strip.x and gs.zone.width >= strip.width
+    # the old 'played cards above the hand' setting is gone: the played row stays under it
     app.settings["played_below"] = False
     gs.layout()
-    assert strip.y + strip.height <= hand.y
+    assert hand.y + hand.height <= strip.y <= strip.y + strip.height <= bar.y
+    assert gs.zone.y + gs.zone.height <= hand.y
     assert ui.render(app).size[0] > 0
 
 
@@ -261,7 +291,7 @@ def test_a_set_made_only_of_flute_cards_can_be_tapped_even_with_an_empty_hand(ap
 
 
 def test_a_guardian_play_shows_nothing_left_to_suffer(app):
-    from app.screens import describe_preview
+    from app.screens import describe_preview, forecast_rows
     app.new_campaign(1, ["Solo"])
     camp = app.campaign
     camp.mission, camp.completed = 6, list(range(1, 6))
@@ -282,14 +312,16 @@ def test_a_guardian_play_shows_nothing_left_to_suffer(app):
     pv = gs.enemy.projection
     assert pv["phase_after"] == PHASE_PLAY and g.enemy_attack > 0
     assert "→ 0" in _drawn_text(gs.enemy)
-    assert "nothing to suffer" in describe_preview(g, pv) and "then suffer" not in gs.forecast
+    assert "nothing to suffer" in describe_preview(g, pv) and pv["suffer"] == 0
+    assert ("You suffer", "0") in forecast_rows(g, pv)
     gs.hand.set_selection(["9D"])                        # an ordinary play: the attack still comes
-    assert "then suffer %d" % g.enemy_attack in gs.forecast
+    pv = gs.enemy.projection
+    assert pv["suffer"] == g.enemy_attack > 0 and pv["defeats"] is False
+    assert ("You suffer", "%d" % g.enemy_attack) in forecast_rows(g, pv)
 
 
-def test_a_short_screen_shares_the_zone_row_and_cuts_a_long_title(app):
-    from app.screens import CardPopup
-    from app.widgets import CardStrip, text_size
+def test_a_short_screen_keeps_the_zone_above_the_hand_and_a_full_row_behind_a_card_back(app):
+    from app.screens import CardListOverlay, CardPopup
     for w, h in ((375, 667), (320, 568)):
         ui.set_screen_size(w, h)
         gs, g = _flute_mission(app, 7)
@@ -297,19 +329,40 @@ def test_a_short_screen_shares_the_zone_row_and_cuts_a_long_title(app):
         gs.layout()
         gs.refresh(after_action=False)
         zone, strip, hand = gs.zone, gs.strip, gs.hand
-        assert gs._strips_shared() and zone.y == strip.y and zone.x + zone.width <= strip.x
-        # mission 7's pilgrim title is too long for half the width: two lines, cut with "…"
-        zone.set_cards([], "Mission zone · 1 pilgrim, total 3 · 23 in the pilgrim deck")
-        gs.layout()
-        shown = zone.shown_title()
-        assert text_size(shown, zone.width - 8, CardStrip.TITLE_FONT)[1] <= CardStrip.LINE * 2.4
-        assert shown.endswith("…") and shown != zone.title
-        # the hand never runs under the strip or the buttons, its cards stay readable
-        assert hand.y + hand.height <= strip.y
+        # no shared row any more: the zone above the hand, the played cards under it
+        assert not zone.hidden and zone.x == strip.x and zone.width >= strip.width
+        assert zone.y + zone.height <= hand.y and hand.y + hand.height <= strip.y
+        # the hand never runs under the rows or the buttons, its cards stay readable
         for v in hand.views.values():
             assert v.y + v.height <= hand.height + 0.5 and v.width >= 32
-        # a tap on the zone shows its whole title
+        # mission 7's pilgrim, face up, oldest first; a row that is not full opens nothing
+        assert [c.id for c in zone.cards] == g.mission_zone and len(g.mission_zone) == 1
+        assert not zone.overflows() and [c.id for c in zone.shown()] == g.mission_zone
         ui.tap(app, *ui.root_point(app, zone))
-        pop = [v for v in gs.subviews if isinstance(v, CardPopup)]
-        assert pop and any(zone.title in t for t in _texts(pop[0]))
-        pop[0].close()
+        assert gs.overlay is None and not [v for v in gs.subviews if isinstance(v, CardPopup)]
+        # a full row: a card back with the total first, then the newest cards
+        extra = [c for c in g.tavern if c not in g.mission_zone][:zone.capacity()]
+        for c in extra:
+            _pull(g, c)
+        g.mission_zone.extend(extra)
+        gs.refresh(after_action=False)
+        ids = list(g.mission_zone)
+        assert [c.id for c in zone.cards] == ids and len(ids) == zone.capacity() + 1 and zone.overflows()
+        assert [c.id for c in zone.shown()] == ids[-(zone.capacity() - 1):]
+        cw = zone.card_size()[0]
+        assert [round(v.x, 3) for v in zone.subviews][0] == round(cw + zone.GAP, 3)
+        assert "%d" % len(ids) in _drawn_text(zone)
+        # one more card pushes the oldest shown out of sight
+        newest = [c for c in g.tavern if c not in g.mission_zone][0]
+        _pull(g, newest)
+        g.mission_zone.append(newest)
+        gs.refresh(after_action=False)
+        assert zone.shown()[-1].id == newest and ids[-(zone.capacity() - 1)] not in [c.id for c in zone.shown()]
+        # a tap on the back lists every card in the zone, oldest first; Back returns
+        zx, zy = ui.root_point(app, zone)
+        ui.tap(app, zx - zone.width / 2.0 + cw / 2.0, zy)
+        ov = gs.overlay
+        assert isinstance(ov, CardListOverlay) and list(ov.card_views) == g.mission_zone
+        assert "Mission zone · %d" % len(g.mission_zone) in _texts(ov)
+        ui.button(ov, "Back").action(None)
+        assert gs.overlay is None

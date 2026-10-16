@@ -48,10 +48,36 @@ def _tap_button(app, title):
     ui.tap(app, *ui.root_point(app, b))
 
 
-def _said(gs):
-    """The table's message and, while cards are selected, the forecast of what they would do
-    (shown in full on the attack's card, a tap on the attack number)."""
-    return gs.message.text + " " + gs.forecast
+def _pv(gs):
+    """What the selected cards would do, as the table shows it (no running text): the
+    ``Game.preview_play`` dict behind the header's numbers and the attack card's rows; {}
+    with nothing (or nothing legal) selected."""
+    return gs.enemy.projection or {}
+
+
+def _rows(gs):
+    """The attack card's rows for the selection, {name: value} (``forecast_rows``)."""
+    from app.screens import forecast_rows
+    pv = gs.enemy.projection
+    return dict(forecast_rows(gs.game, pv)) if pv else {}
+
+
+def _zone_ids(gs):
+    """The mission zone's row on the table (oldest first): the row has no title, the cards
+    and the header (the enemy's immunity icons) say what the zone does."""
+    return [c.id for c in gs.zone.cards]
+
+
+def _attack_card(app, gs):
+    """The attack's card (a tap left of the enemy's card in the header): its labels' texts,
+    top to bottom. The card is closed again."""
+    from app.screens import CardPopup
+    ui.tap(app, gs.enemy.x + 10, ui.root_point(app, gs.enemy)[1])
+    pops = [v for v in gs.subviews if isinstance(v, CardPopup)]
+    assert pops, "no attack card"
+    texts = [v.text for v in ui.find(pops[-1], lambda v: isinstance(v, ui.Label) and not v.hidden)]
+    pops[-1].close()
+    return texts
 
 
 def _logged(g):
@@ -119,7 +145,8 @@ def test_illegal_selection_disables_play_and_says_nothing(app):
     if len(bad) == 2 and bad[0].rank != bad[1].rank:
         gs.hand.set_selection([bad[0].id, bad[1].id])
         assert not gs.right_btn.enabled
-        assert gs.message.hidden and not gs.forecast      # no text: Play stays off
+        # nothing forecast: the header keeps the enemy's own numbers, the attack card adds no rows
+        assert gs.enemy.projection is None and _rows(gs) == {} and not gs.enemy.warn
 
 
 def test_pass_and_play_handover_and_jester_choice(app):
@@ -384,7 +411,8 @@ def test_kinfolk_flute_decision_overlay_add(app, tmp_path):
     from app.screens import DecisionOverlay, HandoverOverlay
     gs, g = _flute_attempt(app)
     gs.hand.set_selection(["3C"])
-    assert "Kinfolk Flute" in _said(gs) and "6 damage" in _said(gs)
+    # forecast as if nobody adds (the Kinfolk Flute's decision comes first): 3, doubled
+    assert _pv(gs)["decision_kind"] == "flute_add" and _pv(gs)["damage"] == 6 and _rows(gs)["Damage"] == "6"
     _tap_button(app, "Play")
     assert g.phase == PHASE_DECIDE and g.deciding == 1
     # a handover-style overlay names the deciding player and the attack; the hand stays hidden
@@ -398,16 +426,18 @@ def test_kinfolk_flute_decision_overlay_add(app, tmp_path):
     assert gs.left_btn.title == "Pass" and gs.left_btn.enabled
     assert gs.right_btn.title == "Add" and not gs.right_btn.enabled
     assert gs.mid_btn.hidden
-    assert "Kinfolk Flute: Ben may add to Ana's 3♣" in _said(gs)
+    # Ben decides on the Kinfolk Flute for Ana's 3♣ (the decision names itself nowhere on the table)
+    assert g.decision["kind"] == "flute_add" and g.deciding == 1
+    assert g.plays[-1].player == 0 and g.plays[-1].card_ids == ["3C"]
     # only 3s are selectable
     assert gs.hand.views["7C"].shaded and gs.hand.views["AS"].shaded and not gs.hand.views["3D"].shaded
     _tap_card(app, gs, "7C")
     assert gs.hand.selected == [] and not gs.right_btn.enabled
     _tap_card(app, gs, "3D")
     assert gs.hand.selected == ["3D"] and gs.right_btn.enabled
-    assert "12 damage" in _said(gs)
+    assert _pv(gs)["damage"] == 12 and _pv(gs)["attack"] == 6 and _rows(gs)["Damage"] == "12"
     _tap_card(app, gs, "3H")
-    assert gs.right_btn.enabled and "18 damage" in _said(gs)  # 3 + 3 + 3 = 9, doubled
+    assert gs.right_btn.enabled and _pv(gs)["damage"] == 18  # 3 + 3 + 3 = 9, doubled
     _tap_card(app, gs, "3H")
     _tap_button(app, "Add")
     assert g.phase == PHASE_SUFFER and g.active == 0 and g.enemy.hp == 8
@@ -641,7 +671,7 @@ def test_mission3_zone_strip_and_exact_kill_pick_overlay(app):
     gs = _game_screen(app)
     g = app.game
     assert "ARC25" not in g.cards and g.enemy.name == "Instructor"
-    assert not gs.zone.hidden and gs.zone.title.startswith("Mission zone")
+    assert not gs.zone.hidden and _zone_ids(gs) == g.mission_zone == []
     set_hand(g, ["9S", "8H", "7D", "5C", "6D"])
     set_tavern_top(g, ["4H", "3S", "2D"])
     gs.refresh(after_action=False)
@@ -649,7 +679,9 @@ def test_mission3_zone_strip_and_exact_kill_pick_overlay(app):
     _tap_button(app, "Play")
     gs.hand.set_selection(["7D"])
     _tap_button(app, "Discard")
-    assert g.mission_zone == ["4H"] and "immune: Cleric" in gs.zone.title
+    # the 4♥ lies in the zone's row and makes the enemy immune to clerics (an icon on its card)
+    assert g.mission_zone == ["4H"] and _zone_ids(gs) == ["4H"]
+    assert "H" not in g.enemy.suits and "H" in g.rules.immune_suits(g) and "H" in gs.enemy.card_view.center_icons
     texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
     assert "End of turn: 4♥ goes into the mission zone." in _logged(g)   # (the game log; the table says nothing)
     # exact kill: the pick overlay offers each zone card
@@ -664,7 +696,7 @@ def test_mission3_zone_strip_and_exact_kill_pick_overlay(app):
     assert [b.title for b in btns] == ["Rescue 4♥ to the discard pile"]
     ui.tap(app, *ui.root_point(app, btns[0]))
     assert g.phase == "play" and g.enemies_defeated == 1 and "4H" in g.discard and gs.overlay is None
-    assert g.mission_zone == [] and "(empty)" in gs.zone.title
+    assert g.mission_zone == [] and not gs.zone.hidden and _zone_ids(gs) == [] and not gs.zone.overflows()
 
 
 # ---------------------------------------------------------------------------- mages
@@ -692,7 +724,8 @@ def test_mage_peek_overlay_then_emblem_keep_overlay(app):
     set_tavern_top(g, ["6C", "7D", "4H", "3S", "2S", "AD"])
     gs.refresh(after_action=False)
     gs.hand.set_selection(["5M"])
-    assert "The mage reveals 5 cards" in _said(gs) and "5 damage" in _said(gs)
+    # the mage reveals 5 cards from the reserve (never which): forecast as if nothing were added
+    assert _pv(gs)["mage_peeks"][0] == 5 and _pv(gs)["damage"] == 5 and _rows(gs)["Damage"] == "5"
     assert g.tavern[:6] == ["6C", "7D", "4H", "3S", "2S", "AD"]       # the preview left the reserve alone
     _tap_button(app, "Play")
     assert g.phase == PHASE_DECIDE and g.decision["kind"] == "mage_peek"
@@ -749,7 +782,7 @@ def test_mage_peek_overlay_with_nothing_to_add(app):
     set_tavern_top(g, ["7D"])
     gs.refresh(after_action=False)
     gs.hand.set_selection(["AM"])
-    assert "The mage reveals 1 card" in _said(gs)
+    assert _pv(gs)["mage_peeks"][0] == 1               # the short reserve: the mage reveals 1 card
     _tap_button(app, "Play")
     assert isinstance(gs.overlay, MagePeekOverlay)
     assert not ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Add"))
@@ -767,7 +800,8 @@ def test_emblem_place_handover_flow_for_two_players(app):
     set_tavern_top(g, ["6C", "4H", "3S", "2S", "2D"])
     gs.reveal_hand()
     gs.hand.set_selection(["5M"])
-    assert "Azure Emblem" in _said(gs) and "reveals 5 cards" in _said(gs)
+    # the others may place cards for the Azure Emblem first, then the mage reveals 5
+    assert _pv(gs)["decision_kind"] == "emblem_place" and _pv(gs)["mage_peeks"][0] == 5
     _tap_button(app, "Play")
     assert g.phase == PHASE_DECIDE and g.decision["kind"] == "emblem_place" and g.deciding == 1
     # Ben is asked first, flute-style: a handover panel, then his hand
@@ -780,9 +814,11 @@ def test_emblem_place_handover_flow_for_two_players(app):
     assert gs.overlay is None and [c.id for c in gs.hand.cards] == ["7C", "3D", "AS"]
     assert gs.left_btn.title == "Pass" and gs.left_btn.enabled
     assert gs.right_btn.title == "Place" and not gs.right_btn.enabled and gs.mid_btn.hidden
-    assert "Azure Emblem" in _said(gs)
+    # Ben's hand decides the Azure Emblem for Ana's attack (no caption: the buttons say it)
+    assert g.decision["kind"] == "emblem_place" and g.deciding == 1 and gs.shown_player == 1
+    assert g.plays[-1].player == 0 and g.plays[-1].card_ids == ["5M"]
     _tap_card(app, gs, "7C")
-    assert gs.hand.selected == ["7C"] and gs.right_btn.enabled and "Azure Emblem: Ben may place a card for Ana" in _said(gs)
+    assert gs.hand.selected == ["7C"] and gs.right_btn.enabled and g.decision["kind"] == "emblem_place"
     _tap_card(app, gs, "3D")                       # only one card may be placed
     assert gs.hand.selected == ["3D"] and gs.right_btn.enabled
     _tap_card(app, gs, "3D")
@@ -873,14 +909,15 @@ def test_reaver_count_grid_then_pick_overlay(app):
     from app.widgets import CardStrip
     from helpers import set_mission_enemy
     gs, g = _mission_attempt(app, 5)
-    assert not gs.zone.hidden and gs.zone.title.startswith("Mission zone")
+    assert not gs.zone.hidden and _zone_ids(gs) == g.mission_zone
     set_mission_enemy(g, "GRJH", hp=100)
     set_hand(g, ["5C", "5R", "9S", "8S", "7S"])
     set_tavern_top(g, ["7H", "2D", "3D"])
     gs.refresh(after_action=False)
     gs.hand.set_selection(["5C", "5R"])
     # the forecast counts the reaver's addition as 0: 10, doubled twice
-    assert "Reaver" in _said(gs) and "40 damage" in _said(gs) and "⛏︎ +0 then double" in _said(gs)
+    assert _pv(gs)["decision_kind"] == "reaver_count" and _pv(gs)["damage"] == 40
+    assert _pv(gs)["powers"]["R"]["added"] == 0 and _rows(gs)["Reaver"] == "+0 ×2"
     assert g.tavern[:3] == ["7H", "2D", "3D"]
     _tap_button(app, "Play")
     assert g.phase == PHASE_DECIDE and g.decision["kind"] == "reaver_count"
@@ -946,7 +983,8 @@ def test_scarlet_whistle_solo_pick_overlay_and_the_beast_choice(app):
     gs.refresh(after_action=False)
     assert ui.render(app).size[0] > 0                 # the B rank and the beast badge draw
     gs.hand.set_selection(["B_C"])
-    assert "Scarlet Whistle" in _said(gs) and "0 damage" in _said(gs)
+    # the Scarlet Whistle may add the top discard first; forecast without it: no damage
+    assert _pv(gs)["decision_kind"] == "whistle_take" and _pv(gs)["damage"] == 0
     _tap_button(app, "Play")
     assert g.phase == PHASE_DECIDE and g.decision["kind"] == "whistle_take"
     assert isinstance(gs.overlay, PickOverlay)
@@ -975,7 +1013,7 @@ def test_scarlet_whistle_two_players_hand_decision_overlay(app):
     set_hand(g, ["7C", "3D", "2D"], player=1)
     gs.reveal_hand()
     gs.hand.set_selection(["AS"])
-    assert "Scarlet Whistle" in _said(gs)
+    assert _pv(gs)["decision_kind"] == "whistle_add"   # another player may add a card first
     _tap_button(app, "Play")
     assert g.phase == PHASE_DECIDE and g.decision["kind"] == "whistle_add" and g.deciding == 1
     assert isinstance(gs.overlay, DecisionOverlay) and gs.hand.cards == []
@@ -986,7 +1024,7 @@ def test_scarlet_whistle_two_players_hand_decision_overlay(app):
     assert gs.overlay is None and [c.id for c in gs.hand.cards] == ["7C", "3D", "2D"]
     assert gs.left_btn.title == "Pass" and gs.right_btn.title == "Add" and not gs.right_btn.enabled
     _tap_card(app, gs, "7C")
-    assert gs.hand.selected == ["7C"] and gs.right_btn.enabled and "attack 8" in _said(gs)
+    assert gs.hand.selected == ["7C"] and gs.right_btn.enabled and _pv(gs)["attack"] == 8 and _rows(gs)["Attack"] == "8"
     _tap_card(app, gs, "3D")                       # one card only
     assert gs.hand.selected == ["3D"]
     _tap_card(app, gs, "7C")
@@ -1000,7 +1038,9 @@ def test_mission6_team_damage_seat_picker_flow(app):
     from app.screens import HandoverOverlay, PickOverlay, TeamDamageOverlay
     from helpers import set_mission_enemy
     gs, g = _mission_attempt(app, 6, names=("Ana", "Ben"))
-    assert g.mission_zone == ["MYLA7"] and not gs.zone.hidden and "Myla's team damage 7" in gs.zone.title
+    # Myla in the zone's row: her team damage is 7
+    assert g.mission_zone == ["MYLA7"] and not gs.zone.hidden and _zone_ids(gs) == ["MYLA7"]
+    assert g.rules.zone_strength(g) == 7
     set_mission_enemy(g, "GDQH", hp=9)
     set_hand(g, ["9S", "8D", "AD"], player=0)
     set_hand(g, ["3H", "4D", "7S", "2C"], player=1)
@@ -1035,7 +1075,9 @@ def test_mission6_team_damage_seat_picker_flow(app):
     _tap_button(app, "Show my hand")
     assert gs.overlay is None and [c.id for c in gs.hand.cards] == ["3H", "4D", "7S", "2C"]
     assert gs.left_btn.title == "Players" and gs.right_btn.title == "Discard 0/7" and not gs.right_btn.enabled
-    assert "Team damage: Ben discards" in _said(gs) and gs.enemy.paying == (0, 7)
+    # Ben discards for the team damage: his hand, the 7 owed on the attack side
+    assert g.decision["kind"] == "team_discard" and gs.team_seat == 1 and gs.shown_player == 1
+    assert gs.enemy.paying == (0, 7)
     _tap_card(app, gs, "3H")
     assert gs.right_btn.enabled and gs.right_btn.title == "Discard 3/7"
     _tap_card(app, gs, "4D")
@@ -1067,7 +1109,7 @@ def test_mission6_team_damage_seat_picker_flow(app):
     # the team damage is satisfied: the last discard brought the total past the 7 owed
     assert "Ana discards 8♦ for the team damage (11 of 7)." in _logged(g) and gs.overlay is None
     assert [c.id for c in gs.hand.cards] == ["AD"] and gs.right_btn.title == "Play"
-    assert "Myla's team damage 7" in gs.zone.title
+    assert _zone_ids(gs) == g.mission_zone and "MYLA7" in g.mission_zone and g.rules.zone_strength(g) == 7
 
 
 def test_mission6_solo_team_damage_shows_the_hand_at_once(app):
@@ -1081,7 +1123,8 @@ def test_mission6_solo_team_damage_shows_the_hand_at_once(app):
     _tap_button(app, "Move 5♠ to the mission zone")
     _tap_button(app, "Rescue 5♠ to the discard pile")
     assert g.decision["kind"] == "team_discard" and gs.overlay is None
-    assert gs.left_btn.title == "Suggest" and "Team damage" in _said(gs) and gs.right_btn.title == "Discard 0/7"
+    assert gs.left_btn.title == "Suggest" and gs.right_btn.title == "Discard 0/7" and gs.enemy.paying == (0, 7)
+    assert [c.id for c in gs.hand.cards] == g.players[0].hand    # the hand at once, no seat picker
     _tap_button(app, "Suggest")
     assert gs.hand.selected == ["8S"]                  # the smallest card that covers 7
     _tap_button(app, "Discard")
@@ -1211,14 +1254,17 @@ def test_druid_overlay_assigns_the_dealt_cards_to_four_slots(app):
     from app.widgets import CardView
     from helpers import set_discard, set_mission_enemy
     gs, g = _mission_attempt(app, 7)
-    assert "pilgrim deck" in gs.zone.title and "1 pilgrim" in gs.zone.title
+    # one pilgrim face up in the zone's row, the rest in the pilgrim deck
+    assert _zone_ids(gs) == g.mission_zone and [c.has("pilgrim") for c in gs.zone.cards] == [True]
+    assert g.extra["pilgrim_deck"]
     set_mission_enemy(g, "WLJH", hp=100)
     _empty_pilgrim_zone(g)
     set_hand(g, ["5U", "9S", "8S"])
     set_discard(g, ["2H", "3H", "4H", "6C", "7C", "AD"])
     gs.refresh(after_action=False)
     gs.hand.set_selection(["5U"])
-    assert "Druid" in _said(gs) and "5 damage" in _said(gs) and len(g.discard) == 6   # the forecast dealt nothing
+    # the Druid's deal and sort come first (forecast without them): 5 damage; the forecast dealt nothing
+    assert _pv(gs)["decision_kind"] == "druid_assign" and _pv(gs)["damage"] == 5 and len(g.discard) == 6
     _tap_button(app, "Play")
     assert g.phase == PHASE_DECIDE and g.decision["kind"] == "druid_assign" and isinstance(gs.overlay, DruidOverlay)
     dealt = g.decision["dealt"][0]
@@ -1265,14 +1311,16 @@ def test_chanter_declare_grid_then_the_other_players_discard_down(app):
     from app.screens import ChanterDeclareOverlay, DecisionOverlay
     from helpers import set_mission_enemy
     gs, g = _mission_attempt(app, 8, names=("Ana", "Ben"))
-    assert g.mission_zone == ["PILA"] and gs.zone.title == "Mission zone · enemy strength +0"
+    # the zone's pilgrim adds nothing to the enemy's strength: no mission line on the attack card
+    assert g.mission_zone == ["PILA"] and _zone_ids(gs) == ["PILA"] and g.rules.attack_bonus(g) == 0
     set_mission_enemy(g, "HEJ6", hp=100)
     set_hand(g, ["3T", "9S"], player=0)
     set_hand(g, ["2C", "3C", "4C", "5C", "6C", "7C"], player=1)
     set_tavern_top(g, ["AH", "2H", "3H", "4H", "5H", "6H", "7H", "8H"])
     gs.reveal_hand()
+    assert g.rules.attack_bonus(g) == 0 and "Mission" not in _attack_card(app, gs) and gs.overlay is None
     gs.hand.set_selection(["3T"])
-    assert "Chanter" in _said(gs)
+    assert _pv(gs)["decision_kind"] == "chanter_declare"   # the Chanter's declaration comes first
     _tap_button(app, "Play")
     assert g.phase == PHASE_DECIDE and g.decision["kind"] == "chanter_declare" and isinstance(gs.overlay, ChanterDeclareOverlay)
     numbers = [b.title for b in ui.find(gs.overlay, lambda v: isinstance(v, ui.Button) and v.title.isdigit())]
@@ -1315,12 +1363,13 @@ def test_mission7_zone_title_and_pilgrim_banish_pick_overlay(app):
     set_hand(g, ["3H", "9S", "8S", "PIL4_1"])
     g.extra["pilgrim_deck"].remove("PIL4_1") if "PIL4_1" in g.extra["pilgrim_deck"] else None
     gs.refresh(after_action=False)
-    assert gs.zone.title == "Mission zone · 1 pilgrim, total 3 · %d in the pilgrim deck" % len(g.extra["pilgrim_deck"])
+    # one pilgrim in the zone's row, strength 3
+    assert _zone_ids(gs) == ["PIL3_1"] and g.rules.zone_strength(g) == 3
     assert gs.hand.badges.get("PIL4_1") == "stuck" and gs.hand.views["PIL4_1"].shaded
     _tap_card(app, gs, "PIL4_1")
     assert gs.hand.selected == []                       # a locked card cannot be selected
     gs.hand.set_selection(["3H"])
-    assert "A pilgrim of the same strength may be banished first" in _said(gs)
+    assert _pv(gs)["decision_kind"] == "pilgrim_banish"   # a pilgrim of the same strength may be banished first
     _tap_button(app, "Play")
     assert g.decision["kind"] == "pilgrim_banish" and isinstance(gs.overlay, PickOverlay)
     texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
@@ -1330,7 +1379,7 @@ def test_mission7_zone_title_and_pilgrim_banish_pick_overlay(app):
     _tap_button(app, "Banish Pilgrim 3")
     assert g.mission_zone == [] and "PIL3_1" in g.banished and g.decision is None and gs.overlay is None
     assert "Solo banishes Pilgrim 3 from the mission zone (matched by 3♥)." in _logged(g)
-    assert gs.zone.title.startswith("Mission zone · 0 pilgrims, total 0")
+    assert _zone_ids(gs) == [] and not gs.zone.hidden and g.rules.zone_strength(g) == 0
 
 
 def test_mission9_pile_strip_rescue_flow_and_exact_kill_overlay(app):
@@ -1339,14 +1388,15 @@ def test_mission9_pile_strip_rescue_flow_and_exact_kill_overlay(app):
     from helpers import set_mission_enemy
     gs, g = _mission_attempt(app, 9)
     piles = g.extra["captured"]
-    assert not gs.zone.hidden and gs.zone.title == "Captured piles · 10 / 10 / 10"
+    # the zone's row shows the three captured piles' top cards (10 cards each)
+    assert not gs.zone.hidden and [len(p) for p in piles] == [10, 10, 10]
     assert [c.id for c in gs.zone.cards] == [p[0] for p in piles]
     set_mission_enemy(g, "TTQH")
     set_hand(g, ["9S", "4C", "3C", "5D", "6D"])          # pulls those cards out of the piles too
     tops = [p[0] for p in piles]
     sizes = [len(p) for p in piles]
     gs.refresh(after_action=False)
-    assert gs.zone.title == "Captured piles · %d / %d / %d" % tuple(sizes)
+    assert _zone_ids(gs) == tops                       # the piles' new tops
     gs.hand.set_selection(["9S"])
     _tap_button(app, "Play")
     assert g.phase == PHASE_SUFFER and g.pending_damage == 6
@@ -1364,7 +1414,10 @@ def test_mission9_pile_strip_rescue_flow_and_exact_kill_overlay(app):
     # then the hand: one card to banish
     assert gs.overlay is None and gs.pile_choice == 1 and [c.id for c in gs.hand.cards] == ["5D", "6D"]
     assert gs.right_btn.title == "Banish" and not gs.right_btn.enabled and gs.left_btn.title == "Back"
-    assert "Rescue %s from pile 2" % g.card(tops[1]).label() in _said(gs)
+    # rescuing pile 2's top: the cards not greyed are those the rules let go for pile 2
+    assert g.decision["kind"] == "pile_rescue" and piles[1][0] == tops[1]
+    allowed = set(a["card"] for a in g.legal_actions() if a["type"] == "pile_rescue" and int(a["pile"]) == 1)
+    assert allowed and set(cid for cid, v in gs.hand.views.items() if not v.shaded) == allowed
     _tap_button(app, "Back")
     assert isinstance(gs.overlay, PileRescueOverlay) and gs.pile_choice is None
     ui.tap(app, *ui.root_point(app, ui.button(app, labels[1])))
@@ -1373,7 +1426,7 @@ def test_mission9_pile_strip_rescue_flow_and_exact_kill_overlay(app):
     _tap_button(app, "Banish")
     assert g.decision is None and g.banished[-1] == "5D" and g.discard[0] == tops[1] and len(piles[1]) == sizes[1] - 1
     assert gs.pile_choice is None and g.turn == 2
-    assert gs.zone.title == "Captured piles · %d / %d / %d" % (sizes[0], sizes[1] - 1, sizes[2])
+    assert [len(p) for p in piles] == [sizes[0], sizes[1] - 1, sizes[2]] and _zone_ids(gs) == [p[0] for p in piles if p]
     assert ("Solo banishes 5♦ and rescues %s from captured pile 2 to the discard pile."
             % g.card(tops[1]).label()) in _logged(g)
     # an exact kill: the pile-to-reserve overlay
@@ -1381,7 +1434,7 @@ def test_mission9_pile_strip_rescue_flow_and_exact_kill_overlay(app):
     set_hand(g, ["9S", "2C"])
     gs.refresh(after_action=False)
     gs.hand.set_selection(["9S"])
-    assert "defeats it exactly" in _said(gs)
+    assert _pv(gs)["defeats"] and _pv(gs)["exact"] and _rows(gs)["Enemy health"] == "exact"
     _tap_button(app, "Play")
     assert g.decision["kind"] == "pile_to_reserve" and isinstance(gs.overlay, PileToReserveOverlay)
     tops = [p[0] for p in piles]
@@ -1389,7 +1442,7 @@ def test_mission9_pile_strip_rescue_flow_and_exact_kill_overlay(app):
     assert ui.button(app, "Leave the piles") and ui.render(app).size[0] > 0
     ui.tap(app, *ui.root_point(app, btn))
     assert g.decision is None and g.tavern[0] == tops[0] and g.enemies_defeated == 1 and gs.overlay is None
-    assert gs.zone.title == "Captured piles · %d / %d / %d" % (len(piles[0]), len(piles[1]), len(piles[2]))
+    assert _zone_ids(gs) == [p[0] for p in piles if p]   # pile 1's next card on top
 
 
 def _finished_campaign(app, names=("Solo",)):
@@ -1467,7 +1520,7 @@ def test_evergreen_screen_draw_redraw_options_mercenaries_start_and_continue(app
     g = app.game
     assert g.config.rules_id == "evergreen" and app.in_campaign and store.has_attempt(camp.slot)
     assert any(x.startswith("M") and g.cards[x].has("mercenary") for x in g.cards) and len(g.discard) == 30
-    assert not gs.zone.hidden and gs.zone.title.startswith("Mission zone (the Shrine)")
+    assert not gs.zone.hidden and _zone_ids(gs) == g.mission_zone and g.rules.location_name(g) == "Shrine"
     assert camp.evergreen["attempts"] == 1 and ui.render(app).size[0] > 0
     # the rules card names the drawn setup, E in its corner
     from app.screens import PartyScreen, rules_card
@@ -1534,7 +1587,9 @@ def test_mission11_beast_hand_pick_and_mission12_banish_order_overlay(app):
     from app.screens import OrderOverlay
     from helpers import set_mission_enemy
     gs, g = _late_mission_attempt(app, 11)
-    assert not gs.zone.hidden and gs.zone.title.startswith("Beast deck · 3 face down · revealed: ")
+    # the zone's row holds the revealed beasts; three more lie face down in the beast deck
+    assert not gs.zone.hidden and len(g.extra["beast_deck"]) == 3
+    assert g.extra["beasts_out"] and _zone_ids(gs) == g.extra["beasts_out"]
     if g.phase == PHASE_DECIDE:
         gs.decide(greedy_policy(g))
     # a cleric beast at the next start of turn: the hand is shown with one card to discard
@@ -1556,8 +1611,9 @@ def test_mission11_beast_hand_pick_and_mission12_banish_order_overlay(app):
     _tap_button(app, "Discard")
     assert g.phase == PHASE_DECIDE and g.decision["kind"] == "beast_discard" and gs.overlay is None
     assert gs.right_btn.title == "Discard" and not gs.right_btn.enabled and gs.left_btn.title == "No pass" and not gs.left_btn.enabled
-    assert "Cleric beast" in _said(gs) and [c.id for c in gs.hand.cards] == ["2C"]
-    assert gs.zone.title.startswith("Beast deck") and "Cleric" in gs.zone.title and ui.render(app).size[0] > 0
+    # the cleric beast (B♥) is out, in the zone's row
+    assert "B_H" in g.extra["beasts_out"] and [c.id for c in gs.hand.cards] == ["2C"]
+    assert "B_H" in _zone_ids(gs) and _zone_ids(gs) == g.extra["beasts_out"] and ui.render(app).size[0] > 0
     _tap_card(app, gs, "2C")
     assert gs.right_btn.enabled
     _tap_button(app, "Discard")
@@ -1565,7 +1621,7 @@ def test_mission11_beast_hand_pick_and_mission12_banish_order_overlay(app):
     assert "Solo discards 2♣ (Cleric beast)." in _logged(g)
     # mission 12: the banish order is picked by tapping the zone cards in order
     gs, g = _late_mission_attempt(app, 12)
-    assert gs.zone.title == "Mission zone (empty)"
+    assert not gs.zone.hidden and _zone_ids(gs) == [] == g.mission_zone
     set_mission_enemy(g, "THQH", hp=9)
     for x in ("6D", "4H"):                             # neither is restored: both can be banished
         for pile in (g.tavern, g.discard, g.banished, g.players[0].hand):
@@ -1574,9 +1630,14 @@ def test_mission11_beast_hand_pick_and_mission12_banish_order_overlay(app):
     g.mission_zone = ["6D", "4H"]
     set_hand(g, ["9S", "AS"])
     gs.refresh(after_action=False)
-    assert gs.zone.title == "Mission zone · enemy strength +10 · immune: Bard"
+    # the zone's 6♦ + 4♥: the enemy's strength +10 (the attack card's mission line), immune
+    # to bards (an icon on the enemy's card)
+    assert _zone_ids(gs) == ["6D", "4H"] and g.rules.zone_strength(g) == 10
+    card = _attack_card(app, gs)
+    assert card[card.index("Mission") + 1] == "+10"
+    assert "D" not in g.enemy.suits and "D" in g.rules.immune_suits(g) and "D" in gs.enemy.card_view.center_icons
     gs.hand.set_selection(["9S"])
-    assert "defeats it exactly" in _said(gs)
+    assert _pv(gs)["defeats"] and _pv(gs)["exact"] and _rows(gs)["Enemy health"] == "exact"
     _tap_button(app, "Play")
     assert g.decision["kind"] == "banish_order" and isinstance(gs.overlay, OrderOverlay)
     confirm = ui.button(app, "Confirm the order (0 of 2)")
@@ -1606,7 +1667,7 @@ def test_evergreen_mother_solo_pick_overlay_and_two_player_hand_banish(app):
     set_discard(g, ["4C", "2C"])
     gs.refresh(after_action=False)
     gs.hand.set_selection(["7D"])
-    assert "Evergreen Mother" in _said(gs)
+    assert _pv(gs)["decision_kind"] == "mother_choice"   # the corrupted 7♦: the Evergreen Mother's banish first
     _tap_button(app, "Play")
     assert g.decision["kind"] == "mother_choice" and isinstance(gs.overlay, PickOverlay)
     texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
@@ -1637,7 +1698,8 @@ def test_evergreen_mother_solo_pick_overlay_and_two_player_hand_banish(app):
     assert [c.id for c in gs.hand.cards] == ["5C", "2C"] and gs.right_btn.title == "Banish" and not gs.right_btn.enabled
     assert gs.left_btn.title == "No pass" and not gs.left_btn.enabled
     _tap_card(app, gs, "2C")
-    assert gs.right_btn.enabled and "Evergreen Mother: Ben banishes a card" in _said(gs)
+    # Ben's hand banishes for the Evergreen Mother (the Banish button, no caption)
+    assert gs.right_btn.enabled and g.decision["kind"] == "mother_banish" and g.deciding == 1 and gs.shown_player == 1
     _tap_button(app, "Banish")
     assert g.banished == ["2C"] and "2C" not in g.players[1].hand and "5C" in g.players[1].hand and g.decision is None
     assert "7♦ is corrupted: Ben banishes 2♣ from hand (Evergreen Mother)." in _logged(g)
@@ -1732,14 +1794,17 @@ def test_finding_21_open_hands_setting_reaches_campaign_and_evergreen_attempts(a
 
 
 def _zone_fits(gs):
-    from app import theme as T
+    """The zone's row (no title: its caption is gone) sits above the hand, the played cards
+    below it, and shows the zone's cards whole inside its frame, oldest first (all of them,
+    or the newest beside a card back holding the total)."""
     zone = gs.zone
-    w, h = ui.measure_string(zone.title, zone.width - 8, (T.FONT, 11))
-    assert h <= 2 * 14 + 1, (zone.title, h)            # two lines at most
-    th = zone.title_height()
-    assert th in (14, 28) and th + 0.5 >= h
-    for v in zone.subviews:                            # the cards sit below the title
-        assert v.y >= th and v.y + v.height <= zone.height + 0.5
+    assert not zone.hidden and zone.y + zone.height <= gs.hand.y + 0.5
+    assert gs.strip.y >= gs.hand.y + gs.hand.height - 0.5
+    shown = [v.card.id for v in zone.subviews]
+    assert shown == [c.id for c in zone.shown()] and shown == _zone_ids(gs)[len(_zone_ids(gs)) - len(shown):]
+    assert len(shown) == len(zone.cards) or zone.overflows()
+    for v in zone.subviews:
+        assert v.x >= 0 and v.x + v.width <= zone.width + 0.5 and v.y >= 0 and v.y + v.height <= zone.height + 0.5
 
 
 def test_finding_23_long_zone_captions_fit_two_lines_above_the_cards(app):
@@ -1757,7 +1822,11 @@ def test_finding_23_long_zone_captions_fit_two_lines_above_the_cards(app):
         _pull(g, x)
     g.mission_zone = ["4H", "3S", "2D", "6C"]
     gs.refresh(after_action=False)
-    assert gs.zone.title == "Mission zone · immune: Cleric, Paladin, Bard, Warrior"
+    # the four zone cards in the row; the enemy (a mage) is immune to their four classes too,
+    # every one an icon on its card
+    assert _zone_ids(gs) == ["4H", "3S", "2D", "6C"]
+    assert [s_ for s_ in g.rules.immune_suits(g) if s_ not in g.enemy.suits] == ["H", "S", "D", "C"]
+    assert list(gs.enemy.card_view.center_icons) == list(g.rules.immune_suits(g))
     _zone_fits(gs)
     assert ui.render(app).size[0] > 0
     # mission 11: four beasts out and no reveal next turn
@@ -1766,7 +1835,8 @@ def test_finding_23_long_zone_captions_fit_two_lines_above_the_cards(app):
     g.extra["beast_deck"] = []
     g.extra["skip_beast"] = True
     gs.refresh(after_action=False)
-    assert gs.zone.title.startswith("Beast deck · 0 face down · revealed: ") and gs.zone.title.endswith("no reveal next turn")
+    # every beast out, in the zone's row (the deck is empty)
+    assert g.extra["beast_deck"] == [] and len(g.extra["beasts_out"]) == 4 and _zone_ids(gs) == g.extra["beasts_out"]
     _zone_fits(gs)
     assert ui.render(app).size[0] > 0
     # mission 12: strength, four classes, no card next turn
@@ -1778,7 +1848,13 @@ def test_finding_23_long_zone_captions_fit_two_lines_above_the_cards(app):
     g.mission_zone = list(zone)
     g.extra["skip_zone"] = True
     gs.refresh(after_action=False)
-    assert "enemy strength +" in gs.zone.title and "immune: " in gs.zone.title and gs.zone.title.endswith("no card next turn")
+    # the zone's cards add to the enemy's strength (the attack card's mission line) and make it
+    # immune to their classes (icons on its card)
+    assert _zone_ids(gs) == zone and g.rules.zone_strength(g) > 0
+    card = _attack_card(app, gs)
+    assert card[card.index("Mission") + 1] == "+%d" % g.rules.attack_bonus(g) and g.rules.attack_bonus(g) > 0
+    assert [s_ for s_ in g.rules.immune_suits(g) if s_ not in g.enemy.suits] == ["C", "D", "S"]
+    assert list(gs.enemy.card_view.center_icons) == list(g.rules.immune_suits(g))
     _zone_fits(gs)
     assert ui.render(app).size[0] > 0
 
@@ -1813,10 +1889,13 @@ def test_finding_24_a_long_immunity_shows_every_class_on_the_enemy_and_in_its_ca
     # the enemy's card in the header shows all five classes under its letter
     assert list(gs.enemy.card_view.center_icons) == list(g.rules.immune_suits(g))
     assert ui.render(app).size[0] > 0
-    # a tap on the enemy opens its card: the immunity in words and the castle count, uncut
+    # no enemy card in words any more: a tap on the enemy does nothing; the castle's count is
+    # on its pile
+    from app.screens import CardPopup
     ui.tap(app, *ui.root_point(app, gs.enemy))
-    texts = " ".join(_texts(app))
-    assert "Immune to " in texts and "more in the castle" in texts
+    assert gs.overlay is None and not [v for v in gs.subviews if isinstance(v, CardPopup)]
+    assert not any("Immune to " in t for t in _texts(app))
+    assert gs.pile_views["castle"].count == len(g.castle) > 0 and not gs.pile_views["castle"].hidden
     _assert_nothing_cut(app)
 
 
@@ -1953,12 +2032,14 @@ def test_finding_27_status_line_keeps_the_jester_count_and_mission10_shows_the_n
     assert "Jesters 2" in text and ui.measure_string(text, 0, (T.FONT, 13))[0] <= gs.status.width
     assert not ui.label_truncated(gs.status)
     assert status_text(g, 1000) .startswith("Turn ")      # with room, the turn is shown
-    # mission 10: the next enemy of the face-up deck is on the enemy's card (a tap on it)
+    # mission 10: the next enemy of the face-up deck lies face up on the castle pile (the
+    # enemy's card in words is gone)
     gs, g = _late_mission_attempt(app, 10)
     gs.refresh(after_action=False)
     assert "next:" not in gs.status.text
-    ui.tap(app, *ui.root_point(app, gs.enemy))
-    assert any("next: %s" % g.card(g.castle[0]).label() in t for t in _texts(app))
+    castle = gs.pile_views["castle"]
+    assert g.castle and castle.top is not None and castle.top.id == g.castle[0] and castle.count == len(g.castle)
+    assert castle.top_view is not None and castle.top_view.card.id == g.castle[0]
 
 
 def test_finding_28_azure_emblem_place_never_offers_a_locked_pilgrim(app):
@@ -2043,7 +2124,8 @@ def test_finding_17_ui_declarations_use_pick_buttons(app):
     set_hand(g, ["MA_1", "4D", "9S", "M25C"])
     gs.refresh(after_action=False)
     gs.hand.set_selection(["MA_1", "4D"])
-    assert "Wild Animal: you declare its class" in _said(gs)
+    # the Wild Animal's class is declared after the play: the forecast assumes one, its numbers end in "?"
+    assert _pv(gs)["decision_kind"] == "declare_class" and _rows(gs)["Attack"].endswith("?")
     _tap_button(app, "Play")
     assert g.decision["kind"] == "declare_class" and isinstance(gs.overlay, DeclareOverlay)
     titles = [b.title for b in ui.find(gs.overlay, lambda v: isinstance(v, ui.Button))]
