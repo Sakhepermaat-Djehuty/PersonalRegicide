@@ -1,6 +1,8 @@
-"""The owner's quality-of-life changes to the choice boxes: the Azure Emblem's keep is a grid
-of cards (tap one, then Keep) instead of a button per card, and stays inside the screen with
-a dozen revealed cards; the "What order?" box offers "Random order" while no card is tapped."""
+"""The owner's quality-of-life changes to the choice boxes: the Azure Emblem's keep, the
+Mage's look and the Reaver's pick are grids of cards (tap one, then the button that names
+it) instead of a strip and a button per card, and stay inside the screen with ten or twenty
+revealed cards; the "What order?" box offers "Random order" while no card is tapped; the
+table's small targets (Menu, a full row's card back, the piles viewer's tabs) are full size."""
 import os
 import sys
 
@@ -63,7 +65,8 @@ def _emblem_keep(app, reveal=TWELVE):
     gs.hand.set_selection(["10M", "AS"])
     _tap_button(app, "Play")
     assert g.decision["kind"] == "mage_peek"
-    _tap_button(app, "Add 7♣")
+    ui.tap(app, *ui.root_point(app, gs.overlay.card_views["7C"]))
+    _tap_button(app, "Add 7♣ to the attack")
     assert g.decision["kind"] == "emblem_keep"
     return gs, g
 
@@ -215,3 +218,123 @@ def test_an_error_opening_the_attack_card_is_shown_on_the_phone(app, monkeypatch
     gs._show_attack()
     assert ("hud", "Opening the attack failed: ValueError no attack") in console.history
     assert not ui.find(app, lambda v: isinstance(v, CardPopup))
+
+
+def _mage_look(app, reveal=TWELVE):
+    """Solo: a 10 mage and an ace (strength 11) reveal eleven cards."""
+    from regicide.campaign import missions as M
+    from regicide.campaign import party as P
+    app.new_campaign(1, ["Solo"])
+    for d in M.MAGE_DECK:
+        P.add_card(app.campaign.party, dict(d))
+    app.start_attempt()
+    gs, g = app.current, app.game
+    set_enemy(g, "K", "H")
+    set_hand(g, ["10M", "AS", "9S", "8S"])
+    set_tavern_top(g, list(reveal))
+    gs.refresh(after_action=False)
+    gs.hand.set_selection(["10M", "AS"])
+    _tap_button(app, "Play")
+    assert g.decision["kind"] == "mage_peek"
+    return gs, g
+
+
+def test_the_mage_look_is_a_grid_of_cards_tap_one_then_add(app):
+    from app.screens import MagePeekOverlay
+    from app.widgets import CardStrip
+    gs, g = _mage_look(app)
+    ov = gs.overlay
+    assert isinstance(ov, MagePeekOverlay) and not ui.find(ov, lambda v: isinstance(v, CardStrip))
+    assert list(ov.card_views) == TWELVE[:11]                                # as revealed, the top first
+    adds = [b for b in _buttons(ov) if b.title.startswith("Add")]
+    assert [b.title for b in adds] == ["Add a card to the attack"] and not adds[0].enabled
+    ui.tap(app, *ui.root_point(app, ov.card_views["9C"]))
+    assert ui.button(app, "Add 9♣ to the attack").enabled
+    ui.tap(app, *ui.root_point(app, ov.card_views["AD"]))                    # the pick moves
+    assert ov.picked == ["AD"] and not ov.card_views["9C"].selected
+    _tap_button(app, "Add A♦ to the attack")
+    assert g.plays[0].card_ids == ["10M", "AS", "AD"]
+
+
+@pytest.mark.parametrize("size", [(320, 568), (390, 844), (430, 932)])
+def test_a_twenty_card_mage_look_fits_every_screen(tmp_path, monkeypatch, size):
+    """Ash (the Mage beast) with the 10 mage is a strength 20 look: twenty cards, some that may
+    not join (Jesters, corrupted cards: dimmed, not tappable)."""
+    from app.screens import MagePeekOverlay
+    from app.widgets import CardView
+    app = _app(tmp_path, monkeypatch, size)
+    gs, g = _mage_look(app)
+    plain = [c for c in sorted(g.cards) if g.cards[c].rank in ("2", "3", "4", "5", "6", "7", "8", "9", "10", "A")
+             and not g.cards[c].is_jester and c not in ("10M", "AS", "9S", "8S")][:20]
+    revealed = plain
+    out = (plain[3], plain[9], plain[12])               # (a Jester or corrupted cards: discarded)
+    eligible = [c for c in revealed if c not in out]
+    g.decision = dict(g.decision, revealed=revealed, eligible=eligible, strength=20)
+    gs.refresh(after_action=False)
+    ov = gs.overlay
+    assert isinstance(ov, MagePeekOverlay) and len(ov.card_views) == 20
+    px, py = _origin(ov.panel)
+    assert py >= T.TOP_INSET - 0.5 and py + ov.panel.height <= app.height - T.BOTTOM_INSET + 0.5, size
+    views = [v for v in ui.find(ov, lambda v: isinstance(v, CardView))]
+    for i, a in enumerate(views):                                           # no card covers another
+        for b in views[i + 1:]:
+            assert a.x + a.width <= b.x + 0.5 or b.x + b.width <= a.x + 0.5 or \
+                a.y + a.height <= b.y + 0.5 or b.y + b.height <= a.y + 0.5
+    for cid in out:
+        assert ov.card_views[cid].dimmed and not ov.card_views[cid].touch_enabled
+    assert len([b for b in _buttons(ov) if b.title.startswith("Add")]) == 1
+    cut = [lab.text for lab in ui.find(ov, lambda v: isinstance(v, ui.Label) and not v.hidden) if ui.label_truncated(lab)]
+    assert not cut, (size, cut)                          # the long title shrinks to fit
+    sv = ov.grid_view
+    assert sv.height >= min(sv.content_size[1] - 4, 0.8 * views[0].height)
+
+
+def test_the_table_menu_button_is_a_full_size_target(app):
+    app.new_campaign(1, ["Solo"])
+    app.start_attempt()
+    gs = app.current
+    gs.layout()
+    b, st = gs.menu_btn, gs.status
+    assert b.height >= 36 and abs((b.y + b.height / 2) - (st.y + st.height / 2)) < 0.5
+
+
+def test_a_small_card_back_takes_taps_across_the_rows_first_44pt():
+    from test_table_owner import PLAYS, _bare_strip, _cards
+    strip = _bare_strip(260, 34.0 + 11)                 # the smallest screen's row
+    strip.set_cards(_cards(PLAYS))
+    assert strip.overflows()
+    cw, ch = strip.card_size()
+    assert cw < 40                                      # the back alone is a small target
+    taps = []
+    strip.on_more = lambda: taps.append(1)
+    strip.touch_ended(ui.Touch((40.0, ch / 2), (40.0, ch / 2), "ended"))
+    assert taps == [1]
+    far = max(44.0, (cw + strip.slot_x(1)) / 2.0) + 6
+    strip.touch_ended(ui.Touch((far, ch / 2), (far, ch / 2), "ended"))
+    assert taps == [1]                                  # further along: a face card, nothing
+
+
+def test_the_piles_viewer_tabs_are_full_size_targets(app):
+    from app.screens import PilesOverlay
+    app.new_campaign(1, ["Solo"])
+    app.start_attempt()
+    gs = app.current
+    gs._show_piles()
+    assert isinstance(gs.overlay, PilesOverlay)
+    seg = ui.find(gs.overlay, lambda v: isinstance(v, ui.SegmentedControl))[0]
+    assert seg.height >= 36
+
+
+def test_a_lone_skip_is_the_main_button_and_a_skip_beside_a_pick_is_not(app):
+    gs, g = _mage_look(app)
+    g.decision = dict(g.decision, eligible=[])           # nothing may join the attack
+    gs.refresh(after_action=False)
+    assert not [b for b in _buttons(gs.overlay) if b.title.startswith("Add")]
+    assert ui.button(app, "Nothing to add").background_color == T.BTN
+    ui.tap(app, *ui.root_point(app, ui.button(app, "Nothing to add")))
+    assert g.decision is None or g.decision.get("kind") != "mage_peek"
+
+
+def test_discard_them_all_is_the_second_button_beside_keep(app):
+    gs, g = _emblem_keep(app)
+    assert ui.button(app, "Discard them all").background_color == T.PANEL_2

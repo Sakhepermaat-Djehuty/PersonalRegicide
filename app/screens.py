@@ -714,7 +714,7 @@ class GameScreen(Screen):
         m = T.MARGIN
         y = T.TOP_INSET
         self.status.frame = (m, y, w - 2 * m - 80, 30)
-        self.menu_btn.frame = (w - m - 70, y, 70, 30)
+        self.menu_btn.frame = (w - m - 70, y - 3, 70, 36)     # a 36pt target, centred on the status line
         y += 34
         # the header and the piles grow with the screen (their cards keep a playing card's
         # proportions); a very short screen trims both for the hand's sake
@@ -1750,61 +1750,6 @@ def attack_summary(g: Game, play_index) -> str:
     return text
 
 
-class MagePeekOverlay(PickOverlay):
-    """The Mage's secret look: the cards taken from the top of the reserve in a row (Jesters
-    and corrupted cards dimmed, they are discarded), one button per card that may join the
-    attack, or a single "Nothing to add" when none may."""
-
-    def heading(self, g: Game, d: dict) -> tuple:
-        revealed = list(d.get("revealed", []))
-        n = len(revealed)
-        if n == 0:
-            return ("Mage: the reserve deck is empty", "There was nothing to look at. The attack goes on resolving as it is.")
-        title = "Mage: %d card%s revealed" % (n, "" if n == 1 else "s")
-        summary = attack_summary(g, d.get("play_index"))
-        strength = int(d.get("strength", n))
-        text = "You looked at the top %d card%s of the reserve deck%s. Jesters and corrupted cards are discarded. " \
-               "Choose one of the rest to add to the attack; the others go to the discard pile." % (
-                   n, "" if n == 1 else "s", "" if n == strength else " (the mage's strength is %d, the deck was short)" % strength)
-        if not d.get("eligible"):
-            text = "You looked at the top %d card%s of the reserve deck, but none of them may join the attack: " \
-                   "Jesters and corrupted cards are discarded." % (n, "" if n == 1 else "s")
-        return (title, (summary + "\n\n" + text) if summary else text)
-
-    def dimmed_ids(self, g: Game, d: dict) -> List[str]:
-        eligible = set(str(c) for c in d.get("eligible", []))
-        return [str(c) for c in d.get("revealed", []) if str(c) not in eligible]
-
-    def strip_title(self) -> str:
-        return "Revealed from the reserve deck (top first)"
-
-    def strip(self, g: Game, d: dict) -> Optional[CardStrip]:
-        revealed = [g.card(str(c)) for c in d.get("revealed", [])]
-        if not revealed:
-            return None
-        strip = CardStrip(frame=(0, 0, 10, 84))
-        strip.set_cards(revealed, self.strip_title(), self.dimmed_ids(g, d))
-        return strip
-
-
-
-class ReaverPickOverlay(MagePeekOverlay):
-    """Reaver, second step: the revealed cards in a row; one adds its strength to the damage,
-    all are banished, then the damage is doubled."""
-
-    def heading(self, g: Game, d: dict) -> tuple:
-        n = len(d.get("revealed", []))
-        return ("Reaver: %d card%s revealed" % (n, "" if n == 1 else "s"),
-                "Choose the card whose strength is added to the damage (%d so far). All revealed cards are "
-                "banished, then the damage is doubled." % int(d.get("damage", 0)))
-
-    def dimmed_ids(self, g: Game, d: dict) -> List[str]:
-        return []
-
-    def strip_title(self) -> str:
-        return "Revealed from the reserve deck (all are banished)"
-
-
 def pile_top_why(g: Game, pile: str) -> str:
     """Why the top card of the discard or the banished pile matters in this game (the order
     questions explain themselves with it)."""
@@ -1938,6 +1883,10 @@ class CardGridOverlay(Overlay):
     def badges(self, g: Game, d: dict) -> Dict[str, str]:
         return {}
 
+    def dimmed_ids(self, g: Game, d: dict) -> List[str]:
+        """Cards shown but greyed out and not tappable."""
+        return []
+
     def buttons(self, g: Game, d: dict) -> List[ui.View]:
         return []
 
@@ -1955,7 +1904,10 @@ class CardGridOverlay(Overlay):
         g = self.screen.game
         d = g.decision or {}
         title, text = self.heading(g, d)
-        head: List[ui.View] = [make_label(title, (0, 0, 10, 36), 20, True, T.ACCENT, ui.ALIGN_CENTER)]
+        size = 20
+        while size > 13 and text_size(title, 0, size, True)[0] > self.text_width():
+            size -= 1                       # a long title shrinks rather than being cut off
+        head: List[ui.View] = [make_label(title, (0, 0, 10, 36), size, True, T.ACCENT, ui.ALIGN_CENTER)]
         if text:
             head.append(self.text(text, 13))
         tail: List[ui.View] = list(self.buttons(g, d))
@@ -1985,10 +1937,13 @@ class CardGridOverlay(Overlay):
         sv.content_offset = (0, max(0.0, min(keep_y, need + 4 - shown)))
         self.grid_view = sv
         badges = self.badges(g, d)
+        dimmed = set(self.dimmed_ids(g, d))
         self.card_views = {}
         for i, cid in enumerate(ids):
             r, c = divmod(i, cols)
-            v = CardView(g.card(cid), on_tap=self.tapped)
+            v = CardView(g.card(cid), on_tap=None if cid in dimmed else self.tapped)
+            v.dimmed = cid in dimmed
+            v.touch_enabled = cid not in dimmed
             v.small = True
             v.selected = cid in self.picked
             v.badge = badges.get(cid, "")
@@ -2239,33 +2194,94 @@ class CloseCallOverlay(CardGridOverlay):
         return [b]
 
 
-class EmblemKeepOverlay(CardGridOverlay):
-    """Azure Emblem, solo: after the pick, one of the other revealed cards may go back on
-    top of the reserve deck before the rest is discarded. The cards are a grid (as
-    revealed, the top first): tap one, then Keep; or discard them all."""
+class PickGridOverlay(CardGridOverlay):
+    """One card to pick among those shown (revealed cards): a grid as revealed, the top
+    first; a tap picks one (another moves the pick, a tap on it takes it back), then one
+    button names it and acts. Cards that may not be picked are dimmed. Options that are not
+    a card (skip, discard them all) are buttons of their own."""
 
     single = True
+    pick_type = ""
+    none_title = "Pick a card"
+
+    def card_ids(self, g: Game, d: dict) -> List[str]:
+        return [str(c) for c in d.get("revealed", [])]
+
+    def picks(self, g: Game) -> List[dict]:
+        return [a for a in g.legal_actions() if a["type"] == self.pick_type and a.get("card")]
+
+    def dimmed_ids(self, g: Game, d: dict) -> List[str]:
+        can = set(str(a["card"]) for a in self.picks(g))
+        return [c for c in self.card_ids(g, d) if c not in can]
+
+    def buttons(self, g: Game, d: dict) -> List[ui.View]:
+        acts = g.legal_actions()
+        picks = [a for a in acts if a["type"] == self.pick_type and a.get("card")]
+        out: List[ui.View] = []
+        if picks:
+            chosen = [a for a in picks if self.picked and str(a["card"]) == self.picked[0]]
+            b = make_button(chosen[0]["label"] if chosen else self.none_title,
+                            lambda s: self.screen.decide(chosen[0]), (0, 0, 10, 46))
+            set_enabled(b, bool(chosen))
+            out.append(b)
+        for a in acts:
+            if a.get("skip"):
+                out.append(make_button(a.get("label", a["type"]), (lambda act: lambda s: self.screen.decide(act))(a),
+                                       (0, 0, 10, 44), not picks))
+        return out
+
+
+class MagePeekOverlay(PickGridOverlay):
+    """The Mage's secret look: the cards taken from the top of the reserve as a grid (Jesters
+    and corrupted cards dimmed: they are discarded); tap the one that joins the attack, then
+    Add; "Nothing to add" when none may."""
+
+    pick_type = "mage_pick"
+    none_title = "Add a card to the attack"
+
+    def heading(self, g: Game, d: dict) -> tuple:
+        revealed = list(d.get("revealed", []))
+        n = len(revealed)
+        if n == 0:
+            return ("Mage: the reserve deck is empty", "There was nothing to look at. The attack goes on resolving as it is.")
+        title = "Mage: %d card%s revealed" % (n, "" if n == 1 else "s")
+        summary = attack_summary(g, d.get("play_index"))
+        strength = int(d.get("strength", n))
+        text = "You looked at the top %d card%s of the reserve deck%s. Jesters and corrupted cards are discarded. " \
+               "Choose one of the rest to add to the attack; the others go to the discard pile." % (
+                   n, "" if n == 1 else "s", "" if n == strength else " (the mage's strength is %d, the deck was short)" % strength)
+        if not d.get("eligible"):
+            text = "You looked at the top %d card%s of the reserve deck, but none of them may join the attack: " \
+                   "Jesters and corrupted cards are discarded." % (n, "" if n == 1 else "s")
+        return (title, (summary + "\n\n" + text) if summary else text)
+
+
+class ReaverPickOverlay(PickGridOverlay):
+    """Reaver, second step: the revealed cards as a grid; tap the one whose strength is added
+    to the damage, then Add (all are banished, then the damage is doubled)."""
+
+    pick_type = "reaver_pick"
+    none_title = "Add a card's strength"
+
+    def heading(self, g: Game, d: dict) -> tuple:
+        n = len(d.get("revealed", []))
+        return ("Reaver: %d card%s revealed" % (n, "" if n == 1 else "s"),
+                "Choose the card whose strength is added to the damage (%d so far). All revealed cards are "
+                "banished, then the damage is doubled." % int(d.get("damage", 0)))
+
+
+class EmblemKeepOverlay(PickGridOverlay):
+    """Azure Emblem, solo: after the pick, one of the other revealed cards may go back on
+    top of the reserve deck before the rest is discarded: tap one, then Keep; or discard
+    them all."""
+
+    pick_type = "emblem_keep"
+    none_title = "Keep a card on top of the reserve"
 
     def heading(self, g: Game, d: dict) -> tuple:
         picked = g.card(str(d.get("picked", ""))).label() if d.get("picked") in g.cards else "the chosen card"
         return ("Azure Emblem", "%s joined the attack. You may put one of the other revealed cards on top of the "
                                 "reserve deck before the rest goes to the discard pile." % picked)
-
-    def card_ids(self, g: Game, d: dict) -> List[str]:
-        return [str(a["card"]) for a in g.legal_actions() if a["type"] == "emblem_keep"]
-
-    def buttons(self, g: Game, d: dict) -> List[ui.View]:
-        acts = g.legal_actions()
-        keep = [a for a in acts if a["type"] == "emblem_keep" and self.picked and str(a["card"]) == self.picked[0]]
-        b = make_button(keep[0]["label"] if keep else "Keep a card on top of the reserve",
-                        lambda s: self.screen.decide(keep[0]), (0, 0, 10, 46))
-        set_enabled(b, bool(keep))
-        out = [b]
-        for a in acts:
-            if a.get("skip"):
-                out.append(make_button(a.get("label", "Discard them all"),
-                                       (lambda act: lambda s: self.screen.decide(act))(a), (0, 0, 10, 44), False))
-        return out
 
 
 class RestoredArrowsOverlay(CardGridOverlay):
@@ -3048,7 +3064,7 @@ class PilesOverlay(Overlay):
         keys = [k for k, _ in piles]
         if self.pile not in keys:
             self.pile = "discard"
-        seg = ui.SegmentedControl(frame=(0, 0, 10, 32))
+        seg = ui.SegmentedControl(frame=(0, 0, 10, 36))
         seg.segments = [t for _, t in piles]
         seg.selected_index = keys.index(self.pile)
         seg.action = lambda s: self._switch(keys[s.selected_index])

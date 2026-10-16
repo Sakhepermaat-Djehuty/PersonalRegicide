@@ -714,6 +714,12 @@ def _mage_attempt(app, names=("Solo",), relics=("emblem",), corrupted=()):
     return gs, app.game
 
 
+def _pick_card(app, gs, cid, title):
+    """In a card grid box: tap the card, then the button that names it."""
+    ui.tap(app, *ui.root_point(app, gs.overlay.card_views[cid]))
+    _tap_button(app, title)
+
+
 def _random_order_first(app) -> bool:
     """Nothing tapped yet: the order box offers "Random order" in the confirm button's place."""
     titles = [b.title for b in ui.find(app, lambda v: isinstance(v, ui.Button) and not v.hidden)]
@@ -738,14 +744,16 @@ def test_mage_peek_overlay_then_emblem_keep_overlay(app):
     assert isinstance(gs.overlay, MagePeekOverlay)
     texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
     assert "Mage: 5 cards revealed" in texts
-    strip = ui.find(gs.overlay, lambda v: isinstance(v, CardStrip))[0]
-    assert [c.id for c in strip.cards] == ["6C", "7D", "4H", "3S", "2S"] and strip.dimmed == ["7D"]
-    assert len(strip.subviews) == 5 and [v.dimmed for v in strip.subviews] == [False, True, False, False, False]
-    adds = [b.title for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Add"))]
-    assert adds == ["Add 6♣ to the attack", "Add 4♥ to the attack", "Add 3♠ to the attack", "Add 2♠ to the attack"]
+    # the revealed cards as a grid, as revealed: the corrupted 7♦ dimmed and not tappable
+    assert not ui.find(gs.overlay, lambda v: isinstance(v, CardStrip))
+    views = gs.overlay.card_views
+    assert list(views) == ["6C", "7D", "4H", "3S", "2S"]
+    assert [views[c].dimmed for c in views] == [False, True, False, False, False] and not views["7D"].touch_enabled
+    adds = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Add"))]
+    assert [b.title for b in adds] == ["Add a card to the attack"] and not adds[0].enabled
     assert ui.render(app).size[0] > 0
     assert store.load_attempt(app.campaign.slot).phase == PHASE_DECIDE  # autosaved mid-peek
-    _tap_button(app, "Add 6♣ to the attack")
+    _pick_card(app, gs, "6C", "Add 6♣ to the attack")
     assert g.plays[0].card_ids == ["5M", "6C"] and g.plays[0].value == 11
     assert "Solo adds 6♣ to the attack (Mage): strength 11." in _logged(g)
     assert "Azure Emblem: Solo may put one of the other revealed cards back on top of the reserve" in _logged(g)
@@ -846,7 +854,7 @@ def test_emblem_place_handover_flow_for_two_players(app):
     assert isinstance(gs.overlay, MagePeekOverlay)
     assert g.decision["revealed"] == ["7C", "6C", "4H", "3S", "2S"]
     assert ui.render(app).size[0] > 0
-    _tap_button(app, "Add 7♣")          # five options: two columns with short titles
+    _pick_card(app, gs, "7C", "Add 7♣ to the attack")
     # (5 + 7) doubled kills the Justicar; the mage attack is banished and Ana plays on
     assert g.enemies_defeated == 1 and "5M" in g.banished and "7C" in g.banished
     assert g.phase == PHASE_PLAY and g.active == 0 and gs.overlay is None
@@ -940,12 +948,13 @@ def test_reaver_count_grid_then_pick_overlay(app):
     _tap_button(app, "2")
     assert g.decision["kind"] == "reaver_pick" and g.decision["revealed"] == ["7H", "2D"]
     assert isinstance(gs.overlay, ReaverPickOverlay)
-    strip = ui.find(gs.overlay, lambda v: isinstance(v, CardStrip))[0]
-    assert [c.id for c in strip.cards] == ["7H", "2D"] and strip.dimmed == []
-    adds = [b.title for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Add"))]
-    assert adds == ["Add 7♥'s strength (+7)", "Add 2♦'s strength (+2)"]
+    assert list(gs.overlay.card_views) == ["7H", "2D"] and not any(v.dimmed for v in gs.overlay.card_views.values())
+    adds = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Add"))]
+    assert [b.title for b in adds] == ["Add a card's strength"] and not adds[0].enabled
     assert ui.render(app).size[0] > 0
-    _tap_button(app, "Add 7♥'s strength (+7)")
+    ui.tap(app, *ui.root_point(app, gs.overlay.card_views["2D"]))
+    assert ui.button(app, "Add 2♦'s strength (+2)").enabled
+    _pick_card(app, gs, "7H", "Add 7♥'s strength (+7)")
     # mission 5 feeds the zone from the top of the banished pile: "What order?", the revealed
     # cards numbered as they are tapped, the last one on top
     from app.screens import OrderOverlay
@@ -1201,7 +1210,7 @@ def _mage_leftovers_to_order(app):
     gs.hand.set_selection(["3M"])
     _tap_button(app, "Play")
     assert g.decision["kind"] == "mage_peek"
-    _tap_button(app, "Add 4♣ to the attack")
+    _pick_card(app, gs, "4C", "Add 4♣ to the attack")
     assert g.decision["kind"] == "discard_order"
     return gs, g
 

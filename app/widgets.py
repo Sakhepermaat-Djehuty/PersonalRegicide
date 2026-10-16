@@ -1166,7 +1166,9 @@ class TableStrip(ui.View):
     def touch_ended(self, touch) -> None:
         x, _ = touch.location
         cw, _ = self.card_size()
-        if self.overflows() and x <= (cw + self.slot_x(1)) / 2.0 and self.on_more is not None:
+        # the card back, or anywhere in the row's first 44pt (a small back is a small target;
+        # the cards beside it take no taps)
+        if self.overflows() and x <= max(44.0, (cw + self.slot_x(1)) / 2.0) and self.on_more is not None:
             self.on_more()
 
 

@@ -653,6 +653,7 @@ def test_choice_boxes_offer_hold_to_view_the_game(app):
     ov.layout()
     assert not ov.peeking and all(not v.hidden for v in ov.panel.subviews)
     # the choice still works
+    ui.tap(app, *ui.root_point(app, ov.card_views["4C"]))
     _tap(app, "Add 4♣ to the attack")
     assert g.decision is None or g.decision["kind"] != "mage_peek"
     # a choice box without a Game menu button gets its own row; menus and information do not
@@ -698,6 +699,7 @@ def test_back_from_the_piles_keeps_the_selection_and_the_choice_in_progress(app)
     gs.refresh(after_action=False)
     gs.hand.set_selection(["3M"])
     _tap(app, "Play")
+    ui.tap(app, *ui.root_point(app, gs.overlay.card_views["4C"]))
     _tap(app, "Add 4♣ to the attack")
     box = gs.overlay
     assert isinstance(box, OrderOverlay)
