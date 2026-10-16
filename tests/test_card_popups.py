@@ -107,12 +107,29 @@ def test_only_a_whole_tap_on_the_dimmed_screen_closes_a_pop_up(app):
     # the end of a touch that began elsewhere (the tap that opened the card) leaves it open
     popup.touch_ended(ui.Touch(beside, beside, "ended"))
     assert _popups(app) == [popup]
-    # a touch that began on the card and ended beside it leaves it open too
-    popup.touch_began(ui.Touch((popup.face.x + 10, popup.face.y + 10), (0, 0), "began"))
-    popup.touch_ended(ui.Touch((popup.face.x + 10, popup.face.y + 10), (0, 0), "ended"))
-    assert _popups(app) == [popup]
+    # a touch on the card is the card's: the first view from the one hit up to the pop-up
+    # with touch handlers is the card face, so it never reaches the pop-up's own (on the
+    # phone, a view without them passes its touches up to its superview)
+    from app.widgets import PlayingCardFace
+    for x, y in ((popup.face.x + 10, popup.face.y + 10), ui.root_point(app, popup.face)):
+        hit = ui.hit_test(app, x, y)
+        assert _handler(hit, popup) is popup.face and isinstance(popup.face, PlayingCardFace)
+    assert "touch_began" in vars(PlayingCardFace) and "touch_ended" in vars(PlayingCardFace)
     ui.tap(app, *beside)                                                 # began and ended beside the card
     assert not _popups(app)
+
+
+def _handler(view, stop):
+    """The view a touch on ``view`` reaches: the first one, up to ``stop``, with both touch
+    methods of its own (ui.View has none)."""
+    while view is not None:
+        if all(m in vars(type(view)) or any(m in vars(c) for c in type(view).__mro__[1:] if c is not ui.View
+                                              and c is not object) for m in ("touch_began", "touch_ended")):
+            return view
+        if view is stop:
+            return None
+        view = view.superview
+    return None
 
 
 def test_every_pop_up_button_closes_it_before_acting(app):
@@ -190,3 +207,120 @@ def test_a_pop_up_follows_the_app_when_it_changes_size(app):
     app.frame = (0, 0, 844, 390)                                         # the phone turned
     assert (popup.width, popup.height) == (844, 390) and popup.built_for == (844.0, 390.0)
     assert app.subviews[-1] is popup and _popups(app) == [popup]
+
+
+def _reward_menu(app):
+    from app.screens import CampaignScreen
+    app.new_campaign(1, ["Solo"])
+    app.campaign.pending.append({"kind": "choice_corrupt", "phase": "reward",
+                                 "options": [str(app.campaign.party[0]["id"])]})
+    app.save_campaign()
+    app.show(CampaignScreen(app))
+    reward = [b for b in _buttons(app) if b.title.startswith("Reward:")]
+    assert reward
+    return reward[0]
+
+
+def test_an_error_opening_the_reward_is_shown_on_the_phone(app, monkeypatch):
+    from app import screens, store
+    reward = _reward_menu(app)
+    monkeypatch.setattr(store, "_is_pythonista", lambda: True)
+
+    def broken(*a):
+        raise ValueError("no text")
+    monkeypatch.setattr(screens, "choice_text", broken)
+    del console.history[:]
+    ui.tap(app, *ui.root_point(app, reward))
+    assert ("hud", "Opening the reward failed: ValueError no text") in console.history and not _popups(app)
+
+
+def test_an_error_opening_a_relic_is_shown_on_the_phone(app, monkeypatch):
+    from app import screens, store
+    from app.screens import PartyScreen
+    from app.widgets import RelicCard
+    _game_menu(app)
+    app.campaign.relics.append("flute")
+    app.show(PartyScreen(app))
+    monkeypatch.setattr(store, "_is_pythonista", lambda: True)
+
+    def broken(*a, **k):
+        raise ValueError("no face")
+    monkeypatch.setattr(screens, "card_face", broken)
+    del console.history[:]
+    ui.tap(app, *ui.root_point(app, ui.find(app, lambda v: isinstance(v, RelicCard))[0]))
+    assert ("hud", "Opening the relic failed: ValueError no face") in console.history and not _popups(app)
+
+
+@pytest.mark.parametrize("frame_lays_out", [True, False])
+def test_a_card_that_fails_to_build_leaves_nothing_on_screen(app, monkeypatch, frame_lays_out):
+    """On the phone setting a frame only schedules layout(): the first build is the one
+    show_card_popup asks for. Either way a failed build adds nothing."""
+    from app import screens, store
+    reward = _reward_menu(app)
+    if not frame_lays_out:
+        monkeypatch.setattr(ui.View, "_relayout", lambda self: None)
+    monkeypatch.setattr(store, "_is_pythonista", lambda: True)
+
+    def broken(*a, **k):
+        raise ValueError("no face")
+    monkeypatch.setattr(screens, "card_face", broken)
+    del console.history[:]
+    ui.tap(app, *ui.root_point(app, reward))
+    assert ("hud", "Opening the reward failed: ValueError no face") in console.history
+    assert not _popups(app)
+    monkeypatch.undo()
+    _tap_button(app, "Deck list")                                       # the menu still answers
+    from app.screens import PartyScreen
+    assert isinstance(app.current, PartyScreen)
+
+
+def test_a_card_that_fails_to_rebuild_at_a_new_size_closes(app, monkeypatch):
+    from app import screens
+    reward = _reward_menu(app)
+    ui.tap(app, *ui.root_point(app, reward))
+    popup = _popups(app)[0]
+    assert popup.face is not None
+
+    def broken(*a, **k):
+        raise ValueError("no face")
+    monkeypatch.setattr(screens, "card_face", broken)
+    with pytest.raises(ValueError):
+        app.frame = (0, 0, 844, 390)                                    # the phone turned
+    assert not _popups(app) and popup.superview is None
+
+
+def test_a_pop_up_with_no_card_closes_on_any_tap(app, monkeypatch):
+    from app.screens import CardPopup
+    _game_menu(app)
+    popup = CardPopup("Empty", "", [("Choose", lambda s: None, True)])  # not dismissable
+    monkeypatch.setattr(ui.View, "_relayout", lambda self: None)       # as on the phone: no layout yet
+    popup.frame = (0, 0, app.width, app.height)
+    app.add_subview(popup)                                              # never laid out: no card
+    assert popup.face is None
+    ui.tap(app, 4, app.height - 4)
+    assert not _popups(app)
+
+
+def test_the_deck_list_keeps_its_place_when_a_relic_card_opens_and_closes(app):
+    from app.screens import PartyScreen
+    from app.widgets import RelicCard
+    from regicide.campaign import missions as M
+    from regicide.campaign import party as P
+    _game_menu(app)
+    for d in list(M.MAGE_DECK) + list(M.GUARDIANS):
+        if P.find(app.campaign.party, str(d["id"])) is None:
+            P.add_card(app.campaign.party, dict(d))
+    app.campaign.relics.append("flute")
+    app.show(PartyScreen(app))
+
+    def the_list():
+        return [v for v in app.current.subviews if isinstance(v, ui.ScrollView)][0]
+    sv = the_list()
+    assert sv.content_size[1] > sv.height + 40                          # it scrolls
+    sv.content_offset = (0, 40)
+    ui.tap(app, *ui.root_point(app, ui.find(app, lambda v: isinstance(v, RelicCard))[0]))
+    assert len(_popups(app)) == 1
+    app.current.layout()                                                # rebuilt under the card
+    assert the_list().content_offset[1] == 40
+    ui.tap(app, 4, app.height - 4)                                      # closed: rebuilt again
+    assert not _popups(app) and the_list().content_offset[1] == 40

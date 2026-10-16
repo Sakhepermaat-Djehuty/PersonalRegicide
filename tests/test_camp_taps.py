@@ -1,7 +1,9 @@
-"""The mercenary camp and the deck list take taps on their cards through clear buttons laid
-over them (on the phone, taps on the camp's cards did not hire), and an error in such a
-tap is shown on screen and kept in errors.log instead of going only to the console hidden
-under the full-screen app."""
+"""The mercenary camp and the deck list: their cards take their own taps, with nothing laid
+over them (a button over a card in a scroll view would keep a held finger from scrolling);
+hiring works; an error in such a tap is shown on screen and kept in errors.log instead of
+going only to the console hidden under the full-screen app. (On the phone the camp's cards
+did not hire because their card pop-up was removed before it was drawn: see
+tests/test_card_popups.py.)"""
 import os
 import sys
 
@@ -52,35 +54,37 @@ def _tap_button(app, title):
     return ui.tap(app, *ui.root_point(app, b))
 
 
-def _covered(app, view) -> bool:
-    """A tap on ``view``'s centre lands on a clear button with its frame, beside it."""
+def _own_tap(app, view) -> bool:
+    """A tap on ``view``'s centre lands on the card itself, and no button lies over it."""
     hit = ui.hit_test(app, *ui.root_point(app, view))
-    return (isinstance(hit, ui.Button) and hit.superview is view.superview and not hit.title
-            and (hit.x, hit.y, hit.width, hit.height) == (view.x, view.y, view.width, view.height))
+    over = [b for b in ui.find(view.superview, lambda v: isinstance(v, ui.Button))
+            if b.x < view.x + view.width and view.x < b.x + b.width and b.y < view.y + view.height and view.y < b.y + b.height]
+    return hit is view and view.touch_enabled and not over
 
 
-def test_every_camp_card_takes_its_tap_through_a_button_and_hiring_works(app):
+def test_every_camp_card_takes_its_own_tap_and_hiring_works(app):
     from app import store
     ms = _camp(app)
     assert len(ms.card_views) == 14
     for mid, v in ms.card_views.items():
-        assert _covered(app, v) and not v.touch_enabled, mid
-    hit = ui.tap(app, *ui.root_point(app, ms.card_views["merc_12D"]))
-    assert isinstance(hit, ui.Button) and len(_popups(app)) == 1
+        assert _own_tap(app, v), mid
+    card = ms.card_views["merc_12D"]
+    hit = ui.tap(app, *ui.root_point(app, card))
+    assert hit is card and len(_popups(app)) == 1
     _tap_button(app, "Hire for 1 coin")
     ms = app.current
     assert app.campaign.mercenaries == ["merc_12D"] and app.campaign.coins == 2
     assert not ms.card_views["merc_12D"].shaded and ms.card_views["merc_12D"].selected
     assert "Coins: 2" in _texts(ms) and not _popups(app)
     assert store.load_campaign(app.campaign.slot).mercenaries == ["merc_12D"]
-    # the rebuilt grid has its buttons again: a second hire goes the same way
-    assert all(_covered(app, v) for v in ms.card_views.values())
+    # the rebuilt grid takes its taps the same way: a second hire
+    assert all(_own_tap(app, v) for v in ms.card_views.values())
     ui.tap(app, *ui.root_point(app, ms.card_views["merc_25S"]))
     _tap_button(app, "Hire for 1 coin")
     assert app.campaign.mercenaries == ["merc_12D", "merc_25S"] and app.campaign.coins == 1
 
 
-def test_the_deck_lists_relics_and_beasts_take_their_taps_through_buttons(app):
+def test_the_deck_lists_relics_and_beasts_take_their_own_taps(app):
     from app.screens import CampaignScreen
     from app.widgets import RelicCard
     app.new_campaign(1, ["Solo"])
@@ -92,7 +96,7 @@ def test_the_deck_lists_relics_and_beasts_take_their_taps_through_buttons(app):
     _tap_button(app, "Deck list")
     ps = app.current
     relic = ui.find(app, lambda v: isinstance(v, RelicCard))[0]
-    assert _covered(app, relic) and all(_covered(app, v) for v in ps.beast_views.values())
+    assert _own_tap(app, relic) and all(_own_tap(app, v) for v in ps.beast_views.values())
     ui.tap(app, *ui.root_point(app, relic))
     assert len(_popups(app)) == 1
     _tap_button(app, "Close")
@@ -119,6 +123,16 @@ def test_an_error_while_hiring_is_shown_and_logged_on_the_phone(app, monkeypatch
     assert ("hud", "Hiring failed: RuntimeError purse jammed") in console.history
     log = (tmp_path / "errors.log").read_text()
     assert "RuntimeError: purse jammed" in log and "in _hire" in log
+    # a second error is added after the first, not in its place
+    from app import screens
+
+    def broken(*a):
+        raise KeyError("text")
+    monkeypatch.setattr(screens, "mercenary_text", broken)
+    ui.tap(app, *ui.root_point(app, app.current.card_views["merc_12H"]))
+    log = (tmp_path / "errors.log").read_text()
+    assert "RuntimeError: purse jammed" in log and "KeyError: 'text'" in log
+    assert log.index("purse jammed") < log.index("KeyError: 'text'")
 
 
 def test_an_error_opening_a_card_is_shown_too(app, monkeypatch):
@@ -132,6 +146,45 @@ def test_an_error_opening_a_card_is_shown_too(app, monkeypatch):
     del console.history[:]
     ui.tap(app, *ui.root_point(app, app.current.card_views["merc_12H"]))
     assert ("hud", "Opening the card failed: KeyError 'text'") in console.history and not _popups(app)
+
+
+def test_an_error_swapping_is_shown_on_the_phone(app, monkeypatch):
+    from app import store
+    from regicide.campaign import CampaignState
+    ms = _camp(app)
+    app.campaign.hire("merc_12H")
+    app.campaign.swaps_allowed = True
+    ms.layout()
+    monkeypatch.setattr(store, "_is_pythonista", lambda: True)
+
+    def stuck(self, old, new):
+        raise RuntimeError("no swap")
+    monkeypatch.setattr(CampaignState, "swap", stuck)
+    del console.history[:]
+    ui.tap(app, *ui.root_point(app, app.current.card_views["merc_12H"]))
+    _tap_button(app, "Swap")
+    ui.tap(app, *ui.root_point(app, app.current.card_views["merc_12D"]))
+    _tap_button(app, "Take it in place of 12 Cleric")
+    assert ("hud", "Swapping failed: RuntimeError no swap") in console.history and not _popups(app)
+
+
+def test_an_error_choosing_a_beast_is_shown_on_the_phone(app, monkeypatch):
+    from app import store
+    from app.screens import CampaignScreen
+    from regicide.campaign import CampaignState
+    app.new_campaign(1, ["Solo"])
+    app.campaign.flags["beasts"] = True
+    app.save_campaign()
+    app.show(CampaignScreen(app))
+    _tap_button(app, "Deck list")
+    monkeypatch.setattr(store, "_is_pythonista", lambda: True)
+
+    def wild(self, beast):
+        raise ValueError("no beast")
+    monkeypatch.setattr(CampaignState, "set_beast", wild)
+    del console.history[:]
+    ui.tap(app, *ui.root_point(app, app.current.beast_views["B_S"]))
+    assert ("hud", "Choosing the beast failed: ValueError no beast") in console.history
 
 
 def test_a_hire_whose_save_fails_still_shows_and_says_so(app, monkeypatch):

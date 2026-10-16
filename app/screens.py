@@ -21,7 +21,7 @@ from regicide.rules import GameConfig
 from . import store
 from . import theme as T
 from .widgets import (CardStrip, CardView, EnemyPanel, HandGrid, fit_label, fit_title, make_button, make_label,
-                      set_enabled, tap_cover, text_size)
+                      set_enabled, text_size)
 
 VERSION = "alpha 5.1"
 
@@ -2448,9 +2448,22 @@ class CardPopup(ui.View):
         size = (float(self.width), float(self.height))
         if self.face is not None and self.built_for == size:
             return
-        self.built_for = size
+        try:
+            face, buttons = self._build()
+        except Exception:
+            # never leave a dimmed screen with no card and no button on top of the app
+            self.close()
+            raise
         for v in list(self.subviews):
             self.remove_subview(v)
+        self.add_subview(face)
+        for b in buttons:
+            self.add_subview(b)
+        self.face = face
+        self.built_for = size
+
+    def _build(self) -> tuple:
+        """(face, buttons) laid out for the pop-up's size, not yet added."""
         pw = min(300, self.width - 2 * T.MARGIN)
         buttons_h = 58 * len(self.buttons)
         room = self.height - T.TOP_INSET - T.BOTTOM_INSET - buttons_h - 6
@@ -2459,17 +2472,17 @@ class CardPopup(ui.View):
         x = (self.width - pw) / 2.0
         y = max(T.TOP_INSET, (self.height - total) / 2.0)
         face.frame = (x, y, pw, face.height)
-        self.add_subview(face)
-        self.face = face
         y += face.height + 12
+        buttons = []
         for spec in self.buttons:
             title_, action, primary = spec[0], spec[1], spec[2]
             b = make_button(title_, self._closing(action), (x, y, pw, 46), primary)
             fit_title(b)
             if len(spec) > 3 and not spec[3]:
                 set_enabled(b, False, primary)
-            self.add_subview(b)
+            buttons.append(b)
             y += 58
+        return face, buttons
 
     def _closing(self, action: Callable) -> Callable:
         """A button's action: the pop-up closes, then ``action`` runs (it may rebuild the
@@ -2484,6 +2497,9 @@ class CardPopup(ui.View):
 
     def touch_ended(self, touch) -> None:
         began, self.touch_here = self.touch_here, False
+        if began and self.face is None:
+            self.close()                 # nothing to show and nothing to tap: never a dead end
+            return
         if not self.dismissable or not began:
             return
         x, y = touch.location
@@ -2504,8 +2520,8 @@ def show_card_popup(screen: ui.View, popup: CardPopup) -> CardPopup:
     where the screen rebuilding itself cannot take it away. ``App.show`` closes it."""
     host = screen.superview if screen.superview is not None else screen
     popup.frame = (0, 0, host.width, host.height)
+    popup.layout()                  # built before it is added: a failure leaves nothing on screen
     host.add_subview(popup)
-    popup.layout()
     return popup
 
 
@@ -3091,7 +3107,6 @@ class MercenaryScreen(Screen):
             if mid == self.swapping:
                 v.badge = "swap"
             sv.add_subview(v)
-            sv.add_subview(tap_cover(v))
             self.card_views[mid] = v
         rows = (len(MERCENARIES) + cols - 1) // cols
         content_h = rows * (ch + gap) + 20
@@ -3479,7 +3494,15 @@ class PartyScreen(Screen):
     def layout(self) -> None:
         if not hasattr(self, "app"):
             return
+        # a rebuild (on the phone also when a card pop-up opens or closes over the list)
+        # keeps the list where it was scrolled
+        keep_y = 0.0
         for v in list(self.subviews):
+            if isinstance(v, ui.ScrollView):
+                try:
+                    keep_y = float(v.content_offset[1])
+                except Exception:
+                    keep_y = 0.0
             self.remove_subview(v)
         app = self.app
         camp = app.campaign
@@ -3520,11 +3543,9 @@ class PartyScreen(Screen):
                 r, col = divmod(i, cols)
                 v = CardView(c, on_tap=on_tap)
                 v.small = True
-                v.touch_enabled = False
+                v.touch_enabled = on_tap is not None
                 v.frame = (col * (cw + gap), yy + r * (ch + gap), cw, ch)
                 sv.add_subview(v)
-                if on_tap is not None:
-                    sv.add_subview(tap_cover(v))
                 if views is not None:
                     views.append(v)
             rows = (len(cards) + cols - 1) // cols
@@ -3539,7 +3560,6 @@ class PartyScreen(Screen):
                 tile = RelicCard(r, on_tap=lambda v: self._show_relic(v.relic_id),
                                  frame=(col * (cw + gap), yy + row * (ch + gap), cw, ch))
                 sv.add_subview(tile)
-                sv.add_subview(tap_cover(tile))
             yy += ((len(relics) + cols - 1) // cols) * (ch + gap) + 8
         # mercenaries: the ones hired (they leave when the mission is won) and the camp
         bw = min(320, tw)
@@ -3607,6 +3627,7 @@ class PartyScreen(Screen):
         yy = heading("Party · %d cards" % len(cards), yy)
         yy = card_row(cards, yy)
         sv.content_size = (tw, yy + 20)
+        sv.content_offset = (0, max(0.0, min(keep_y, yy + 20 - sv.height)))
         self.add_subview(sv)
 
     def _beast_texts(self, in_progress: bool) -> List[str]:

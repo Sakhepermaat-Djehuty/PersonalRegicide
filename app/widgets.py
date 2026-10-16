@@ -594,19 +594,6 @@ class RelicCard(ui.View):
         ui.draw_string("relic", (0, h * 0.7, w, h * 0.2), (T.FONT, max(8.0, h * 0.14)), "#555555", ui.ALIGN_CENTER)
 
 
-def tap_cover(view: ui.View) -> ui.Button:
-    """A clear button with ``view``'s frame that calls ``view.on_tap(view)``; add it to the
-    same scroll view right after the card, which then takes no touches itself. On the phone
-    taps on the mercenary camp's cards (in a scroll view) did not hire; a button is the
-    dependable way to take a tap there, whatever the scroll view does with a custom view's."""
-    view.touch_enabled = False
-    b = ui.Button(frame=view.frame)
-    b.title = ""
-    b.background_color = None
-    b.action = lambda sender: view.on_tap(view) if view.on_tap else None
-    return b
-
-
 class PlayingCardFace(ui.View):
     """The face of a card pop-up, drawn like the game's playing cards: a cream face with
     rounded corners, an edge in the card's colour and a small index (``corner``: a list of
