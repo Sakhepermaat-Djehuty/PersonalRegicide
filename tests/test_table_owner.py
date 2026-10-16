@@ -150,7 +150,7 @@ def _table_labels(gs):
 
 def _popup(gs):
     from app.screens import CardPopup
-    pops = [v for v in gs.subviews if isinstance(v, CardPopup)]
+    pops = [v for v in gs.app.subviews if isinstance(v, CardPopup)]
     assert pops
     return pops[-1]
 

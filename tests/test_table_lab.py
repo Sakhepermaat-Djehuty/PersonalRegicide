@@ -137,7 +137,7 @@ def _attack_card_texts(gs):
     """The labels of the attack's card (a tap left of the enemy), closed again."""
     from app.screens import CardPopup
     gs._show_attack()
-    pop = [v for v in gs.subviews if isinstance(v, CardPopup)]
+    pop = [v for v in gs.app.subviews if isinstance(v, CardPopup)]
     assert pop
     texts = _texts(pop[0])
     pop[0].close()
@@ -160,7 +160,7 @@ def test_the_attack_opens_its_card_on_a_tap_and_the_enemy_does_nothing(app):
     x0, y0 = ui.root_point(app, gs.enemy)
     # left of the enemy's card: the attack, the enemy's side beside the players' shield
     ui.tap(app, gs.enemy.x + 20, y0)
-    pop = [v for v in gs.subviews if isinstance(v, CardPopup)]
+    pop = [v for v in gs.app.subviews if isinstance(v, CardPopup)]
     assert pop
     texts = _texts(pop[0])
     assert "ENEMY" in texts and "SHIELD" in texts and "You suffer 10" in texts
@@ -175,7 +175,7 @@ def test_the_attack_opens_its_card_on_a_tap_and_the_enemy_does_nothing(app):
     # the enemy's card itself opens nothing (no running text on the table): its health and
     # immunity are on the header
     ui.tap(app, x0, y0)
-    assert not [v for v in gs.subviews if isinstance(v, CardPopup)] and gs.overlay is None
+    assert not [v for v in gs.app.subviews if isinstance(v, CardPopup)] and gs.overlay is None
     drawn = _drawn_text(gs.enemy)
     assert "20" in drawn and "of 20" in drawn and gs.enemy.card_view.center_icons == ["S"]
     assert gs.pile_views["castle"].count == len(g.castle) == 11
@@ -354,7 +354,7 @@ def test_a_short_screen_keeps_the_zone_above_the_hand_and_a_full_row_behind_a_ca
         assert not zone.overflows() and [c.id for c in zone.shown()] == g.mission_zone
         zx, zy = ui.root_point(app, zone)
         ui.tap(app, zx - zone.width / 2.0 + zone.card_size()[0] / 2.0, zy)     # where a full row's back lies
-        assert gs.overlay is None and not [v for v in gs.subviews if isinstance(v, CardPopup)]
+        assert gs.overlay is None and not [v for v in gs.app.subviews if isinstance(v, CardPopup)]
         # a full row: a card back with the total first, then the newest cards
         extra = [c for c in g.tavern if c not in g.mission_zone][:zone.capacity()]
         for c in extra:

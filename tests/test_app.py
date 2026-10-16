@@ -73,7 +73,7 @@ def _attack_card(app, gs):
     top to bottom. The card is closed again."""
     from app.screens import CardPopup
     ui.tap(app, gs.enemy.x + 10, ui.root_point(app, gs.enemy)[1])
-    pops = [v for v in gs.subviews if isinstance(v, CardPopup)]
+    pops = [v for v in gs.app.subviews if isinstance(v, CardPopup)]
     assert pops, "no attack card"
     texts = [v.text for v in ui.find(pops[-1], lambda v: isinstance(v, ui.Label) and not v.hidden)]
     pops[-1].close()
@@ -1893,7 +1893,7 @@ def test_finding_24_a_long_immunity_shows_every_class_on_the_enemy_and_in_its_ca
     # on its pile
     from app.screens import CardPopup
     ui.tap(app, *ui.root_point(app, gs.enemy))
-    assert gs.overlay is None and not [v for v in gs.subviews if isinstance(v, CardPopup)]
+    assert gs.overlay is None and not [v for v in gs.app.subviews if isinstance(v, CardPopup)]
     assert not any("Immune to " in t for t in _texts(app))
     assert gs.pile_views["castle"].count == len(g.castle) > 0 and not gs.pile_views["castle"].hidden
     _assert_nothing_cut(app)
