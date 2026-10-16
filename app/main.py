@@ -6,8 +6,17 @@ import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
+if ROOT in sys.path:
+    sys.path.remove(ROOT)
+sys.path.insert(0, ROOT)
+# Pythonista keeps modules loaded between runs: another copy of the app run earlier (the
+# usual install beside a test copy) may have left its own. Drop those, so this copy's code
+# is the code that runs.
+for _name, _mod in list(sys.modules.items()):
+    if _name.split(".")[0] in ("app", "regicide", "fakeui"):
+        _file = os.path.abspath(getattr(_mod, "__file__", None) or "")
+        if not _file.startswith(ROOT + os.sep):
+            del sys.modules[_name]
 
 try:
     import ui  # noqa: F401  (real Pythonista)

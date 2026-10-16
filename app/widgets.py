@@ -975,7 +975,6 @@ class HandGrid(ui.View):
         self.selected: List[str] = []
         self.on_change: Optional[Callable[[], None]] = None
         self.selectable: Callable[[Card], bool] = lambda c: True
-        self.can_start: Callable[[Card], bool] = lambda c: False   # a greyed card that may begin a new selection
         self.warned: set = set()      # selected cards whose class power the enemy blocks (red edge)
         self.badges: Dict[str, str] = {}
         self.background_color = None
@@ -1043,11 +1042,7 @@ class HandGrid(ui.View):
 
     def _tapped(self, v: CardView) -> None:
         if not self.selectable(v.card):
-            # a greyed card does not join the selection; it starts a new one when it could
-            # be played on its own (``can_start``)
-            if self.can_start(v.card):
-                self.set_selection([v.card.id])
-            return
+            return      # greyed: a tap does nothing
         if v.card.id in self.selected:
             self.selected.remove(v.card.id)
             v.selected = False
@@ -1082,6 +1077,76 @@ class HandGrid(ui.View):
             if v.shaded != dim or v.warn != warn or v.dimmed:
                 v.shaded, v.warn, v.dimmed = dim, warn, False
                 v.set_needs_display()
+
+
+class TableStrip(ui.View):
+    """A row of small face-up cards on the table (the mission zone, the cards played against
+    the enemy), the oldest on the left, with no title. When more cards lie there than the row
+    holds, a card back with their total comes first and only the newest follow (each new
+    card pushes the oldest out of sight); a tap on that back calls ``on_more``. An empty row
+    shows an outlined slot."""
+
+    GAP = 6.0
+
+    def __init__(self, **kw) -> None:
+        super().__init__(**kw)
+        self.cards: List[Card] = []
+        self.on_more: Optional[Callable[[], None]] = None
+        self.background_color = None
+
+    def card_size(self) -> tuple:
+        ch = max(16.0, self.height - 4)
+        return ch / 1.42, ch
+
+    def capacity(self) -> int:
+        """How many cards the row shows side by side."""
+        cw, _ = self.card_size()
+        return max(1, int((self.width + self.GAP) // (cw + self.GAP)))
+
+    def overflows(self) -> bool:
+        return len(self.cards) > self.capacity()
+
+    def shown(self) -> List[Card]:
+        """The cards drawn face up: all of them, or the newest beside the back."""
+        if not self.overflows():
+            return list(self.cards)
+        keep = self.capacity() - 1
+        return list(self.cards[-keep:]) if keep > 0 else []
+
+    def set_cards(self, cards: Sequence[Card]) -> None:
+        self.cards = list(cards)
+        self.layout()
+        self.set_needs_display()
+
+    def layout(self) -> None:
+        if not hasattr(self, "on_more"):
+            return
+        for v in list(self.subviews):
+            self.remove_subview(v)
+        cw, ch = self.card_size()
+        x = cw + self.GAP if self.overflows() else 0.0
+        for c in self.shown():
+            v = CardView(c, frame=(x, 2, cw, ch))
+            v.small = True
+            v.touch_enabled = False
+            self.add_subview(v)
+            x += cw + self.GAP
+
+    def draw(self) -> None:
+        cw, ch = self.card_size()
+        if not self.cards:
+            slot = ui.Path.rounded_rect(1, 3, cw - 2, ch - 2, max(4.0, cw * 0.12))
+            slot.line_width = 1.5
+            ui.set_color(T.PANEL_2)
+            slot.stroke()
+        elif self.overflows():
+            draw_back(0, 2, cw, ch, len(self.cards))
+
+    def touch_ended(self, touch) -> None:
+        x, _ = touch.location
+        cw, _ = self.card_size()
+        if self.overflows() and x <= cw + self.GAP / 2.0 and self.on_more is not None:
+            self.on_more()
 
 
 class CardStrip(ui.View):

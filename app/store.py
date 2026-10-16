@@ -1,13 +1,16 @@
 """Save files and settings.
 
 On Pythonista everything lives in ``~/Documents/PersonalRegicide-saves`` so that
-re-installing the code never touches your games. Elsewhere (tests, desktop) the
-``REGICIDE_SAVE_DIR`` environment variable or ``./saves`` is used.
+re-installing the code never touches your games. A test copy installed beside it (a
+folder such as ``PersonalRegicide-lab``) keeps its own saves (``PersonalRegicide-lab-saves``),
+started as a copy of the usual ones, so trying it never changes your campaign. Elsewhere
+(tests, desktop) the ``REGICIDE_SAVE_DIR`` environment variable or ``./saves`` is used.
 """
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 import time
 from typing import Any, Dict, List, Optional
@@ -19,12 +22,33 @@ def _is_pythonista() -> bool:
     return sys.platform == "ios" or "Pythonista" in sys.executable
 
 
+MAIN_INSTALL = "PersonalRegicide"
+
+
+def install_name() -> str:
+    """The folder this copy of the app runs from ("PersonalRegicide", or a test copy's)."""
+    return os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def saves_folder(docs: str, install: str) -> str:
+    """Where a copy installed as ``install`` keeps its saves: the usual folder for the usual
+    install, its own for a test copy (``PersonalRegicide-lab`` → ``PersonalRegicide-lab-saves``),
+    filled the first time with a copy of the usual saves."""
+    main = os.path.join(docs, MAIN_INSTALL + "-saves")
+    if install == MAIN_INSTALL or not install.startswith(MAIN_INSTALL):
+        return main
+    own = os.path.join(docs, install + "-saves")
+    if not os.path.exists(own) and os.path.isdir(main):
+        shutil.copytree(main, own)
+    return own
+
+
 def save_dir() -> str:
     env = os.environ.get("REGICIDE_SAVE_DIR")
     if env:
         d = env
     elif _is_pythonista():
-        d = os.path.join(os.path.expanduser("~/Documents"), "PersonalRegicide-saves")
+        d = saves_folder(os.path.expanduser("~/Documents"), install_name())
     else:
         d = os.path.join(os.getcwd(), "saves")
     os.makedirs(d, exist_ok=True)
