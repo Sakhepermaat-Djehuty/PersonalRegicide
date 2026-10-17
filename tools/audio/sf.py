@@ -137,10 +137,11 @@ def _channels(notes: Sequence[Note]) -> List[Tuple[int, dict, List[Note]]]:
         out.append((free.pop(0), {"program": g[0].program, "bank": 0}, g))
     # solo channels: reuse a channel when its last note (plus a release margin) is over and
     # the program matches; otherwise take a new one
-    busy: List[Tuple[int, int, float]] = []          # (channel, program, free_at)
+    busy: List[Tuple[int, tuple, float]] = []        # (channel, (program, pan, sends), free_at)
     for g in sorted(solos, key=lambda g: g[0].start):
         n = g[0]
-        slot = next((b for b in busy if b[1] == n.program and b[2] <= n.start), None)
+        voice = (n.program, round(n.pan, 2), n.reverb, n.chorus)
+        slot = next((b for b in busy if b[1] == voice and b[2] <= n.start), None)
         if slot is not None:
             busy.remove(slot)
             ch = slot[0]
@@ -148,7 +149,7 @@ def _channels(notes: Sequence[Note]) -> List[Tuple[int, dict, List[Note]]]:
             if not free:
                 raise ValueError("too many overlapping bent or swelling notes in one render")
             ch = free.pop(0)
-        busy.append((ch, n.program, n.start + n.dur + 1.5))
+        busy.append((ch, voice, n.start + n.dur + 1.5))
         out.append((ch, {"program": n.program, "bank": 0}, g))
     return out
 
@@ -160,7 +161,21 @@ def _midi(notes: Sequence[Note], seconds: float, path: str) -> None:
     mid.tracks.append(track)
     events: List[Tuple[int, int, object]] = []        # (tick, order, message)
     configured = set()
-    for ch, setup, group in _channels(notes):
+    channels = _channels(notes)
+    solo_channels = set(ch for ch, setup, group in channels
+                        if any(n.bend is not None or n.swell is not None for n in group))
+    # A key struck again on its channel while still held: the earlier note ends there (a
+    # MIDI note-off would otherwise cut the new one short).
+    restruck: Dict[int, Dict[tuple, int]] = {}
+    held: Dict[tuple, Note] = {}
+    for ch, setup, group in channels:
+        for n in sorted(group, key=lambda n: n.start):
+            k = (ch, n.key())
+            prev = held.get(k)
+            if prev is not None and _ticks(prev.start + prev.dur) > _ticks(n.start):
+                restruck.setdefault(id(prev), {})[k] = max(_ticks(prev.start) + 1, _ticks(n.start) - 1)
+            held[k] = n
+    for ch, setup, group in channels:
         if ch not in configured:
             configured.add(ch)
             first = group[0]
@@ -177,6 +192,15 @@ def _midi(notes: Sequence[Note], seconds: float, path: str) -> None:
                        (0, 0, mido.Message("control_change", channel=ch, control=38, value=0))]
         for n in group:
             on, off = _ticks(n.start), _ticks(n.start + n.dur)
+            if (ch, n.key()) in restruck.get(id(n), {}):
+                off = min(off, restruck[id(n)][(ch, n.key())])
+            if ch in solo_channels:
+                # a reused channel: this note's own start bend and swell, whatever came before
+                b0 = n.bend[0] if n.bend is not None else 0.0
+                events.append((on, 1, mido.Message("pitchwheel", channel=ch,
+                                                   pitch=int(round(max(-8192, min(8191, b0 / 12.0 * 8192)))))))
+                events.append((on, 1, mido.Message("control_change", channel=ch, control=11,
+                                                   value=int(n.swell[0]) if n.swell is not None else 127)))
             if n.bend is not None:
                 b0, b1 = n.bend
                 steps = max(1, min(64, (off - on) // 24))
@@ -193,11 +217,6 @@ def _midi(notes: Sequence[Note], seconds: float, path: str) -> None:
                                                 value=int(round(e0 + (e1 - e0) * s / steps)))))
             events.append((on, 2, mido.Message("note_on", channel=ch, note=n.key(), velocity=int(max(1, min(127, n.vel))))))
             events.append((max(off, on + 1), 0, mido.Message("note_off", channel=ch, note=n.key(), velocity=0)))
-            if n.bend is not None:
-                events.append((max(off, on + 1) + _ticks(1.2), 1, mido.Message("pitchwheel", channel=ch, pitch=0)))
-            if n.swell is not None:
-                events.append((max(off, on + 1) + _ticks(1.2), 1,
-                               mido.Message("control_change", channel=ch, control=11, value=127)))
     end = _ticks(seconds)
     events.append((end, 3, mido.Message("control_change", channel=0, control=110, value=0)))   # the file's length
     events.sort(key=lambda e: (e[0], e[1]))

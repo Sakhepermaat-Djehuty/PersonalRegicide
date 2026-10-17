@@ -472,6 +472,7 @@ def limit(x: np.ndarray, ceiling_db: float = -1.0, lookahead: float = 0.004, rel
     mag = np.abs(x) if x.ndim == 1 else np.max(np.abs(x), axis=1)
     if not len(mag) or np.max(mag) <= ceil:
         return x
+    from scipy.ndimage import minimum_filter1d, uniform_filter1d
     w = max(1, n_of(lookahead))
     ahead = maximum_filter1d(mag, size=2 * w + 1)
     want = np.minimum(1.0, ceil / np.maximum(ahead, 1e-12))
@@ -479,7 +480,10 @@ def limit(x: np.ndarray, ceiling_db: float = -1.0, lookahead: float = 0.004, rel
     alpha = math.exp(-1.0 / max(1, n_of(release)))
     g = signal.lfilter([1 - alpha], [1, -alpha], want - 1.0, zi=[0.0])[0] + 1.0
     g = np.minimum(g, want)
-    g = np.minimum(g, maximum_filter1d(g, size=w))
+    # ease into each reduction over the look-ahead instead of stepping (a step clicks): hold
+    # the lowest gain a window either side, then average over the window; at a peak the
+    # average is of values no higher than the gain the peak needs
+    g = uniform_filter1d(minimum_filter1d(g, size=2 * w + 1), size=w + 1)
     y = x * (g if x.ndim == 1 else g[:, None])
     peak = np.max(np.abs(y))
     return y * (ceil / peak) if peak > ceil else y
