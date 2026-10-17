@@ -1,30 +1,43 @@
 """Combat sounds: the blow that lands, the enemy's fall, the exact kill that wins its card,
 the next enemy's arrival, the enemy's strike back, the Jester and the yield.
 
-Five candidates per event, each a different character (a real one, a soft one, a wooden or
-tavern one, a magical one, an 8-bit one). Tonal parts are tuned to D: D major pentatonic,
-or D dorian (with F natural) for the darker ones. A phone speaker plays little below about
-200 Hz, so every heavy impact also carries harmonics between 150 and 500 Hz: the weight
-still comes through on the phone, and the deep part is there for headphones.
+Everything here is acoustic: real instruments and real materials in a stone hall. Five
+candidates per event, each a different character: the action itself as foley, a soft
+one for long sessions, a tavern or wooden one, a courtly instrumental one, and a regal
+or mysterious one. Tonal parts are in D (D major pentatonic, or D dorian with F natural
+for the darker ones).
 
-Private helpers here (the shared toolkit is not edited):
-  _modes / _reson     modal synthesis (struck metal, wood, membranes)
-  _svf                a filter whose cutoff can move (whooshes, brass, scrapes)
-  _ks                 a plucked string tuned exactly (synth.pluck runs a little flat)
-  _pulse / _tri4 / _lfsr / _frames   the 8-bit voices with 60 Hz frame-stepped control
-  _ping / _sparkle / _jingle         small bells, sparkles and jingle bells
-  _finish             cut to length with a natural fade and the band limits
+Where a recording exists it is used: the instruments and drums are General MIDI samples
+rendered by FluidSynth from the MIT banks (``sf.py``), cut at their onset so a sound
+starts the moment it is played. Materials no bank records (a blade, a breastplate, an
+oak shield, a cloak, a table top) are modelled physically: struck plates and planks are
+banks of resonators driven by a short noise burst (each mode rings and beats like real
+metal or wood), and cloth and air are noise shaped by the movement. Low weight always
+comes with body between 250 Hz and 3 kHz, so a phone's small speaker still carries it.
+
+Private helpers (the shared toolkit is not edited):
+  _sf / _stem / _hit   cached FluidSynth renders, cut at their onset
+  _repitch             play a recording slower or faster (a deeper woodblock, a cymbal)
+  _choke               damp a ringing recording, as a hand stops a cymbal
+  _reson / _excite / _plate / _plank   struck metal and wood
+  _svf / _air          moving filters: air past a blade, cloth, a swing
+  _creak               a wooden gate's stick-slip creak
+  _finish              cut to length with a natural fade and band limits
 """
 from __future__ import annotations
 
+import dataclasses
+import functools
 import math
-from typing import Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 
 import numpy as np
 from scipy import signal
 
+import sf
 import synth as A
 from catalog import Candidate
+from sf import DRUM, GM, Note
 
 SR = A.SR
 TAU = 2 * math.pi
@@ -34,7 +47,7 @@ def N(name: str) -> float:
     return A.note_hz(name)
 
 
-# ============================================================================= helpers
+# ============================================================================= basics
 def _n(d: float) -> int:
     return A.n_of(d)
 
@@ -57,30 +70,20 @@ def _norm(x: np.ndarray) -> np.ndarray:
     return x / p if p > 0 else x
 
 
-def _sat(x: np.ndarray, drive: float) -> np.ndarray:
-    """Soft saturation (tape-like): adds harmonics so a low thump reads on a small speaker."""
-    return np.tanh(drive * _norm(x)) / math.tanh(drive)
-
-
 def _bn(d: float, lo: float, hi: float, seed: int, color: str = "white", order: int = 2) -> np.ndarray:
-    """Band-limited noise, peak-normalised so gains mean the same as for tones."""
+    """Band-limited noise, peak-normalised."""
     return _norm(A.bandpass(A.noise(d, color, seed), lo, hi, order))
 
 
-def _hold(f0: float, f1: float, drop: float, d: float) -> np.ndarray:
-    """A pitch that falls from f0 to f1 over ``drop`` seconds, then holds (length d)."""
-    g = A.glide(f0, f1, drop)
-    return np.concatenate([g, np.full(max(0, _n(d) - len(g)), f1)])[:_n(d)]
+def _env(d: float, pts: Sequence[Tuple[float, float]]) -> np.ndarray:
+    """A piecewise-linear envelope through (time, level) points."""
+    t = _t(d)
+    return np.interp(t, [p[0] for p in pts], [p[1] for p in pts])
 
 
-def _thump(f0: float, f1: float, drop: float, t60: float, d: float, drive: float = 0.0) -> np.ndarray:
-    y = A.sine(_hold(f0, f1, drop, d), d) * A.decay(d, t60, 0.0006)
-    return _sat(y, drive) * float(np.max(np.abs(y))) if drive else y
-
-
-def _finish(x: np.ndarray, total: float, fade: float, hp: float = 35.0, lp: float = 0.0) -> np.ndarray:
-    """Cut to ``total`` seconds and fade the last ``fade`` seconds with a half cosine;
-    a high-pass removes rumble no one hears, a low-pass (if given) keeps the top gentle."""
+def _finish(x: np.ndarray, total: float, fade: float, hp: float = 40.0, lp: float = 0.0) -> np.ndarray:
+    """Cut to ``total`` seconds and fade the last ``fade`` seconds with a half cosine; a
+    high-pass removes rumble no one hears, a low-pass (if given) keeps the top gentle."""
     y = _fit(x, total)
     y = A.highpass(y, hp, 2)
     if lp:
@@ -90,7 +93,7 @@ def _finish(x: np.ndarray, total: float, fade: float, hp: float = 35.0, lp: floa
     return y
 
 
-def _verb(x: np.ndarray, room: float, wet: float, damping: float = 0.5, tail: float = 1.0) -> np.ndarray:
+def _verb(x: np.ndarray, room: float, wet: float, damping: float = 0.5, tail: float = 0.6) -> np.ndarray:
     return A.reverb(x, room, wet, damping, 1.0, tail)
 
 
@@ -107,9 +110,8 @@ def _loudness(x: np.ndarray) -> float:
 
 
 def _glue(x: np.ndarray, crest_db: float = 15.0, release: float = 0.02) -> np.ndarray:
-    """Hold a hit's first peaks to ``crest_db`` above its loudness with a fast limiter.
-    Its quick release only touches the attack, where the master's slower limiter would
-    instead turn the whole ring down after the hit."""
+    """Hold a hit's first peaks to ``crest_db`` above its loudness with a fast limiter, so
+    the master's slower limiter does not turn the whole ring down after the hit."""
     y = _norm(x)
     for _ in range(4):
         ceil = _loudness(y) + crest_db
@@ -119,33 +121,69 @@ def _glue(x: np.ndarray, crest_db: float = 15.0, release: float = 0.02) -> np.nd
     return y
 
 
-def _bp2(x: np.ndarray, fc, q: float = 1.0) -> np.ndarray:
-    """Two moving band-passes in a row: a focused band with steep sides (no hiss above)."""
-    return _svf(_svf(x, fc, q, "bp"), fc, q, "bp")
+def _en(x: np.ndarray) -> np.ndarray:
+    """Scale to unit loudness (by the build's measure), so layers mix by how loud they
+    sound rather than by their peaks."""
+    return x / (10 ** (_loudness(x) / 20.0))
 
 
-def _modes(f0: float, ratios: Sequence[float], gains: Sequence[float], t60s: Sequence[float], d: float,
-           beat: float = 0.0, attack: float = 0.0004, fmax: float = 7800.0) -> np.ndarray:
-    """Struck-object modes: decaying sines at f0 x ratio. ``beat`` splits each mode into a
-    slightly detuned pair (the slow shimmer of real metal)."""
-    t = _t(d)
-    y = np.zeros(len(t))
-    for r, g, T in zip(ratios, gains, t60s):
-        f = f0 * r
-        if f > fmax or g == 0:
-            continue
-        e = np.exp(-6.9078 * t / T)
-        if beat:
-            s = 0.5 * (np.sin(TAU * f * (1 - beat) * t) + np.sin(TAU * f * (1 + beat) * t + 0.7))
-        else:
-            s = np.sin(TAU * f * t)
-        y += g * s * e
-    na = _n(attack)
-    if na:
-        y[:na] *= np.linspace(0, 1, na)
+# ============================================================================= recordings
+@functools.lru_cache(maxsize=None)
+def _render(spec: tuple, seconds: float, bank: str) -> np.ndarray:
+    notes = [Note(*s) for s in spec]
+    return sf.render(notes, seconds, bank=bank)
+
+
+def _sf(notes: Sequence[Note], seconds: float, bank: str = "fluid") -> np.ndarray:
+    """A cached FluidSynth render (mono, the bank's own level)."""
+    spec = tuple((n.program, n.pitch, round(n.start, 5), round(n.dur, 5), int(n.vel), round(n.pan, 3),
+                  n.reverb, n.chorus, n.bend, n.swell, n.kit) for n in notes)
+    return _render(spec, round(seconds, 4), bank).copy()
+
+
+def _cut(x: np.ndarray, floor_db: float = -50.0, pre: float = 0.0004) -> np.ndarray:
+    """Start at the recording's onset (the bank's notes begin a few ms late), with a tiny
+    fade-in so the cut cannot click."""
+    i = max(0, sf.onset(x, floor_db) - _n(pre))
+    y = x[i:].copy()
+    k = _n(pre) or 1
+    y[:k] *= np.linspace(0, 1, k)
     return y
 
 
+def _stem(notes: Sequence[Note], seconds: float, bank: str = "fluid", floor_db: float = -50.0) -> np.ndarray:
+    """Render notes and cut at the first onset (later notes keep their timing)."""
+    return _cut(_sf(notes, seconds, bank), floor_db)
+
+
+def _hit(key, vel: int = 100, kit: str = "standard", bank: str = "fluid", seconds: float = 1.5) -> np.ndarray:
+    """One drum or percussion hit, cut at its onset."""
+    return _stem([Note(DRUM, key, 0.0, 0.2, vel=vel, kit=kit)], seconds, bank)
+
+
+def _one(program: str, pitch, dur: float, vel: int = 100, bank: str = "fluid", seconds: Optional[float] = None,
+         **kw) -> np.ndarray:
+    """One instrument note, cut at its onset."""
+    return _stem([Note(GM[program], pitch, 0.0, dur, vel=vel, **kw)], seconds or dur + 1.2, bank)
+
+
+def _repitch(x: np.ndarray, ratio: float) -> np.ndarray:
+    """Play a recording ``ratio`` times faster (pitch up) or slower (pitch down), as a
+    tape or sampler would."""
+    if ratio > 1:
+        x = A.lowpass(x, 0.45 * SR / ratio, 4)
+    pos = np.arange(0, len(x) - 1, ratio)
+    return np.interp(pos, np.arange(len(x)), x)
+
+
+def _choke(x: np.ndarray, at: float, fall: float) -> np.ndarray:
+    """Damp a ringing sound after ``at`` seconds, its level falling 60 dB in ``fall``."""
+    t = _t(len(x) / SR)
+    g = np.where(t < at, 1.0, np.exp(-6.9078 * np.clip(t - at, 0, None) / fall))
+    return x * g
+
+
+# ============================================================================= physical models
 def _reson(x: np.ndarray, f: float, t60: float) -> np.ndarray:
     """A two-pole resonator ringing at f for t60 seconds (an impulse gives a unit sine)."""
     w = TAU * f / SR
@@ -159,9 +197,38 @@ def _excite(burst: np.ndarray, modes: Sequence[Tuple[float, float, float]], d: f
     return sum(g * _reson(ex, f, T) for f, g, T in modes)
 
 
+def _plate(f0: float, d: float, seed: int, t60: float = 0.4, bright: float = 1.0, count: int = 14,
+           contact: float = 0.002) -> np.ndarray:
+    """A struck steel plate (a breastplate, a blade, a helmet): many inharmonic modes,
+    each a detuned pair, driven by a short noise burst (the strike's contact time sets how
+    bright it is: a sharp edge is short, a blunt mace long)."""
+    rng = np.random.default_rng(seed)
+    modes = []
+    r = 1.0
+    for k in range(count):
+        f = f0 * r
+        if f > 7600:
+            break
+        g = (0.55 + 0.45 * rng.random()) * (1.0 if k < 3 else bright * 0.85 ** (k - 2))
+        T = t60 * (1.0 / (1 + 0.25 * k)) * rng.uniform(0.8, 1.2)
+        modes.append((f * (1 - 0.0015), g, T))
+        modes.append((f * (1 + 0.0015), g * 0.8, T * 0.9))
+        r *= rng.uniform(1.18, 1.42)
+    burst = A.lowpass(np.random.default_rng(seed + 1).standard_normal(_n(contact)), 2500 + 5000 * bright, 2)
+    burst *= np.hanning(len(burst))
+    return _excite(burst, modes, d)
+
+
+def _plank(modes: Sequence[Tuple[float, float, float]], d: float, seed: int, contact: float = 0.003,
+           lo: float = 80.0, hi: float = 4000.0) -> np.ndarray:
+    """Struck wood: damped resonators driven by a soft noise pulse (knuckle, mallet, mace)."""
+    burst = _bn(contact, lo, hi, seed) * np.hanning(_n(contact))
+    return _excite(burst, modes, d)
+
+
 def _svf(x: np.ndarray, fc, q: float = 0.707, mode: str = "bp") -> np.ndarray:
-    """A state-variable filter (topology-preserving) whose cutoff ``fc`` may change every
-    sample. 'bp' has unit gain at the centre."""
+    """A state-variable filter whose cutoff ``fc`` may change every sample. 'bp' has unit
+    gain at the centre."""
     n = len(x)
     fcv = np.broadcast_to(np.asarray(fc, dtype=float), (n,))
     g = np.tan(math.pi * np.clip(fcv, 20.0, 0.45 * SR) / SR)
@@ -188,525 +255,315 @@ def _svf(x: np.ndarray, fc, q: float = 0.707, mode: str = "bp") -> np.ndarray:
     return x - k * np.array(bp) - np.array(lp)
 
 
-def _ks(freq: float, d: float, bright: float = 0.5, t60: float = 1.5, seed: int = 0) -> np.ndarray:
-    """A plucked string (Karplus-Strong) tuned exactly: the loop is the integer delay plus
-    the averaging filter's half sample plus a linear-interpolated fraction."""
-    n = _n(d)
-    P = SR / freq
-    L = int(math.floor(P - 0.5))
-    frac = P - 0.5 - L
-    c0, c1, c2 = 0.5 * (1 - frac), 0.5, 0.5 * frac
-    g = 10 ** (-3.0 * (P / SR) / max(t60, 0.05))
+def _air(d: float, f0: float, f1: float, seed: int, q: float = 1.2, pts=None) -> np.ndarray:
+    """Air rushing past something moving (a blade, a cloak, a staff): pink noise through two
+    band-passes whose centre follows the speed, with the speed's swell as its loudness."""
+    fc = A.glide(f0, f1, d)
+    y = _svf(_svf(A.noise(d, "pink", seed), fc, q, "bp"), fc, q, "bp")
+    env = _env(d, pts or [(0, 0), (0.004, 0.4), (0.6 * d, 1.0), (d, 0)])
+    return _norm(y * env)
+
+
+def _cloth(d: float, seed: int, lo: float = 500.0, hi: float = 3500.0, pts=None) -> np.ndarray:
+    """Woven cloth brushing: band-passed noise with the weave's grainy flutter."""
     rng = np.random.default_rng(seed)
-    burst = rng.uniform(-1, 1, L + 2)
-    burst = A.lowpass(burst, 500 + 8000 * bright, 1)
-    burst -= burst.mean()
-    out = np.zeros(max(n, L + 3))
-    out[:L + 2] = burst
-    i = L + 2
-    while i < n:
-        k = min(L, n - i)
-        out[i:i + k] = g * (c0 * out[i - L:i - L + k] + c1 * out[i - L - 1:i - L - 1 + k]
-                            + c2 * out[i - L - 2:i - L - 2 + k])
-        i += k
-    y = out[:n]
-    y[:_n(0.0005)] *= np.linspace(0, 1, _n(0.0005))
-    return y
-
-
-def _ping(f: float, t60: float, partial: float = 2.76, pgain: float = 0.2, d: float = 0.0) -> np.ndarray:
-    """A small bell or glass ping: a fundamental and one inharmonic partial."""
-    d = d or min(t60 * 1.1, 2.5)
-    t = _t(d)
-    y = np.sin(TAU * f * t) * np.exp(-6.9078 * t / t60)
-    if pgain and f * partial < 7800:
-        y += pgain * np.sin(TAU * f * partial * t) * np.exp(-6.9078 * t / (t60 * 0.4))
-    na = _n(0.0003)
-    y[:na] *= np.linspace(0, 1, na)
-    return y
-
-
-SPARK = [N(n) for n in ("D7", "E7", "F#7", "A7", "B7", "D8")]
-
-
-def _sparkle(d: float, count: int, t0: float, t1: float, seed: int, notes: Sequence[float] = SPARK,
-             t60: Tuple[float, float] = (0.08, 0.25), shape: float = 1.0, fall: float = 0.6) -> np.ndarray:
-    """A cloud of tiny high pings on D pentatonic notes (magic dust)."""
-    rng = np.random.default_rng(seed)
-    y = _buf(d)
-    times = t0 + (t1 - t0) * rng.random(count) ** shape
-    for tt in np.sort(times):
-        f = float(rng.choice(notes)) * (1 + rng.uniform(-0.002, 0.002))
-        T = rng.uniform(*t60)
-        amp = rng.uniform(0.4, 1.0) * (1 - fall * (tt - t0) / max(1e-6, t1 - t0))
-        y = A.mix_at(y, _ping(f, T, pgain=0.0), tt, amp)
-    return _fit(y, d)
-
-
-def _jingle(y: np.ndarray, t0: float, strength: float, rng, bells: int = 6, spread: float = 0.035) -> np.ndarray:
-    """One shake of a string of jingle bells: each bell's pellet strikes it two to four
-    times in quick succession; the bells are small spheres with inharmonic partials."""
-    for b in range(bells):
-        f1 = rng.uniform(2150, 2700)
-        T = rng.uniform(0.22, 0.38)
-        rat = [1.0, 1.58 * rng.uniform(0.98, 1.02), 2.15 * rng.uniform(0.98, 1.02), 2.71 * rng.uniform(0.98, 1.02)]
-        snd = _modes(f1, rat, [1.0, 0.55, 0.4, 0.2], [T, T * 0.7, T * 0.5, T * 0.35], T * 1.1, attack=0.0003)
-        tt = t0 + (rng.uniform(0, spread) if b else 0.0)
-        amp = strength * (rng.uniform(0.5, 1.0) if b else 1.0)
-        for _h in range(int(rng.integers(2, 5))):
-            y = A.mix_at(y, snd, tt, amp)
-            tt += rng.uniform(0.006, 0.018)
-            amp *= rng.uniform(0.35, 0.6)
-    return y
-
-
-# ----------------------------------------------------------------------------- 8-bit voices
-FPS = 60.0
-
-
-def _frames(values: Sequence[float], d: float) -> np.ndarray:
-    """Per-frame (1/60 s) values held as steps for ``d`` seconds (the last value holds)."""
-    v = np.asarray(values, dtype=float)
-    per = SR / FPS
-    idx = np.minimum((np.arange(_n(d)) / per).astype(int), len(v) - 1)
-    return v[idx]
-
-
-def _smooth(x: np.ndarray, ms: float = 1.2) -> np.ndarray:
-    """Round the corners of a stepped envelope just enough that the steps do not click."""
-    a = math.exp(-1.0 / (SR * ms / 1000.0))
-    return signal.lfilter([1 - a], [1, -a], x)
-
-
-def _vol(levels: Sequence[float], d: float, tail: float = 0.06) -> np.ndarray:
-    """A 4-bit (0..15) per-frame volume envelope. After its last step the sound fades out
-    over ``tail`` seconds instead of dropping from the lowest step straight to silence."""
-    e = _frames(levels, d) / 15.0
-    on = np.nonzero(e > 0)[0]
-    if tail and len(on) and on[-1] + 1 < len(e):
-        i0 = on[-1] + 1
-        e[i0:] = e[i0 - 1] * np.exp(-np.arange(len(e) - i0) / SR * 6.9078 / tail)
-    return _smooth(e, 2.0)
-
-
-def _blep(t: np.ndarray, dt: np.ndarray) -> np.ndarray:
-    out = np.zeros_like(t)
-    a = t < dt
-    x = t[a] / dt[a]
-    out[a] = x + x - x * x - 1
-    b = t > 1 - dt
-    x = (t[b] - 1) / dt[b]
-    out[b] = x * x + x + x + 1
-    return out
-
-
-def _pulse(freq: np.ndarray, duty: float = 0.5) -> np.ndarray:
-    """A band-limited pulse wave of any duty (12.5 %, 25 %, 50 %: the NES's three), with no
-    DC: the difference of two PolyBLEP saws."""
-    f = np.asarray(freq, dtype=float)
-    ph = np.cumsum(f) / SR
-    t = ph % 1.0
-    dt = np.clip(f / SR, 1e-9, 0.5)
-    s1 = 2 * t - 1 - _blep(t, dt)
-    t2 = (t - duty) % 1.0
-    s2 = 2 * t2 - 1 - _blep(t2, dt)
-    return s2 - s1
-
-
-def _tri4(freq: np.ndarray) -> np.ndarray:
-    """The NES triangle: a triangle stepped to 16 levels (its soft buzz)."""
-    f = np.asarray(freq, dtype=float)
-    t = (np.cumsum(f) / SR) % 1.0
-    tri = 2 * np.abs(2 * t - 1) - 1
-    return np.round((tri + 1) * 7.5) / 7.5 - 1
-
-
-def _lfsr(rate: np.ndarray, short: bool = False, seed: int = 1) -> np.ndarray:
-    """The NES noise channel: a 15-bit shift register clocked at ``rate`` per second
-    ('short' mode gives the metallic, pitched noise)."""
-    r = np.asarray(rate, dtype=float)
-    clock = np.floor(np.cumsum(r) / SR).astype(np.int64)
-    m = int(clock[-1]) + 1
-    reg = ((0x4A5B + 977 * seed) & 0x7FFF) or 1
-    tap = 6 if short else 1
-    bits = np.empty(m)
-    for i in range(m):
-        bits[i] = reg & 1
-        fb = (reg ^ (reg >> tap)) & 1
-        reg = (reg >> 1) | (fb << 14)
-    return 1.0 - 2.0 * bits[clock]
-
-
-def _hz_frames(names: Sequence, d: float) -> np.ndarray:
-    return _frames([N(x) if isinstance(x, str) else float(x) for x in names], d)
-
-
-# ----------------------------------------------------------------------------- voices
-def _line(notes: Sequence[Tuple[float, float]], d: float, glide: float = 0.006) -> np.ndarray:
-    """Per-sample pitch for a legato line: (start time, Hz) changes, joined by short glides."""
-    n = _n(d)
-    f = np.empty(n)
-    for i, (t0, hz) in enumerate(notes):
-        a = _n(t0)
-        b = _n(notes[i + 1][0]) if i + 1 < len(notes) else n
-        f[a:b] = hz
-    lf = np.log(f)
-    a = math.exp(-1.0 / (glide * SR))
-    lf = signal.lfilter([1 - a], [1, -a], lf, zi=[a * lf[0]])[0]
-    return np.exp(lf)
-
-
-def _tongue(onsets: Sequence[float], d: float, depth: float = 0.55, width: float = 0.006) -> np.ndarray:
-    """Short dips at note changes, as a player's tongue articulates each note."""
-    t = _t(d)
-    g = np.ones(len(t))
-    for o in onsets:
-        g *= 1 - depth * np.exp(-0.5 * ((t - o) / width) ** 2)
-    return g
-
-
-def _whistle(f: np.ndarray, amp: np.ndarray, seed: int, breath: float = 0.05, h2: float = 0.1,
-             h3: float = 0.035) -> np.ndarray:
-    """A tin whistle or recorder: a nearly pure tone with a breath of noise."""
-    d = len(f) / SR
-    ph = TAU * np.cumsum(f) / SR
-    tone = np.sin(ph) + h2 * np.sin(2 * ph) + h3 * np.sin(3 * ph)
-    # breath: a soft band around the note's upper harmonics, steep-sided so it never hisses
-    br = _bn(d, 1200, 4500, seed, "pink", 4) * breath
-    return (tone + br) * amp
-
-
-def _brass(f: np.ndarray, amp: np.ndarray, seed: int, bright: float = 2200.0,
-           onsets: Sequence[float] = (0.0,)) -> np.ndarray:
-    """A horn: a sawtooth whose brightness follows its loudness (as a real horn's does),
-    a brassy flare at each tongued onset, a bell resonance and a little breath."""
-    d = len(f) / SR
-    t = _t(d)
-    saw = A.osc("saw", f, d, phase=math.pi)    # mid-cycle: the first edge comes within 5 ms
-    flare = sum(np.where(t >= o, np.exp(-np.clip(t - o, 0, None) / 0.05), 0.0) for o in onsets)
-    fc = 180 + bright * np.clip(amp, 0, None) ** 1.5 + 1600 * flare
-    y = _svf(saw, fc, 0.75, "lp")
-    y = A.peak_eq(y, 500, 4.0, 1.1)
-    y = A.peak_eq(y, 1250, 2.0, 1.4)
-    y = y + 0.03 * _bn(d, 700, 2600, seed)
-    return y * amp
-
-
-def _taiko(f0: float, d: float, seed: int, t60: float = 0.8, drive: float = 1.8) -> np.ndarray:
-    """A big drum: a membrane's inharmonic modes, the pitch dropping as the skin relaxes,
-    and the stick's hit."""
-    t = _t(d)
-    bend = 1 + 0.22 * np.exp(-t / 0.035)
-    ratios = [1.0, 1.594, 2.136, 2.296, 2.653, 2.918, 3.156]
-    gains = [1.0, 0.55, 0.4, 0.3, 0.22, 0.15, 0.1]
-    y = np.zeros(len(t))
-    for k, (r, g) in enumerate(zip(ratios, gains)):
-        ph = TAU * np.cumsum(f0 * r * bend) / SR
-        y += g * np.sin(ph) * np.exp(-6.9078 * t / (t60 / (1 + 0.9 * k)))
-    y[:_n(0.0006)] *= np.linspace(0, 1, _n(0.0006))
-    y = _sat(y, drive)
-    stick = _fit(_bn(0.04, 300, 2500, seed) * A.decay(0.04, 0.025, 0.0002), d)
-    return y + 0.3 * stick
-
-
-def _metal(f0: float, d: float, seed: int, t60: float = 0.3, bright: float = 1.0) -> np.ndarray:
-    """A clank of a struck armour plate: plate-like inharmonic modes plus the contact."""
-    rng = np.random.default_rng(seed)
-    ratios = [1.0, 1.71 * rng.uniform(0.97, 1.03), 2.53 * rng.uniform(0.97, 1.03),
-              3.48 * rng.uniform(0.97, 1.03), 4.62 * rng.uniform(0.97, 1.03)]
-    gains = [1.0, 0.8, 0.6 * bright, 0.4 * bright, 0.25 * bright]
-    t60s = [t60, t60 * 0.8, t60 * 0.6, t60 * 0.45, t60 * 0.35]
-    y = _modes(f0, ratios, gains, t60s, d, beat=0.002)
-    hit = _bn(0.012, 1500, 6000, seed + 7) * A.decay(0.012, 0.004, 0.0001)
-    y[:len(hit)] += 0.45 * bright * hit
-    return y
+    grain = A.lowpass(rng.standard_normal(_n(d)), 70, 1)
+    grain = 1 + 0.7 * grain / (np.max(np.abs(grain)) or 1)
+    y = A.bandpass(A.noise(d, "pink", seed + 1), lo, hi, 2) * grain
+    return _norm(y * _env(d, pts or [(0, 0), (0.01, 1.0), (d, 0)]))
 
 
 # ============================================================================= hit
 def _hit_sword() -> np.ndarray:
     d = 1.0
     x = _buf(d)
-    x = A.mix_at(x, _bn(0.02, 2000, 7000, 101) * A.decay(0.02, 0.006, 0.0002), 0, 0.5)
-    # the blade rings: a free bar's modes on D5, each a slowly beating pair
-    ring = _modes(N("D5"), [1.0, 2.756, 5.404, 8.933], [0.45, 1.0, 0.6, 0.25], [0.75, 0.55, 0.32, 0.18],
-                  0.9, beat=0.0018)
-    x = A.mix_at(x, ring, 0, 0.5)
-    # the armour it lands on: lower, damped
-    plate = _modes(N("A4"), [1.0, 1.71, 2.53, 3.48], [1.0, 0.7, 0.5, 0.3], [0.12, 0.1, 0.08, 0.06], 0.3)
-    x = A.mix_at(x, plate, 0.001, 0.35)
-    x = A.mix_at(x, _thump(240, 110, 0.04, 0.12, 0.25, 1.5), 0.002, 0.5)
-    x = A.mix_at(x, _bn(0.08, 300, 1600, 102) * A.decay(0.08, 0.035, 0.0003), 0, 0.4)
-    return _finish(_glue(_verb(x, 0.25, 0.12, tail=0.3), 15.0), 0.95, 0.3, lp=8000)
+    # the edge bites: a few ms of bright scrape
+    x = A.mix_at(x, _bn(0.012, 2200, 7000, 101, "white", 4) * A.decay(0.012, 0.006, 0.0002), 0, 0.5)
+    # the blade rings (a long, narrow steel bar on D) and the breastplate answers, darker
+    x = A.mix_at(x, _en(_plate(N("D5"), 0.9, 102, t60=0.5, bright=1.0, contact=0.0006)), 0, 0.6)
+    x = A.mix_at(x, _en(_plate(N("A3"), 0.6, 103, t60=0.18, bright=0.6, contact=0.002)), 0, 0.5)
+    # a ride cymbal's bell, damped by the hand: real steel for the shimmer
+    bell = _choke(_hit("ride_bell", 110, seconds=1.0), 0.04, 0.3)
+    x = A.mix_at(x, _en(A.lowpass(bell, 7000, 4)), 0.001, 0.35)
+    # the weight of the blow behind it: a hand drum's thump, damped at once
+    x = A.mix_at(x, _en(_choke(_hit("low_conga", 120, seconds=0.6), 0.05, 0.15)), 0, 0.3)
+    return _finish(_glue(_verb(x, 0.25, 0.1), 15.0), 0.9, 0.35, hp=60, lp=7800)
 
 
 def _hit_leather() -> np.ndarray:
     d = 0.7
     x = _buf(d)
-    # the body of the blow sits at 100-400 Hz (a phone's speaker still plays it)
-    x = A.mix_at(x, _thump(220, 118, 0.05, 0.2, 0.4, 2.8), 0, 0.5)
-    x = A.mix_at(x, _thump(420, 230, 0.03, 0.1, 0.2, 1.5), 0, 0.85)
-    x = A.mix_at(x, _bn(0.06, 700, 3500, 111) * A.decay(0.06, 0.03, 0.0002), 0, 0.5)
-    x = A.mix_at(x, _bn(0.15, 250, 1400, 112, "pink") * A.decay(0.15, 0.08, 0.0005), 0, 0.8)
-    x = A.mix_at(x, _bn(0.25, 500, 2500, 113, "pink") * A.adsr(0.25, 0.02, 0.0, 1.0, 0.22), 0.01, 0.12)
-    x = A.peak_eq(x, 280, 4, 1.0)
-    return _finish(_glue(x, 15.0), 0.65, 0.25, hp=70, lp=6000)
+    # a fist into a padded gambeson: a hand drum's deep thump, its slap, and a brush's swat
+    x = A.mix_at(x, _en(_choke(_hit("low_conga", 115, seconds=0.6), 0.07, 0.2)), 0, 1.0)
+    x = A.mix_at(x, _en(_choke(_hit("mute_conga", 90, seconds=0.4), 0.04, 0.15)), 0.002, 0.45)
+    x = A.mix_at(x, _en(_choke(_hit("snare", 70, kit="brush", seconds=0.5), 0.06, 0.2)), 0.001, 0.4)
+    x = A.mix_at(x, _en(_cloth(0.25, 111, 400, 2500, [(0, 0), (0.01, 1.0), (0.08, 0.4), (0.25, 0)])), 0.005, 0.2)
+    return _finish(_glue(x, 14.0), 0.65, 0.3, hp=70, lp=5500)
+
+
+OAK = [(N("A2") * 1.02, 0.7, 0.16), (N("F#3"), 1.0, 0.12), (N("D4") * 0.99, 0.8, 0.09),
+       (480.0, 0.6, 0.07), (735.0, 0.45, 0.05), (1120.0, 0.3, 0.035), (1690.0, 0.18, 0.025)]
 
 
 def _hit_oak() -> np.ndarray:
     d = 0.6
-    modes = [(N("A3"), 1.0, 0.22), (N("F#4"), 0.8, 0.16), (N("D5") * 0.99, 0.6, 0.12),
-             (845.0, 0.45, 0.085), (1290.0, 0.28, 0.06), (1930.0, 0.15, 0.04)]
-    tone = _modes(1.0, [m[0] for m in modes], [m[1] for m in modes], [m[2] for m in modes], d)
-    burst = _bn(0.004, 200, 4000, 121) * np.hanning(_n(0.004))
-    res = _excite(burst, modes, d)
-    x = 0.6 * _norm(tone) + 0.5 * _norm(res)
-    x = A.mix_at(x, _bn(0.008, 1500, 6000, 122) * A.decay(0.008, 0.003, 0.0001), 0, 0.35)
-    x = A.mix_at(x, A.sine(110, 0.3) * A.decay(0.3, 0.07, 0.0005), 0, 0.3)
-    return _finish(x, 0.55, 0.2, lp=7000)
+    x = _buf(d)
+    # the mace meets the boards: a big woodblock (a recording played two octaves down) ...
+    x = A.mix_at(x, _en(_choke(_one("woodblock", "D3", 0.2, 120, seconds=0.6), 0.07, 0.35)), 0, 0.8)
+    # ... the shield's planks ring, damped by the arm behind them
+    x = A.mix_at(x, _en(_plank(OAK, d, 121, 0.004)), 0, 0.8)
+    # and the blow's weight: a concert bass drum, struck short
+    x = A.mix_at(x, _en(_choke(_hit("bass_drum", 100, kit="orchestra", seconds=0.6), 0.06, 0.2)), 0, 0.08)
+    return _finish(_glue(x, 14.0), 0.55, 0.25, hp=60, lp=6500)
 
 
 def _hit_arcane() -> np.ndarray:
     d = 1.0
+    # the bolt flies: a harp swept up two octaves, a rush of air with it ...
+    run = ["D5", "E5", "F#5", "A5", "B5", "D6", "E6", "F#6", "A6"]
+    gl = [Note(GM["harp"], n, 0.009 * i, 0.3, vel=70 + 5 * i) for i, n in enumerate(run)]
+    burst = 0.085
+    # ... and bursts: a timpani strike, glockenspiel and celesta ringing D and A over it
+    notes = gl + [Note(GM["glockenspiel"], "D6", burst, 0.4, vel=115),
+                  Note(GM["glockenspiel"], "A6", burst + 0.004, 0.4, vel=100),
+                  Note(GM["celesta"], "D6", burst, 0.4, vel=110),
+                  Note(GM["celesta"], "A5", burst + 0.006, 0.4, vel=100),
+                  Note(GM["timpani"], "D3", burst, 0.3, vel=120)]
+    x = _choke(_fit(_stem(notes, 1.6, "musescore"), d), 0.22, 0.75)
+    x = A.mix_at(x, 0.25 * _air(burst + 0.01, 900, 3200, 131, 1.0, [(0, 0.2), (burst, 1.0), (burst + 0.01, 0)]), 0)
+    x = A.mix_at(x, 0.5 * _norm(_choke(_hit("splash", 80, kit="orchestra", seconds=0.8), 0.06, 0.3)), burst)
+    return _finish(_glue(_verb(x, 0.4, 0.16), 15.5), 0.95, 0.4, hp=60, lp=6800)
+
+
+def _hit_drum() -> np.ndarray:
+    d = 0.8
     x = _buf(d)
-    zd = 0.14
-    fc = A.glide(N("D7"), N("D4"), zd)
-    t = _t(zd)
-    ph = TAU * np.cumsum(fc) / SR
-    zap = np.sin(ph + 1.6 * np.exp(-t / 0.04) * np.sin(1.5 * ph)) * A.decay(zd, 0.12, 0.0003)
-    x = A.mix_at(x, zap, 0, 0.45)
-    x = A.mix_at(x, _thump(294, 147, 0.05, 0.2, 0.35, 1.6), 0.002, 0.6)
-    x = A.mix_at(x, _bn(0.1, 300, 2500, 131) * A.decay(0.1, 0.05, 0.0003), 0, 0.35)
-    x = A.mix_at(x, A.bell(N("D6"), 0.9, ratio=2.0, index=1.2, t60=0.75), 0, 0.3)
-    x = A.mix_at(x, A.bell(N("A6"), 0.7, ratio=2.0, index=0.9, t60=0.55), 0.05, 0.2)
-    x = x + 0.12 * _sparkle(d, 10, 0.04, 0.5, 132)
-    return _finish(_glue(_verb(x, 0.35, 0.18, tail=0.5), 15.5), 0.95, 0.3, lp=7800)
-
-
-def _hit_pixel() -> np.ndarray:
-    d = 0.4
-    f = _hz_frames(["D5", "A4", "F#4", "D4", "A3", "F#3", "D3", "A2"], d)
-    sq = _pulse(f, 0.25) * _vol([15, 14, 12, 10, 9, 8, 7, 6, 5, 4, 4, 3, 3, 2, 2, 1, 1, 0], d)
-    nz = _lfsr(_frames([9000, 7000, 5500, 4500, 3600, 2900, 2300, 1800, 1500, 1200, 1000, 800, 700], d),
-               seed=3) * _vol([15, 13, 11, 9, 8, 7, 6, 5, 4, 4, 3, 3, 2, 2, 1, 1, 0], d)
-    return _finish(0.5 * sq + 0.45 * nz, d, 0.06, lp=5000)
+    # a war drum: the field drum's snares rattle over a concert bass drum and a timpani on D
+    x = A.mix_at(x, _en(_choke(_hit("snare", 120, kit="orchestra", bank="musescore"), 0.05, 0.3)), 0, 0.8)
+    x = A.mix_at(x, _en(_choke(_hit("bass_drum", 115, kit="orchestra"), 0.1, 0.35)), 0, 0.3)
+    x = A.mix_at(x, _en(_choke(_one("timpani", "D3", 0.3, 120, "musescore"), 0.12, 0.4)), 0.002, 0.6)
+    return _finish(_glue(_verb(x, 0.4, 0.12), 15.0), 0.75, 0.3, hp=55, lp=7500)
 
 
 # ============================================================================= defeat_enemy
+def _tambourine(times_vels, d: float, seed: int = 0, lp: float = 6500.0) -> np.ndarray:
+    """A tambourine (or chain mail: the same small loose discs) shaken at (time, velocity),
+    its sizzle above the jingles' ring taken down."""
+    notes = [Note(DRUM, "tambourine", t, 0.1, vel=v) for t, v in times_vels]
+    return A.lowpass(_fit(_stem(notes, d + 0.6), d), lp, 4)
+
+
 def _defeat_armor() -> np.ndarray:
     d = 2.0
     rng = np.random.default_rng(201)
     x = _buf(d)
-    # the body lands
-    x = A.mix_at(x, _thump(140, 62, 0.09, 0.38, 0.6, 2.0), 0, 0.9)
-    x = A.mix_at(x, _bn(0.2, 120, 900, 202, "pink") * A.decay(0.2, 0.1, 0.0005), 0, 0.5)
-    # the first clanks, then plates and buckles landing at random, some muffled by the body
-    x = A.mix_at(x, _metal(440, 0.6, 203, 0.4), 0, 0.55)
-    x = A.mix_at(x, _metal(622, 0.5, 204, 0.3), 0.025, 0.4)
+    # the body lands: a concert bass drum, a hand drum's thud and the leather's slap
+    x = A.mix_at(x, _en(_choke(_hit("bass_drum", 120, kit="orchestra"), 0.12, 0.45)), 0, 0.5)
+    x = A.mix_at(x, _en(_choke(_hit("low_conga", 120), 0.05, 0.2)), 0.004, 0.45)
+    x = A.mix_at(x, _en(_choke(_hit("snare", 90, kit="brush"), 0.06, 0.2)), 0.002, 0.3)
+    # the first clanks, then plates and buckles landing, some muffled under the body
+    x = A.mix_at(x, _en(_plate(440, 0.7, 203, t60=0.4, bright=0.8, contact=0.002)), 0, 0.5)
+    x = A.mix_at(x, _en(_plate(622, 0.6, 204, t60=0.3, bright=0.7, contact=0.002)), 0.025, 0.4)
     tt = 0.07
-    for i in range(13):
-        tt += rng.exponential(0.05) + 0.012
-        if tt > 0.78:
+    for i in range(12):
+        tt += rng.exponential(0.05) + 0.015
+        if tt > 0.8:
             break
-        g = rng.uniform(0.45, 1.0) * 0.5 * math.exp(-tt / 0.45)
-        x = A.mix_at(x, _metal(rng.uniform(480, 1300), 0.4, 210 + i, rng.uniform(0.12, 0.3),
-                               rng.uniform(0.35, 1.0)), tt, g)
-    # chain mail: many tiny ring clinks, thinning out
-    for _ in range(70):
-        tt = min(rng.exponential(0.18), 0.9)
-        x = A.mix_at(x, _ping(rng.uniform(2800, 6200), rng.uniform(0.015, 0.04), pgain=0.0), tt,
-                     rng.uniform(0.06, 0.15) * math.exp(-tt / 0.3))
+        g = rng.uniform(0.4, 1.0) * 0.4 * math.exp(-tt / 0.45)
+        x = A.mix_at(x, _en(_plate(rng.uniform(480, 1300), 0.45, 210 + i, rng.uniform(0.12, 0.3),
+                                   rng.uniform(0.3, 0.9), contact=rng.uniform(0.001, 0.003))), tt, g)
+    # chain mail settling: the same little loose rings as a tambourine's, shaken ever softer
+    x = A.mix_at(x, _en(_tambourine([(0.01, 90), (0.09, 70), (0.2, 55), (0.36, 40), (0.55, 28)], 1.2)), 0, 0.3)
     # the helmet rocks and settles: clinks closing in, ever softer
     tt, gap, k = 0.86, 0.15, 0
+    helm = [_en(_plate(N("A5"), 0.3, 230, 0.22, 0.6, contact=0.0015)),
+            _en(_plate(N("A5") * 1.06, 0.3, 231, 0.18, 0.5, contact=0.0015))]
     while gap > 0.022:
-        x = A.mix_at(x, _metal(N("A5"), 0.3, 230 + k % 2, 0.22, 0.75 - 0.25 * (k % 2)), tt, 0.3 * 0.82 ** k)
+        x = A.mix_at(x, helm[k % 2], tt, 0.09 * 0.8 ** k)
         tt += gap
         gap *= 0.8
         k += 1
-    return _finish(_glue(_verb(x, 0.45, 0.15, tail=0.6), 15.5), 1.95, 0.4, lp=7600)
+    return _finish(_glue(_verb(x, 0.45, 0.14), 14.5), 1.95, 0.4, hp=50, lp=7600)
 
 
-GLASS = [N(n) for n in ("D7", "E7", "F#7", "A7", "B7", "D8", "E8")]
+PENTA = ["D", "E", "F#", "A", "B"]
 
 
-def _defeat_glass() -> np.ndarray:
-    d = 1.95
-    rng = np.random.default_rng(211)
-    x = _buf(d)
-    x = A.mix_at(x, _bn(0.05, 1500, 7000, 212) * A.decay(0.05, 0.02, 0.0002), 0, 0.6)
-    x = A.mix_at(x, _bn(0.1, 400, 2200, 213) * A.decay(0.1, 0.05, 0.0003), 0.001, 0.5)
-    x = A.mix_at(x, _thump(220, 95, 0.05, 0.12, 0.25), 0, 0.55)
-    times = np.sort(np.concatenate([rng.uniform(0, 0.06, 14), rng.exponential(0.3, 50)]))
-    for tt in times:
-        if tt > 1.4:
-            continue
-        f = float(rng.choice(GLASS)) * (1 + rng.uniform(-0.003, 0.003))
-        amp = rng.uniform(0.35, 1.0) * math.exp(-tt / 0.45)
-        x = A.mix_at(x, _ping(f, rng.uniform(0.06, 0.3), 2.76, 0.25), tt, 0.35 * amp)
-    return _finish(_glue(_verb(x, 0.4, 0.16, damping=0.4, tail=0.6), 15.5), 1.9, 0.45, lp=7600)
+def _penta(lo: str, hi: str) -> list:
+    """D major pentatonic notes from ``lo`` to ``hi`` inclusive (names like 'D4')."""
+    out = []
+    for octave in range(1, 9):
+        for nm in PENTA:
+            n = "%s%d" % (nm, octave)
+            if A.midi(lo) <= A.midi(n) <= A.midi(hi):
+                out.append(n)
+    return out
 
 
-def _drum(pitch: float, d: float, seed: int, t60: float = 0.35, slap: float = 0.3) -> np.ndarray:
-    """A hand drum (bodhran): a pitched thump with harmonics, and the skin's slap."""
-    body = _thump(pitch * 1.5, pitch, 0.06, t60, d, 1.4)
-    body += 0.35 * _thump(pitch * 3.0, pitch * 2.0, 0.04, t60 * 0.5, d)
-    skin = _fit(_bn(0.08, 400, 3000, seed) * A.decay(0.08, 0.05, 0.0004), d)
-    return body + slap * skin
+def _defeat_harp() -> np.ndarray:
+    d = 1.9
+    run = list(reversed(_penta("D4", "D6")))
+    notes = [Note(GM["harp"], n, 0.036 * i, 0.4, vel=84 - 2 * i) for i, n in enumerate(run)]
+    end = 0.036 * len(run)
+    notes += [Note(GM["harp"], "D3", end, 1.0, vel=66), Note(GM["harp"], "A3", end + 0.012, 1.0, vel=54)]
+    x = _choke(_fit(_stem(notes, d + 0.5, "musescore"), d), end + 0.4, 1.2)
+    return _finish(_verb(x, 0.5, 0.18), 1.9, 0.6, hp=60, lp=7500)
 
 
 def _defeat_lute() -> np.ndarray:
-    # critic's pass: the two drum thumps held 70% of the energy (below 200 Hz), so the lute
-    # run, the point of the sound, came out quiet and a phone played it ~6 dB under its
-    # neighbours; the drums are lighter with more skin slap, and a fast glue keeps the
-    # master limiter off the chord's ring
     d = 2.0
-    x = _buf(d)
-    x = A.mix_at(x, _drum(N("A2"), 0.6, 221, 0.35, 0.55), 0, 0.3)
-    for i, (tt, n) in enumerate([(0.0, "D4"), (0.06, "F#4"), (0.12, "A4"), (0.18, "D5")]):
-        x = A.mix_at(x, _ks(N(n), 0.7, 0.55, 0.6, 222 + i), tt, 0.5)
-    for i, n in enumerate(["D3", "A3", "D4", "F#4", "A4", "D5"]):
-        x = A.mix_at(x, _ks(N(n), 1.6, 0.45, 1.4, 230 + i), 0.27 + 0.012 * i, 0.45 - 0.03 * i)
-    x = A.mix_at(x, _drum(N("D3"), 0.6, 240, 0.3, 0.45), 0.27, 0.3)
-    x = A.peak_eq(x, 220, 1.5, 1.2)
-    x = A.peak_eq(x, 2800, 2, 1.5)
-    return _finish(_glue(_verb(x, 0.4, 0.2, tail=0.6), 14), 1.95, 0.5, lp=7500)
+    # a quick run up the lute, then a full strummed chord
+    run = [Note(GM["nylon_guitar"], n, 0.06 * i, 0.25, vel=96) for i, n in enumerate(["D4", "F#4", "A4", "D5"])]
+    strum = [Note(GM["nylon_guitar"], n, 0.27 + 0.014 * i, 1.4, vel=100 - 3 * i)
+             for i, n in enumerate(["D3", "A3", "D4", "F#4", "A4", "D5"])]
+    x = _fit(_stem(run + strum, d + 0.6), d)
+    # a tavern drum (a frame drum: a brushed floor tom's skin with a hand drum's thump, as
+    # the Tavern Band's bodhran) under the first note and the chord, a tambourine on the chord
+    drum = A.mix_at(_buf(0.8), _en(_choke(_hit("low_floor_tom", 100, kit="brush"), 0.1, 0.35)), 0)
+    drum = A.mix_at(drum, _en(_choke(_hit("low_conga", 95), 0.06, 0.25)), 0, 0.8)
+    x = _choke(x, 0.9, 1.1)
+    x = A.mix_at(x, 0.22 * _norm(drum), 0, 1.0)
+    x = A.mix_at(x, 0.28 * _norm(drum), 0.27, 1.0)
+    x = A.mix_at(x, 0.12 * _norm(_tambourine([(0.0, 80)], 0.6)), 0.272, 1.0)
+    return _finish(_glue(_verb(x, 0.4, 0.16), 14.0), 1.95, 0.55, hp=55, lp=7500)
 
 
 def _defeat_bells() -> np.ndarray:
     d = 2.0
-    x = _buf(d)
-    x = A.mix_at(x, A.bell(N("D3"), 1.8, ratio=1.4, index=2.5, t60=1.6), 0, 0.5)
-    x = A.mix_at(x, A.sine(N("D2"), 0.8) * A.decay(0.8, 0.6, 0.001), 0, 0.4)
-    x = A.mix_at(x, _bn(0.05, 80, 800, 251) * A.decay(0.05, 0.03, 0.0003), 0, 0.3)
-    for i, (tt, n) in enumerate([(0.0, "D6"), (0.09, "A5"), (0.18, "F#5"), (0.27, "E5"), (0.36, "D5")]):
-        x = A.mix_at(x, A.bell(N(n), 1.5, ratio=3.5, index=1.2, t60=1.1), tt, 0.33 + 0.02 * i)
-    return _finish(_verb(x, 0.55, 0.25, tail=0.6), 1.95, 0.5, lp=7000)
+    # tubular bells ring down D major's pentatonic over a deep bell and a timpani
+    notes = [Note(GM["tubular_bells"], n, 0.09 * i, 0.6, vel=100 - 3 * i)
+             for i, n in enumerate(["D6", "A5", "F#5", "E5", "D5"])]
+    notes += [Note(GM["tubular_bells"], "D4", 0.0, 1.2, vel=110), Note(GM["timpani"], "D3", 0.0, 0.5, vel=110),
+              Note(GM["timpani"], "A2", 0.36, 0.5, vel=90)]
+    x = _fit(_stem(notes, d + 0.6), d)
+    x = _choke(x, 0.6, 1.3)
+    return _finish(_verb(x, 0.55, 0.2), 1.95, 0.6, hp=60, lp=7200)
 
 
-def _defeat_arcade() -> np.ndarray:
-    d = 1.4
-    nz = _lfsr(_frames([11000, 9000, 7500, 6000, 4800, 3800, 3000, 2400, 1900, 1500, 1200, 1000, 800], d),
-               seed=5) * _vol([15, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 4, 3, 3, 2, 2, 1, 1, 0], d)
-    sweep = N("D5") * 2 ** (-np.arange(18) * 2 / 12.0)
-    sq = _pulse(_frames(list(sweep), d), 0.5) * _vol([12, 12, 11, 10, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0], d)
-    x = 0.45 * nz + 0.35 * sq
-    # the victory blip, coming in as the explosion dies away
-    vd = 0.95
-    seq = ["D5"] * 4 + ["F#5"] * 4 + ["A5"] * 4 + ["D6"] * 45
-    f = _hz_frames(seq, vd)
-    t = _t(vd)
-    f = f * (1 + 0.012 * np.sin(TAU * 6 * t) * (t > 0.3))
-    vol = [11] * 12 + [12, 12, 12, 11, 11, 11, 10, 10, 10, 9, 9, 8, 8, 7, 7, 6, 6, 5, 5, 4, 4, 4, 3, 3, 3,
-                       2, 2, 2, 2, 1, 1, 1, 1, 0]
-    blip = _pulse(f, 0.25) * _vol(vol, vd)
-    echo = _pulse(f * 1.003, 0.125) * _vol([0, 0, 0] + [5] * 12 + [5, 5, 5, 4, 4, 4, 4, 3, 3, 3, 3, 2, 2, 2, 2,
-                                                                      1, 1, 1, 1, 0], vd)
-    x = A.mix_at(x, 0.4 * blip + 0.25 * echo, 0.33)
-    return _finish(x, d, 0.06, lp=5500)
+def _defeat_horns() -> np.ndarray:
+    d = 2.0
+    # the hunt's 'mort': two horns call the quarry down (D, D, A, a long D), a timpani under it
+    call = [("D4", 0.0, 0.16), ("D4", 0.18, 0.16), ("A4", 0.36, 0.2), ("D5", 0.58, 0.75)]
+    notes = [Note(GM["french_horn"], n, t, dur, vel=112) for n, t, dur in call]
+    notes += [Note(GM["french_horn"], h, t, dur, vel=100) for h, (n, t, dur) in zip(["A3", "A3", "D4", "A4"], call)]
+    notes += [Note(GM["timpani"], "D3", 0.0, 0.3, vel=105), Note(GM["timpani"], "A2", 0.58, 0.4, vel=110),
+              Note(GM["trumpet"], "D5", 0.58, 0.7, vel=80)]
+    x = _fit(_stem(notes, d + 0.6, "musescore"), d)
+    return _finish(_verb(x, 0.6, 0.2), 1.95, 0.5, hp=60, lp=7000)
 
 
 # ============================================================================= exact_kill
-def _glass(f: float, d: float, t60: float) -> np.ndarray:
-    """A glass chime: a pure fundamental, a soft octave, and a quick inharmonic ping."""
-    return _modes(f, [1.0, 2.0, 3.0, 5.4], [1.0, 0.25, 0.08, 0.06], [t60, t60 * 0.5, t60 * 0.3, t60 * 0.12], d)
+def _flutter(d: float, seed: int) -> np.ndarray:
+    """A playing card fluttering through the air: a rising swish of air, beating as it spins."""
+    t = _t(d)
+    fc = A.glide(700, 2600, d)
+    env = np.interp(t, [0, 0.003, 0.7 * d, 0.92 * d, d], [0, 0.6, 1.0, 0.15, 0.0])
+    spin = 1 + 0.45 * np.sin(TAU * 22 * t)
+    y = _svf(_svf(A.noise(d, "pink", seed), fc, 1.3, "bp"), fc, 1.3, "bp")
+    return _norm(y * env * spin)
 
 
-def _exact_chimes() -> np.ndarray:
-    d = 2.4
-    x = _buf(d)
-    x = A.mix_at(x, _thump(294, 147, 0.04, 0.15, 0.3), 0, 0.5)
-    x = A.mix_at(x, _bn(0.06, 500, 3000, 301) * A.decay(0.06, 0.03, 0.0003), 0, 0.2)
-    for i, n in enumerate(["D5", "F#5", "A5", "D6", "F#6", "A6"]):
-        x = A.mix_at(x, _glass(N(n), 1.9, 1.5 if i == 5 else 0.9), 0.065 * i, 0.32)
-    x = A.mix_at(x, _glass(N("D6"), 1.8, 1.4), 0.39, 0.2)
-    pad = sum(A.sine(N(n), 2.0) for n in ("D4", "F#4", "A4", "E5")) / 4
-    x = A.mix_at(x, pad * A.adsr(2.0, 0.25, 0.2, 0.8, 1.2), 0.05, 0.18)
-    x = x + 0.14 * _sparkle(d, 40, 0.2, 1.8, 302, shape=1.6)
-    return _finish(_verb(x, 0.6, 0.28, tail=0.6), 2.35, 0.6, lp=7600)
-
-
-def _exact_harp() -> np.ndarray:
-    d = 2.4
-    x = _buf(d)
-    notes = ["D4", "E4", "F#4", "A4", "B4", "D5", "E5", "F#5", "A5", "B5", "D6"]
-    for i, n in enumerate(notes):
-        x = A.mix_at(x, _ks(N(n), 2.0, 0.28, 1.6 - 0.05 * i, 310 + i), 0.032 * i, 0.35 + 0.015 * i)
-    x = A.mix_at(x, _ks(N("D3"), 2.0, 0.3, 1.8, 330), 0.36, 0.45)
-    # a harmonic (a touched string's pure octave) on the top D
-    t = _t(1.8)
-    x = A.mix_at(x, np.sin(TAU * N("D6") * t) * A.decay(1.8, 1.6, 0.004), 0.36, 0.18)
-    return _finish(_verb(x, 0.6, 0.3, tail=0.6), 2.35, 0.7, lp=7600)
+def _card_land(seed: int) -> np.ndarray:
+    """A card slapping down onto the deck: a crisp paper slap, the card stock's brief ring
+    and the deck's soft knock on the felt."""
+    d = 0.15
+    slap = _bn(0.03, 900, 6500, seed) * A.decay(0.03, 0.016, 0.0002)
+    ring = _excite(_bn(0.002, 1500, 6000, seed + 1), [(2350, 1.0, 0.02), (3150, 0.7, 0.015), (4300, 0.4, 0.01)], d)
+    knock = _plank([(190, 1.0, 0.04), (330, 0.8, 0.03), (540, 0.5, 0.02)], d, seed + 2, 0.003)
+    return _fit(slap, d) + 0.3 * _norm(ring) + 0.5 * _norm(knock)
 
 
 def _exact_card() -> np.ndarray:
     d = 2.3
     x = _buf(d)
-    wd = 0.32
-    t = _t(wd)
-    # the card flutters through the air (a rising, fluttering swish) ...
-    fc = A.glide(700, 2600, wd)
-    env = np.interp(t, [0, 0.003, 0.22, 0.3, wd], [0, 0.6, 1.0, 0.15, 0.0])
-    flutter = 1 + 0.45 * np.sin(TAU * 22 * t)
-    whoosh = _bp2(A.noise(wd, "pink", 321), fc, 1.3) * env * flutter
-    x = A.mix_at(x, _norm(whoosh), 0, 0.5)
-    # ... lands on the deck, and the deck answers with a golden ding
-    x = A.mix_at(x, _bn(0.04, 1000, 5000, 322) * A.decay(0.04, 0.025, 0.0002), 0.28, 0.45)
-    x = A.mix_at(x, _thump(200, 150, 0.02, 0.05, 0.1), 0.28, 0.35)
-    x = A.mix_at(x, A.bell(N("A5"), 1.8, ratio=2.0, index=1.0, t60=1.5), 0.29, 0.35)
-    x = A.mix_at(x, A.bell(N("D6"), 1.6, ratio=2.0, index=0.8, t60=1.3), 0.29, 0.25)
-    x = x + 0.1 * _sparkle(d, 14, 0.3, 1.2, 323)
-    return _finish(_verb(x, 0.45, 0.2, tail=0.6), 2.3, 0.6, lp=7600)
+    land = 0.28
+    # the card flutters through the air and lands on your deck ...
+    x = A.mix_at(x, _flutter(0.32, 321), 0, 0.45)
+    x = A.mix_at(x, _norm(_card_land(322)), land, 0.6)
+    # ... and the deck answers with a golden ring: celesta, glockenspiel and a soft bell,
+    # then a few celesta notes drifting up like gold dust
+    ding = [Note(GM["celesta"], "D6", land, 0.5, vel=112), Note(GM["glockenspiel"], "A6", land, 0.5, vel=88),
+            Note(GM["tubular_bells"], "D5", land, 0.8, vel=56), Note(GM["harp"], "D5", land, 0.8, vel=42)]
+    dust = [Note(GM["celesta"], n, land + 0.17 + 0.06 * i, 0.3, vel=62 - 3 * i)
+            for i, n in enumerate(["E6", "F#6", "A6", "B6", "D7"])]
+    x = A.mix_at(x, 0.8 * _norm(_fit(_sf(ding + dust, d + 0.3, "musescore"), d)), 0)
+    return _finish(_glue(_verb(x, 0.45, 0.18), 15.0), 2.3, 0.6, hp=60, lp=7000)
+
+
+def _exact_harp() -> np.ndarray:
+    d = 2.4
+    run = _penta("D4", "D6")
+    notes = [Note(GM["harp"], n, 0.032 * i, 0.5, vel=74 + 3 * i) for i, n in enumerate(run)]
+    top = 0.032 * len(run)
+    notes += [Note(GM["harp"], "D3", top + 0.02, 1.6, vel=100), Note(GM["harp"], "A3", top + 0.03, 1.6, vel=80),
+              Note(GM["harp"], "D7", top + 0.02, 1.2, vel=60)]
+    x = _fit(_stem(notes, d + 0.4, "musescore"), d)
+    x = _choke(x, 1.0, 1.6)
+    return _finish(_verb(x, 0.55, 0.22), 2.35, 0.7, hp=60, lp=7600)
 
 
 def _exact_pipe() -> np.ndarray:
     d = 2.2
-    run = [(0.0, "D5"), (0.065, "E5"), (0.13, "F#5"), (0.195, "A5"), (0.26, "B5"), (0.33, "D6")]
-    notes = [(t0, N(n)) for t0, n in run]
-    # a trill on the top D, then the held note
-    tt = 0.39
-    k = 0
-    while tt < 0.72:
-        notes.append((tt, N("E6") if k % 2 == 0 else N("D6")))
-        tt += 0.036
+    # a recorder runs up to a trilled high D and holds it, over a tabor's taps
+    run = ["D5", "E5", "F#5", "A5", "B5", "D6"]
+    step = 0.065
+    notes = [Note(GM["recorder"], n, step * i, step, vel=100) for i, n in enumerate(run)]
+    tt, k = step * len(run), 0
+    while tt < 0.75:
+        notes.append(Note(GM["recorder"], "E6" if k % 2 == 0 else "D6", tt, 0.04, vel=96))
+        tt += 0.04
         k += 1
-    notes.append((tt, N("D6")))
-    f = _line(notes, d, 0.004)
-    t = _t(d)
-    f = f * (1 + 0.006 * np.sin(TAU * 5.5 * t) * np.clip((t - 0.9) / 0.3, 0, 1))
-    env = np.interp(t, [0, 0.006, 0.33, 1.2, 1.55, d], [0, 1.0, 0.9, 0.85, 0.0, 0.0])
-    amp = env * _tongue([o for o, _ in run[1:]], d)
-    x = _whistle(f, amp, 341, breath=0.045, h2=0.12, h3=0.05)
-    x = A.mix_at(x, _drum(N("A3"), 0.4, 342, 0.15, 0.4), 0, 0.35)
-    x = A.mix_at(x, _drum(N("A3"), 0.4, 343, 0.15, 0.4), 0.33, 0.35)
-    x = A.mix_at(x, _ping(N("D7"), 0.6, pgain=0.1), 0.33, 0.12)
-    return _finish(_verb(x, 0.45, 0.22, tail=0.6), 2.2, 0.5, lp=7500)
+    notes.append(Note(GM["recorder"], "D6", tt, 0.75, vel=104))
+    x = _fit(_stem(notes, d + 0.4, "musescore"), d)
+    tabor = _choke(_hit("snare", 70, kit="orchestra", bank="musescore"), 0.04, 0.25)
+    for at, g in ((0.0, 0.12), (step * 5, 0.14), (tt, 0.16)):
+        x = A.mix_at(x, g * _norm(tabor), at, 1.0)
+    return _finish(_verb(x, 0.45, 0.2), 2.2, 0.5, hp=80, lp=7500)
 
 
-def _exact_powerup() -> np.ndarray:
-    d = 1.6
-    up = ["D4", "F#4", "A4", "D5", "F#5", "A5", "D6", "F#6", "A6", "D7"]
-    seq = [n for n in up for _ in range(2)] + ["D6"] * 70
-    f = _hz_frames(seq, d)
-    t = _t(d)
-    f = f * (1 + 0.01 * np.sin(TAU * 7 * t) * (t > 0.5))
-    vol = [12] * 20 + [13, 13, 12, 12, 12, 11, 11, 11, 10, 10, 10, 9, 9, 9, 8, 8, 8, 7, 7, 7, 6, 6, 6, 5, 5, 5,
-                       4, 4, 4, 4, 3, 3, 3, 3, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 0]
-    lead = _pulse(f, 0.25) * _vol(vol, d)
-    # the echo: the same line three frames late, thinner and quieter
-    echo = _pulse(_hz_frames(seq[:1] * 3 + seq, d) * 1.003, 0.125) * _vol([0, 0, 0] + [v // 2 for v in vol], d)
-    bass = _tri4(_hz_frames(["D3"] * 10 + ["A3"] * 10 + ["D4"] * 40, d)) * _vol(
-        [15] * 30 + [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0], d)
-    return _finish(0.4 * lead + 0.22 * echo + 0.35 * bass, d, 0.08, lp=5500)
+def _exact_fanfare() -> np.ndarray:
+    d = 2.2
+    # three herald trumpets: a triplet pick-up to D, then up to F# and a long A, with a
+    # timpani roll under the last note
+    lead = [("A4", 0.0, 0.07), ("A4", 0.09, 0.07), ("A4", 0.18, 0.07), ("D5", 0.27, 0.32), ("F#5", 0.62, 0.13),
+            ("A5", 0.78, 0.75)]
+    harm = ["F#4", "F#4", "F#4", "A4", "D5", "F#5"]
+    low = ["D4", "D4", "D4", "F#4", "A4", "D5"]
+    notes = [Note(GM["trumpet"], n, t, dur, vel=112) for n, t, dur in lead]
+    notes += [Note(GM["trumpet"], h, t, dur, vel=98, pan=-0.2) for h, (n, t, dur) in zip(harm, lead)]
+    notes += [Note(GM["trombone"], h, t, dur, vel=96, pan=0.2) for h, (n, t, dur) in zip(low, lead)]
+    roll = [Note(GM["timpani"], "D3", 0.78 + 0.04 * i, 0.04, vel=60 + 2 * i) for i in range(16)]
+    notes += [Note(GM["timpani"], "D3", 0.0, 0.3, vel=96), Note(GM["timpani"], "A2", 0.27, 0.3, vel=104)] + roll
+    notes += [Note(GM["timpani"], "D3", 1.42, 0.5, vel=110)]
+    x = _fit(_stem(notes, d + 0.4), d)
+    return _finish(_verb(x, 0.6, 0.18), 2.2, 0.5, hp=60, lp=7200)
+
+
+def _exact_celesta() -> np.ndarray:
+    d = 2.0
+    # a celesta climbs D major's arpeggio to a high D, a glockenspiel touching the top note,
+    # over a soft harp chord
+    arp = ["D5", "F#5", "A5", "D6", "F#6", "A6", "D7"]
+    notes = [Note(GM["celesta"], n, 0.055 * i, 0.5, vel=72 + 4 * i) for i, n in enumerate(arp)]
+    top = 0.055 * (len(arp) - 1)
+    notes += [Note(GM["glockenspiel"], "D7", top, 0.6, vel=64), Note(GM["harp"], "D4", 0.0, 1.2, vel=38),
+              Note(GM["harp"], "A4", 0.012, 1.2, vel=34), Note(GM["harp"], "F#5", top, 1.0, vel=40)]
+    x = _fit(_stem(notes, d + 0.4, "musescore"), d)
+    return _finish(_verb(x, 0.55, 0.22), 2.0, 0.6, hp=80, lp=7600)
 
 
 # ============================================================================= new_enemy
+BAR = [1.0, 2.756, 5.404, 8.933]        # a free steel bar's modes (a blade)
+
+
 def _new_blade() -> np.ndarray:
     d = 2.0
     x = _buf(d)
-    # the hilt unlatches
-    x = A.mix_at(x, A.tick(3200, 0.02, 0.4, 401), 0, 0.5)
-    x = A.mix_at(x, _modes(2600, [1.0, 1.58], [1.0, 0.5], [0.03, 0.02], 0.05), 0, 0.3)
-    # the blade slides out: rough friction drives narrow metal resonances that glide up as
-    # the contact point runs along the blade (the 'shiiing'), and rings the blade's modes
+    # the scabbard's catch unlatches: a small steel click
+    x = A.mix_at(x, _en(_plate(2600, 0.08, 401, t60=0.04, bright=0.8, contact=0.0006)), 0, 0.3)
+    x = A.mix_at(x, _bn(0.006, 1500, 6000, 400, "white", 4) * A.decay(0.006, 0.003, 0.0001), 0, 0.5)
+    # the blade slides out: rough friction drives narrow resonances of the steel that glide
+    # up as the contact runs along the blade (the 'shiiing'), and sets the blade ringing
     sd = 0.55
     t = _t(sd)
     rough = 0.55 + 0.45 * _norm(A.lowpass(np.random.default_rng(402).standard_normal(_n(sd)), 150, 2))
@@ -715,51 +572,47 @@ def _new_blade() -> np.ndarray:
     whine = sum(g * _svf(fric, f * rise, 14.0, "bp")
                 for f, g in [(1250, 1.0), (1720, 0.8), (2310, 0.65), (3080, 0.5), (4150, 0.35)])
     hiss = _bn(sd, 2000, 5000, 404, "white", 4) * rough
-    blade = [(N("D5") * 2.756, 1.0, 0.25), (N("D5") * 5.404, 0.7, 0.2)]
-    ring = _excite(fric * 0.05, blade, sd)
+    ring = _excite(fric * 0.05, [(N("D5") * 2.756, 1.0, 0.25), (N("D5") * 5.404, 0.7, 0.2)], sd)
     env = np.interp(t, [0, 0.003, 0.48, 0.53, sd], [0, 0.5, 1.0, 0.3, 0.0])
-    scrape = (_norm(whine) + 0.25 * hiss + 0.4 * _norm(ring)) * env
-    x = A.mix_at(x, scrape, 0.004, 0.5)
+    x = A.mix_at(x, (_norm(whine) + 0.25 * hiss + 0.4 * _norm(ring)) * env, 0.004, 0.5)
     # the tip leaves the scabbard: the blade rings free
-    free = _modes(N("D5"), [1.0, 2.756, 5.404, 8.933], [0.6, 1.0, 0.55, 0.25], [1.3, 1.0, 0.6, 0.35], 1.4,
-                  beat=0.0015)
-    x = A.mix_at(x, free, 0.52, 0.4)
-    x = A.mix_at(x, _ping(4700, 0.05, pgain=0), 0.52, 0.15)
-    return _finish(_verb(x, 0.5, 0.2, tail=0.6), 1.9, 0.45, lp=7500)
+    f0 = N("D5")
+    bar = [(f0 * r * (1 + s), g, T) for r, g, T in zip(BAR, [0.35, 1.0, 0.7, 0.35], [1.2, 1.0, 0.6, 0.35])
+           for s in (-0.0015, 0.0015)]
+    tip = _bn(0.0015, 1500, 7000, 405) * np.hanning(_n(0.0015))
+    x = A.mix_at(x, _norm(_excite(tip, bar, 1.4)), 0.52, 0.45)
+    return _finish(_glue(_verb(x, 0.5, 0.2), 15.0), 1.9, 0.45, lp=7500)
 
 
 def _new_horn() -> np.ndarray:
     d = 2.0
-    t = _t(d)
-    f = _line([(0.0, N("A2") * 0.97), (0.04, N("A2")), (0.30, N("D3") * 0.96), (0.35, N("D3"))], d, 0.012)
-    f = f * (1 + 0.0035 * np.sin(TAU * 4.8 * t) * np.clip((t - 0.8) / 0.3, 0, 1))
-    amp = np.interp(t, [0, 0.004, 0.02, 0.27, 0.30, 0.32, 0.95, 1.45, d],
-                    [0, 0.6, 0.85, 0.8, 0.55, 0.8, 1.0, 0.0, 0.0])
-    x = (_brass(f, amp, 411, onsets=(0.0, 0.30))
-         + 0.35 * _brass(f * 0.5 * 1.002, amp, 412, 1200.0, onsets=(0.0, 0.30)))
-    # the player's lips buzzing into the mouthpiece
-    x = A.mix_at(x, _bn(0.025, 400, 3000, 413) * A.decay(0.025, 0.015, 0.0003), 0, 0.45)
-    return _finish(_verb(x, 0.8, 0.32, damping=0.55, tail=0.6), 2.0, 0.4)
+    # a low horn call through the castle hall: A, then a long D swelling, a timpani under
+    # each note and a trombone an octave below
+    notes = [Note(GM["french_horn"], "A2", 0.0, 0.26, vel=118), Note(GM["trombone"], "A1", 0.0, 0.26, vel=90),
+             Note(GM["french_horn"], "D3", 0.3, 1.0, vel=122, swell=(85, 127)),
+             Note(GM["trombone"], "D2", 0.3, 1.0, vel=96, swell=(70, 110)),
+             Note(GM["timpani"], "A2", 0.0, 0.3, vel=95), Note(GM["timpani"], "D3", 0.3, 0.4, vel=100)]
+    x = _fit(_stem(notes, d + 0.5, "musescore"), d)
+    return _finish(_verb(x, 0.8, 0.3, damping=0.55), 2.0, 0.45, hp=55)
 
 
 def _new_drum() -> np.ndarray:
     d = 2.0
     x = _buf(d)
-    # a great drum (D2) with its shell and skin an octave up, so the boom also reads on a phone
-    for tt, g, s, t60 in ((0.0, 1.0, 421, 0.8), (0.36, 0.7, 422, 0.6)):
-        x = A.mix_at(x, _taiko(N("D2"), 1.5, s, t60, 4.0), tt, 0.55 * g)
-        x = A.mix_at(x, _taiko(N("D3"), 0.8, s + 10, t60 * 0.5, 2.5), tt, 0.9 * g)
-        # the drum's wooden shell answers the stick with a hollow 'thock'
-        burst = _bn(0.003, 150, 2000, s + 20) * np.hanning(_n(0.003))
-        shell = _excite(burst, [(330, 1.0, 0.12), (510, 0.7, 0.09), (740, 0.45, 0.06)], 0.4)
-        x = A.mix_at(x, _norm(shell), tt, 0.35 * g)
-    drone = sum(A.osc("saw", N(n) * (1 + 0.003 * k), 1.9) for k, n in enumerate(("D2", "A2", "D3", "F3")))
-    drone = A.lowpass(drone, 700, 2) * A.adsr(1.9, 0.3, 0.2, 0.8, 0.8)
-    x = A.mix_at(x, drone, 0, 0.14)
-    rumble = A.lowpass(A.noise(1.2, "brown", 423), 180, 2) * A.decay(1.2, 0.8, 0.002)
-    x = A.mix_at(x, rumble, 0, 0.1)
-    x = A.peak_eq(x, 260, 5, 0.8)
-    return _finish(_glue(_verb(x, 0.7, 0.25, tail=0.6), 16.0), 1.95, 0.45, hp=55)
+    # two deep booms: a concert bass drum with timpani on D (the upper one carries on a phone)
+    for tt, g in ((0.0, 1.0), (0.36, 0.72)):
+        x = A.mix_at(x, _en(_hit("bass_drum", 127, kit="orchestra", seconds=1.8)), tt, 0.32 * g)
+        x = A.mix_at(x, _en(_stem([Note(GM["timpani"], "D2", 0.0, 0.5, vel=118),
+                                   Note(GM["timpani"], "D3", 0.0, 0.5, vel=127)], 1.8, "musescore")), tt, 0.9 * g)
+        # the drum's wooden shell answers the stick with a hollow knock
+        x = A.mix_at(x, _en(_choke(_one("woodblock", "D2", 0.3, 100, seconds=0.8), 0.05, 0.3)), tt, 0.25 * g)
+    # under them, low strings hold a dark D minor chord
+    drone = [Note(GM["cello"], "D3", 0.0, 1.3, vel=100, swell=(70, 115)),
+             Note(GM["contrabass"], "D2", 0.0, 1.3, vel=80),
+             Note(GM["strings"], "F3", 0.0, 1.3, vel=86), Note(GM["strings"], "A3", 0.0, 1.3, vel=80),
+             Note(GM["strings"], "D4", 0.0, 1.3, vel=70)]
+    x = A.mix_at(x, 0.6 * _en(_fit(_stem(drone, d + 0.4, "musescore"), d)), 0)
+    return _finish(_glue(_verb(x, 0.7, 0.22), 16.0), 1.95, 0.45, hp=45)
 
 
 def _creak(d: float, seed: int) -> np.ndarray:
@@ -769,9 +622,10 @@ def _creak(d: float, seed: int) -> np.ndarray:
     t = _t(d)
     rate = np.interp(t, [0, 0.4 * d, 0.8 * d, d], [120, 230, 170, 200])
     wob = A.lowpass(rng.standard_normal(len(t)), 8, 1)
-    rate = rate * (1 + 0.5 * wob / (np.max(np.abs(wob)) or 1) * 0.12)
+    rate = rate * (1 + 0.06 * wob / (np.max(np.abs(wob)) or 1))
     ph = np.cumsum(rate) / SR
     idx = np.nonzero(np.diff(np.floor(ph)) > 0)[0] + 1
+    idx = np.clip(idx + rng.integers(-12, 13, len(idx)), 0, len(t) - 1)      # the wood slips unevenly
     pulses = np.zeros(len(t))
     pulses[idx] = rng.uniform(0.5, 1.0, len(idx))
     modes = [(380, 1.0, 0.05), (640, 0.8, 0.04), (1020, 0.7, 0.03), (1550, 0.5, 0.025), (2300, 0.3, 0.02)]
@@ -781,129 +635,125 @@ def _creak(d: float, seed: int) -> np.ndarray:
 def _new_gate() -> np.ndarray:
     d = 2.0
     x = _buf(d)
-    # the latch lifts
-    x = A.mix_at(x, _modes(1450, [1.0, 1.64, 2.69], [1.0, 0.6, 0.35], [0.06, 0.05, 0.03], 0.1), 0, 0.4)
-    x = A.mix_at(x, _modes(300, [1.0, 1.73], [1.0, 0.6], [0.05, 0.04], 0.1), 0, 0.4)
-    x = A.mix_at(x, _bn(0.006, 1000, 5000, 431) * A.decay(0.006, 0.003, 0.0001), 0, 0.3)
-    # the gate swings, creaking
+    # the iron latch lifts
+    x = A.mix_at(x, _en(_plate(1450, 0.15, 431, t60=0.07, bright=0.7, contact=0.0008)), 0, 0.35)
+    x = A.mix_at(x, _en(_plate(330, 0.15, 432, t60=0.05, bright=0.5, contact=0.002)), 0.004, 0.35)
+    # the gate swings, creaking on its hinges
     cd = 1.0
     t = _t(cd)
     env = np.interp(t, [0, 0.01, 0.25, 0.75, 0.95, cd], [0, 0.4, 1.0, 0.9, 0.2, 0.0])
-    x = A.mix_at(x, _norm(_creak(cd, 432)) * env, 0.06, 0.55)
-    # and stops against the stone
-    wood = [(N("D3"), 1.0, 0.3), (233, 0.7, 0.2), (390, 0.5, 0.12), (610, 0.3, 0.08)]
-    burst = _bn(0.006, 100, 2000, 433) * np.hanning(_n(0.006))
-    thud = 0.6 * _norm(_excite(burst, wood, 0.7)) + 0.5 * _thump(140, 82, 0.05, 0.3, 0.7, 1.8)
-    x = A.mix_at(x, thud, 1.1, 0.9)
-    x = A.mix_at(x, _bn(0.15, 60, 500, 434) * A.decay(0.15, 0.08, 0.0005), 1.1, 0.4)
-    rng = np.random.default_rng(435)
-    for i, tt in enumerate([1.14, 1.19, 1.23, 1.3]):
-        x = A.mix_at(x, _metal(rng.uniform(900, 1500), 0.25, 440 + i, 0.12, 0.6), tt, 0.12 * 0.75 ** i)
-    return _finish(_verb(x, 0.6, 0.25, tail=0.6), 1.95, 0.4, lp=7000)
+    x = A.mix_at(x, _en(_creak(cd, 433) * env), 0.06, 0.3)
+    # and stops against the stone: a deep woodblock and the gate's planks, the bass drum's
+    # weight, the chain rattling
+    hit = 1.1
+    x = A.mix_at(x, _en(_choke(_one("woodblock", "A2", 0.3, 120, seconds=0.8), 0.08, 0.4)), hit, 0.6)
+    x = A.mix_at(x, _en(_plank([(N("D3"), 1.0, 0.25), (233, 0.7, 0.18), (390, 0.5, 0.12), (610, 0.3, 0.08)],
+                               0.7, 434, 0.006)), hit, 0.5)
+    x = A.mix_at(x, _en(_choke(_hit("bass_drum", 110, kit="orchestra"), 0.1, 0.4)), hit, 0.3)
+    x = A.mix_at(x, _en(_tambourine([(0.0, 50), (0.07, 34), (0.16, 22)], 0.5, lp=5000)), hit + 0.02, 0.12)
+    return _finish(_glue(_verb(x, 0.6, 0.22), 15.0), 1.95, 0.4, lp=7000)
 
 
-def _new_chip() -> np.ndarray:
-    d = 1.75
-    x = _buf(d)
-    for tt in (0.0, 0.18, 0.36):
-        nz = _lfsr(_frames([1600], 0.2), seed=7) * _vol([12, 9, 6, 4, 2, 1, 0], 0.2)
-        x = A.mix_at(x, nz, tt, 0.35)
-    bass = _tri4(_frames([N("D2")], 1.6)) * _vol([15] * 8 + [0] * 3 + [15] * 8 + [0] * 3 + [15] * 36 +
-                                                 [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0], 1.6)
-    x = A.mix_at(x, bass, 0, 0.45)
-    stab = _pulse(_frames([N("D3")], 0.16), 0.5) * _vol([13, 12, 11, 10, 8, 6, 4, 2, 1, 0], 0.16)
-    x = A.mix_at(x, stab, 0, 0.3)
-    x = A.mix_at(x, stab, 0.18, 0.3)
-    # the minor chord the NES way: one voice cycling D-F-A every frame, sagging at the end
-    cd = 1.35
-    arp = _frames([N(n) for _ in range(30) for n in ("D4", "F4", "A4")], cd)
-    t = _t(cd)
-    arp = arp * (1 - 0.06 * np.clip((t - 0.6) / 0.5, 0, 1))
-    vol = [13] * 30 + [12, 12, 11, 11, 10, 10, 9, 9, 8, 8, 7, 7, 6, 6, 5, 5, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1, 0]
-    x = A.mix_at(x, _pulse(arp, 0.5) * _vol(vol, cd), 0.36, 0.3)
-    return _finish(x, d, 0.08, lp=4500)
+def _new_strings() -> np.ndarray:
+    d = 2.0
+    # a timpani rolls in softly and low strings shiver into a dark D minor chord
+    roll = [Note(GM["timpani"], "D3", 0.045 * i, 0.05, vel=min(100, 70 + 3 * i)) for i in range(18)]
+    chord = [Note(GM["tremolo_strings"], n, 0.0, 1.25, vel=v, swell=(55, 120))
+             for n, v in (("D3", 104), ("A3", 100), ("D4", 96), ("F4", 96))]
+    chord += [Note(GM["cello"], "D3", 0.0, 1.25, vel=100, swell=(60, 115)),
+              Note(GM["contrabass"], "D2", 0.0, 1.25, vel=70)]
+    x = _fit(_stem(roll + chord, d + 0.4, "musescore"), d)
+    return _finish(_verb(x, 0.7, 0.24), 2.0, 0.5, hp=50)
 
 
 # ============================================================================= suffer
 def _suffer_heavy() -> np.ndarray:
     d = 1.1
     x = _buf(d)
-    # a deep body blow: the low weight for headphones, a chest-deep 150-350 Hz punch for the phone
-    x = A.mix_at(x, _thump(160, 70, 0.12, 0.45, 0.9, 3.5), 0, 0.55)
-    x = A.mix_at(x, _thump(340, 170, 0.05, 0.16, 0.3, 1.8), 0, 0.9)
-    rng = np.random.default_rng(501)
-    grain = np.repeat(rng.uniform(0.2, 1.0, 40), _n(0.1) // 40 + 1)[:_n(0.1)]
-    x = A.mix_at(x, _bn(0.1, 200, 1400, 502) * grain * A.decay(0.1, 0.1, 0.0003), 0, 0.85)
-    x = A.mix_at(x, _bn(0.03, 900, 3500, 503) * A.decay(0.03, 0.02, 0.0002), 0, 0.25)
-    x = A.mix_at(x, A.lowpass(A.noise(0.7, "brown", 504), 300, 2) * A.decay(0.7, 0.5, 0.002), 0, 0.2)
-    x = A.peak_eq(x, 240, 5, 0.9)
-    return _finish(_glue(_verb(x, 0.25, 0.1, tail=0.4), 15.5), 1.1, 0.35, hp=60, lp=4500)
+    # a deep, dull body blow: a concert bass drum's weight, a hand drum's chest-deep thud,
+    # the slap of leather and a brush's swat, all damped at once
+    x = A.mix_at(x, _en(_choke(_hit("bass_drum", 127, kit="orchestra"), 0.1, 0.4)), 0, 0.28)
+    x = A.mix_at(x, _en(_choke(_hit("low_conga", 127), 0.06, 0.2)), 0.002, 0.8)
+    x = A.mix_at(x, _en(_choke(_one("timpani", "A2", 0.2, 100, "musescore"), 0.05, 0.25)), 0.0, 0.4)
+    x = A.mix_at(x, _en(_choke(_hit("mute_conga", 100), 0.03, 0.12)), 0.003, 0.4)
+    x = A.mix_at(x, _en(_choke(_hit("snare", 90, kit="brush"), 0.05, 0.2)), 0.001, 0.35)
+    x = A.mix_at(x, _en(_cloth(0.3, 501, 300, 2000, [(0, 0), (0.02, 1.0), (0.1, 0.4), (0.3, 0)])), 0.01, 0.15)
+    return _finish(_glue(_verb(x, 0.25, 0.08), 15.0), 1.0, 0.35, hp=55, lp=5000)
 
 
 def _suffer_armor() -> np.ndarray:
     d = 1.3
     x = _buf(d)
-    clang = _modes(N("A3"), [1.0, 1.83, 2.98, 4.21, 5.7, 7.3], [0.7, 1.0, 0.8, 0.6, 0.4, 0.25],
-                   [0.9, 0.8, 0.6, 0.45, 0.35, 0.25], 1.2, beat=0.003)
-    x = A.mix_at(x, clang, 0, 0.5)
-    x = A.mix_at(x, _thump(170, 82, 0.06, 0.25, 0.5, 2.0), 0.001, 0.6)
-    x = A.mix_at(x, _bn(0.03, 500, 3000, 511) * A.decay(0.03, 0.02, 0.0002), 0, 0.35)
-    return _finish(_glue(_verb(x, 0.35, 0.12, tail=0.4), 15.0), 1.3, 0.4, hp=45, lp=5000)
+    # a blunt blow on your breastplate: a dark steel clang (a mace's long contact keeps it
+    # dull), a cymbal's bell played an octave down for the steel's grain, and the thud behind
+    x = A.mix_at(x, _en(_plate(N("A3"), 1.2, 511, t60=0.6, bright=0.75, contact=0.003)), 0, 0.7)
+    bell = _choke(_repitch(_hit("ride_bell", 120, seconds=1.6), 0.5), 0.1, 0.6)
+    x = A.mix_at(x, _en(A.lowpass(bell, 5000, 4)), 0.001, 0.55)
+    x = A.mix_at(x, _en(_choke(_hit("bass_drum", 115, kit="orchestra"), 0.08, 0.35)), 0, 0.25)
+    x = A.mix_at(x, _en(_choke(_hit("low_conga", 110), 0.05, 0.18)), 0.002, 0.25)
+    return _finish(_glue(_verb(x, 0.35, 0.12), 15.0), 1.3, 0.45, hp=50, lp=5500)
 
 
 def _suffer_drum() -> np.ndarray:
     d = 1.0
-    x = _buf(d)
-    x = A.mix_at(x, _drum(N("D3"), 0.8, 521, 0.3, 0.45), 0, 0.5)
-    x = A.mix_at(x, _ks(N("D2"), 0.9, 0.25, 0.6, 522), 0, 0.5)
-    x = A.mix_at(x, _ks(N("D3"), 0.9, 0.3, 0.5, 523), 0, 1.6)
-    x = A.peak_eq(x, 300, 5, 0.8)
-    return _finish(_verb(x, 0.3, 0.12, tail=0.4), 1.0, 0.3, hp=60, lp=3000)
+    # a timpani stroked softly and damped by the hand, with a low harp string under it
+    notes = [Note(GM["timpani"], "A2", 0.0, 0.3, vel=78), Note(GM["harp"], "D3", 0.004, 0.6, vel=70),
+             Note(GM["harp"], "D2", 0.004, 0.6, vel=62)]
+    x = _choke(_fit(_stem(notes, d + 0.4, "musescore"), d), 0.12, 0.7)
+    return _finish(_verb(x, 0.3, 0.1), 1.0, 0.35, hp=60, lp=3000)
 
 
 def _suffer_shadow() -> np.ndarray:
     d = 1.4
     x = _buf(d)
-    wd = 0.24
-    t = _t(wd)
-    env = np.interp(t, [0, 0.003, 0.12, 0.2, wd], [0, 0.7, 1.0, 0.2, 0.0])
-    whoosh = _bp2(A.noise(wd, "pink", 531), A.glide(2200, 350, wd), 1.4) * env
-    x = A.mix_at(x, _norm(whoosh), 0, 0.5)
-    # the impact: a low FM growl on D (its partials fall on D's harmonics)
-    gd = 1.2
-    t = _t(gd)
-    ph = TAU * N("D2") * t
-    growl = np.sin(ph + 5.0 * np.exp(-t / 0.12) * np.sin(1.5 * ph)) * A.decay(gd, 0.7, 0.001)
-    x = A.mix_at(x, _sat(growl, 1.5), 0.14, 0.6)
-    x = A.mix_at(x, _thump(N("D3") * 2, N("D3"), 0.04, 0.3, 0.5), 0.14, 0.4)
-    x = A.mix_at(x, _bn(0.08, 60, 1200, 532) * A.decay(0.08, 0.05, 0.0003), 0.14, 0.4)
-    x = A.mix_at(x, A.bell(N("D3"), 1.2, ratio=1.4, index=1.5, t60=1.0), 0.14, 0.25)
-    x = A.mix_at(x, A.bell(N("F3"), 1.2, ratio=1.4, index=1.5, t60=0.9), 0.14, 0.18)
-    return _finish(_glue(_verb(x, 0.6, 0.25, damping=0.7, tail=0.6), 15.5), 1.35, 0.4, lp=5000)
+    hit = 0.14
+    # a dark rush of air, falling ...
+    rush = _air(0.24, 2200, 350, 531, 1.4, [(0, 0), (0.003, 0.7), (0.12, 1.0), (0.2, 0.2), (0.24, 0)])
+    x = A.mix_at(x, rush, 0, 0.35)
+    # ... into low strings struck hard together (D minor), a timpani and a bass drum
+    notes = [Note(GM["tremolo_strings"], n, 0.0, 0.2, vel=127) for n in ("D3", "F3", "A3")]
+    notes += [Note(GM["cello"], "D3", 0.0, 0.2, vel=127), Note(GM["contrabass"], "D2", 0.0, 0.2, vel=96),
+              Note(GM["timpani"], "D3", 0.0, 0.4, vel=120)]
+    x = A.mix_at(x, _norm(_choke(_stem(notes, 1.6, "musescore"), 0.16, 0.6)), hit, 0.9)
+    x = A.mix_at(x, 0.35 * _norm(_choke(_hit("bass_drum", 120, kit="orchestra"), 0.1, 0.4)), hit, 1.0)
+    return _finish(_glue(_verb(x, 0.6, 0.22, damping=0.7), 15.5), 1.35, 0.45, hp=50, lp=6000)
 
 
-def _suffer_8bit() -> np.ndarray:
-    d = 0.55
-    k = np.arange(26)
-    fr = N("D5") * 2 ** (-k * 1.6 / 12.0) * np.where(k % 2 == 1, 1.12, 1.0)
-    sq = _pulse(_frames(list(fr), d), 0.5) * _vol([15, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 5, 4, 4, 3, 3, 2,
-                                                   2, 2, 1, 1, 1, 0], d)
-    nz = _lfsr(_frames([4000], d), short=True, seed=9) * _vol([14, 11, 8, 6, 4, 3, 2, 1, 1, 0], d)
-    return _finish(0.5 * sq + 0.4 * nz, d, 0.05, lp=4500)
+def _suffer_toll() -> np.ndarray:
+    d = 1.4
+    # a low bell tolls once over a muffled timpani
+    notes = [Note(GM["tubular_bells"], "D4", 0.0, 1.0, vel=112), Note(GM["tubular_bells"], "A3", 0.0, 1.0, vel=70),
+             Note(GM["timpani"], "D2", 0.0, 0.4, vel=110), Note(GM["timpani"], "D3", 0.0, 0.4, vel=90)]
+    x = _choke(_fit(_stem(notes, d + 0.4), d), 0.4, 1.0)
+    return _finish(_verb(x, 0.6, 0.2), 1.35, 0.5, hp=55, lp=6000)
 
 
 # ============================================================================= jester
+BELLS = ["D6", "E6", "F#6", "A6", "B6", "D7", "E7"]
+
+
+def _cap_bells(shakes: Sequence[Tuple[float, float]], d: float, seed: int, per: int = 5,
+               spread: float = 0.03) -> np.ndarray:
+    """The little bells on a jester's cap, shaken at (time, strength): each shake rings a
+    handful of small bells a few milliseconds apart."""
+    rng = np.random.default_rng(seed)
+    notes = []
+    for t0, s in shakes:
+        for b in range(per):
+            at = t0 + (rng.uniform(0, spread) if b else 0.0)
+            notes.append(Note(GM["tinkle_bell"], str(rng.choice(BELLS)), round(at, 4), 0.12,
+                              vel=int(np.clip(s * rng.uniform(70, 110), 20, 127))))
+    return _fit(_sf(notes, d + 0.6, "musescore"), d)
+
+
 def _jester_bells() -> np.ndarray:
     d = 2.0
-    rng = np.random.default_rng(601)
-    x = _buf(d)
-    for i, (tt, s) in enumerate([(0.0, 1.0), (0.12, 0.75), (0.24, 0.85), (0.48, 0.7), (0.6, 0.8), (0.72, 1.0)]):
-        x = _jingle(x, tt, s, rng)
-        # the cap's cloth and the bells' slots: a short shaken rattle under the ring
-        rattle = _bn(0.05, 2500, 6500, 602 + i, "white", 4) * A.decay(0.05, 0.035, 0.002)
-        x = A.mix_at(x, rattle, tt, 0.25 * s)
-    x = A.peak_eq(x, 6000, -3, 0.8)
-    return _finish(_verb(x, 0.3, 0.15, tail=0.5), 1.9, 0.5, lp=7800)
+    shakes = [(0.0, 1.0), (0.12, 0.75), (0.24, 0.85), (0.48, 0.7), (0.6, 0.8), (0.72, 1.0)]
+    x = _cut(_cap_bells(shakes, d + 0.1, 601))
+    # the cap's cloth and the bells' slots: a shaken rattle under the ring
+    x = A.mix_at(x, 0.22 * _norm(_tambourine([(t, int(60 * s)) for t, s in shakes], 1.2, lp=6000)), 0, 1.0)
+    x = A.peak_eq(x, 6000, -3.0, 0.8)
+    return _finish(_verb(x, 0.35, 0.15), 1.6, 0.5, hp=150, lp=7000)
 
 
 def _jester_jig() -> np.ndarray:
@@ -911,92 +761,66 @@ def _jester_jig() -> np.ndarray:
     e = 0.11
     tune = ["A5", "B5", "A5", "F#5", "D5", "F#5", "A5", "B5", "D6"]
     notes = []
-    onsets = []
     for i, n in enumerate(tune):
         t0 = i * e
-        if n == "F#5" and i == 3:
-            notes.append((t0, N("B5")))          # a cut: a flick of a higher note
-            notes.append((t0 + 0.018, N(n)))
-        elif i == len(tune) - 1:
-            notes.append((t0, N("E6")))
-            notes.append((t0 + 0.02, N(n)))
+        if i == 3:                                   # a cut: a flick of a higher note
+            notes += [Note(GM["recorder"], "B5", t0, 0.02, vel=96),
+                      Note(GM["recorder"], n, t0 + 0.02, e - 0.02, vel=104)]
+        elif i == len(tune) - 1:                     # the last note, held, with a cut into it
+            notes += [Note(GM["recorder"], "E6", t0, 0.025, vel=100),
+                      Note(GM["recorder"], n, t0 + 0.025, 0.55, vel=108)]
         else:
-            notes.append((t0, N(n)))
-        onsets.append(t0)
-    f = _line(notes, d, 0.003)
-    t = _t(d)
+            notes.append(Note(GM["recorder"], n, t0, e, vel=104 if i % 3 == 0 else 92))
+    x = _fit(_stem(notes, d + 0.4, "musescore"), d)
     end = (len(tune) - 1) * e
-    f = f * (1 + 0.008 * np.sin(TAU * 5.5 * t) * np.clip((t - end - 0.12) / 0.15, 0, 1))
-    env = np.interp(t, [0, 0.006, end, end + 0.45, end + 0.6, d], [0, 1.0, 0.9, 0.8, 0.0, 0.0])
-    x = _whistle(f, env * _tongue(onsets[1:], d), 611, breath=0.06, h2=0.08, h3=0.03)
-    rng = np.random.default_rng(612)
-    for tt, s in [(0.0, 0.6), (3 * e, 0.4), (6 * e, 0.5), (end, 0.8)]:
-        x = _jingle(x, tt, s * 0.35, rng, bells=4, spread=0.02)
+    # a tabor and a tambourine on the beats, the cap's bells on the last note
+    tabor = _choke(_hit("snare", 64, kit="orchestra", bank="musescore"), 0.04, 0.2)
     for tt in (0.0, 3 * e, 6 * e, end):
-        x = A.mix_at(x, _drum(N("A2"), 0.3, 613, 0.2, 0.3), tt, 0.25)
-    return _finish(_verb(x, 0.35, 0.18, tail=0.6), 1.95, 0.4, lp=7600)
+        x = A.mix_at(x, 0.1 * _norm(tabor), tt, 1.0)
+    x = A.mix_at(x, 0.1 * _norm(_tambourine([(0.0, 70), (3 * e, 55), (6 * e, 60)], 1.0)), 0, 1.0)
+    x = A.mix_at(x, 0.18 * _norm(_cap_bells([(0.0, 0.8)], 0.8, 612, per=4)), end, 1.0)
+    return _finish(_verb(x, 0.35, 0.16), 1.95, 0.45, hp=100, lp=7600)
 
 
-def _jester_slide() -> np.ndarray:
-    d = 1.7
-    t = _t(d)
-    # wheee (up an octave and a half), ooo (down), wheee (up), then a wobble
-    k = [0.0, 0.26, 0.48, 0.66, d]
-    v = [math.log(N("A4")), math.log(N("D6")), math.log(N("D5")), math.log(N("A5")), math.log(N("A5"))]
-    lf = np.interp(t, k, v)
-    f = np.exp(lf) * (1 + 0.015 * np.sin(TAU * 7 * t) * np.clip((t - 0.68) / 0.08, 0, 1))
-    env = np.interp(t, [0, 0.004, 0.1, 0.66, 0.9, 1.05, d], [0, 0.6, 1.0, 1.0, 0.8, 0.0, 0.0])
-    x = _whistle(f, env, 621, breath=0.035, h2=0.04, h3=0.01)
-    rng = np.random.default_rng(622)
-    x = _jingle(x, 0.95, 0.4, rng, bells=4)
-    x = _jingle(x, 1.07, 0.3, rng, bells=3)
-    return _finish(_verb(x, 0.35, 0.16, tail=0.5), 1.6, 0.4, lp=7600)
-
-
-def _tine(f: float, d: float, t60: float = 1.2) -> np.ndarray:
-    """A music box's steel tine: a pure tone, a soft overtone and the pin's tiny click."""
-    t = _t(d)
-    y = np.sin(TAU * f * t) * np.exp(-6.9078 * t / t60)
-    y += 0.18 * np.sin(TAU * 2 * f * t) * np.exp(-6.9078 * t / (t60 * 0.4))
-    if 6.27 * f < 7800:
-        y += 0.06 * np.sin(TAU * 6.27 * f * t) * np.exp(-6.9078 * t / (t60 * 0.08))
-    y[:_n(0.001)] *= np.linspace(0, 1, _n(0.001))
-    return y
+def _jester_fiddle() -> np.ndarray:
+    d = 2.0
+    # a fiddler's trick: a plucked string, then the bow slides up an octave, turns a quick
+    # tune, and two more plucks end it
+    notes = [Note(GM["pizzicato"], "A4", 0.0, 0.15, vel=118), Note(GM["pizzicato"], "D5", 0.0, 0.15, vel=100),
+             Note(GM["violin"], "D6", 0.07, 0.28, vel=112, bend=(-12.0, 0.0))]
+    for i, n in enumerate(["B5", "A5", "F#5", "A5"]):
+        notes.append(Note(GM["violin"], n, 0.37 + 0.085 * i, 0.085, vel=108))
+    notes.append(Note(GM["violin"], "D6", 0.71, 0.32, vel=112))
+    notes += [Note(GM["pizzicato"], "D4", 1.1, 0.2, vel=110), Note(GM["pizzicato"], "A4", 1.24, 0.2, vel=118)]
+    x = _fit(_stem(notes, d + 0.4, "musescore"), d)
+    return _finish(_verb(x, 0.4, 0.16), 1.9, 0.45, hp=120, lp=7500)
 
 
 def _jester_musicbox() -> np.ndarray:
     d = 2.0
-    x = _buf(d)
-    # "nyah-nyah": the teasing chant (sol mi la sol mi), on a music box
-    for tt, n in [(0.0, "A5"), (0.22, "F#5"), (0.33, "B5"), (0.44, "A5"), (0.66, "F#5")]:
-        x = A.mix_at(x, _tine(N(n), 1.3), tt, 0.4)
-    x = A.mix_at(x, _tine(N("D5"), 1.3, 1.4), 0.0, 0.22)
-    x = A.mix_at(x, _tine(N("D5"), 1.3, 1.4), 0.66, 0.22)
-    x = A.mix_at(x, _tine(N("D7"), 0.6, 0.5), 0.9, 0.12)
-    rng = np.random.default_rng(631)
-    x = _jingle(x, 0.88, 0.18, rng, bells=4)
-    return _finish(_verb(x, 0.4, 0.2, tail=0.6), 1.95, 0.5, lp=7600)
+    # "nyah-nyah": the teasing chant (A F# B A F#) on a music box, with D under it
+    tune = [(0.0, "A5"), (0.22, "F#5"), (0.33, "B5"), (0.44, "A5"), (0.66, "F#5")]
+    notes = [Note(GM["music_box"], n, t, 0.4, vel=104) for t, n in tune]
+    notes += [Note(GM["music_box"], "D5", 0.0, 0.5, vel=80), Note(GM["music_box"], "D5", 0.66, 0.5, vel=80),
+              Note(GM["music_box"], "D7", 0.9, 0.4, vel=60)]
+    x = _fit(_stem(notes, d + 0.4, "musescore"), d)
+    x = A.mix_at(x, 0.1 * _norm(_cap_bells([(0.0, 0.6)], 0.8, 631, per=4)), 0.88, 1.0)
+    return _finish(_verb(x, 0.4, 0.2), 1.95, 0.5, hp=150, lp=7600)
 
 
-def _jester_chip() -> np.ndarray:
-    d = 1.6
-    bounce = ["D5", "F#5", "A5", "D6", "A5", "F#5", "D5", "F#5", "A5", "D6"]
-    seq = [n for n in bounce for _ in range(3)]
-    slide = [N("D6") * 2 ** (i * 7 / 12.0 / 6) for i in range(1, 7)]
-    fr = [N(n) for n in seq] + slide + [N("A6")] * 60
-    f = _frames(fr, d)
-    t = _t(d)
-    f = f * (1 + 0.012 * np.sin(TAU * 8 * t) * (t > 0.62))
-    vol = [12] * 36 + [12, 12, 12, 11, 11, 11, 10, 10, 10, 9, 9, 9, 8, 8, 8, 7, 7, 7, 6, 6, 6, 5, 5, 5,
-                       4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 0]
-    lead = _pulse(f, 0.25) * _vol(vol, d)
-    x = 0.4 * lead
-    # the noise channel as a tambourine on every other note
-    for i in range(0, 10, 2):
-        x = A.mix_at(x, _lfsr(_frames([7000], 0.08), seed=11) * _vol([8, 5, 3, 1, 0], 0.08), i * 0.05, 0.2)
-    bass = _tri4(_hz_frames(["D3"] * 15 + ["A2"] * 15 + ["D3"] * 60, d)) * _vol(
-        [15] * 50 + [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0], d)
-    return _finish(x + 0.3 * bass, d, 0.08, lp=5500)
+def _jester_bassoon() -> np.ndarray:
+    d = 2.0
+    # the orchestra's clown: a bassoon hops about, then droops with a comic slide down,
+    # a woodblock knocking under the hops
+    hops = [("D3", 0.0), ("A2", 0.12), ("D3", 0.24), ("F#3", 0.36), ("A3", 0.48)]
+    notes = [Note(GM["bassoon"], n, t, 0.08, vel=112) for n, t in hops]
+    notes += [Note(GM["bassoon"], "A3", 0.66, 0.55, vel=116, bend=(0.0, -7.0))]
+    notes += [Note(GM["pizzicato"], "D3", 0.0, 0.2, vel=90), Note(GM["pizzicato"], "D3", 0.24, 0.2, vel=80)]
+    x = _fit(_stem(notes, d + 0.4, "musescore"), d)
+    tok = _choke(_one("woodblock", "A4", 0.1, 90, seconds=0.4), 0.03, 0.15)
+    for t in (0.0, 0.24, 0.48):
+        x = A.mix_at(x, 0.15 * _norm(tok), t, 1.0)
+    return _finish(_verb(x, 0.35, 0.14), 1.6, 0.4, hp=80, lp=7000)
 
 
 # ============================================================================= yield
@@ -1006,35 +830,25 @@ def _yield_cloth() -> np.ndarray:
     rng = np.random.default_rng(701)
     grain = A.lowpass(rng.standard_normal(len(t)), 60, 1)
     grain = 1 + 0.6 * grain / (np.max(np.abs(grain)) or 1)
-    # a quick swell as the cloak swings, then a long soft settle (an exhale)
-    env = np.interp(t, [0, 0.003, 0.12, 0.3, 0.55, 0.8, d], [0, 0.45, 1.0, 0.6, 0.25, 0.0, 0.0])
-    x = _bp2(A.noise(d, "pink", 702), A.glide(1400, 650, d), 0.8) * grain * env
-    return _finish(x, d, 0.2, lp=4000)
-
-
-def _yield_felt() -> np.ndarray:
-    d = 1.15
-    t = _t(d)
-    x = np.zeros(len(t))
-    for root, g in ((N("D3"), 1.0), (N("D4"), 0.7)):
-        for k in range(1, 9):
-            fk = k * root * math.sqrt(1 + 0.0004 * k * k)
-            x += g * k ** -1.3 * np.sin(TAU * fk * t) * np.exp(-6.9078 * t / (0.9 / math.sqrt(k)))
-    x[:_n(0.002)] *= np.linspace(0, 1, _n(0.002))
-    x = A.lowpass(x, 1800, 2)
-    x = A.mix_at(x, _bn(0.03, 60, 700, 711) * A.decay(0.03, 0.02, 0.0005), 0, 0.15)
-    return _finish(x, 1.1, 0.4)
+    # a cloak swings back (a quick swell), then settles with a long soft breath out
+    env = _env(d, [(0, 0), (0.003, 0.45), (0.12, 1.0), (0.3, 0.6), (0.55, 0.25), (0.8, 0.0), (d, 0)])
+    swish = _svf(_svf(A.noise(d, "pink", 702), A.glide(1400, 650, d), 0.8, "bp"), A.glide(1400, 650, d), 0.8, "bp")
+    x = _norm(swish * grain * env)
+    breath = A.lowpass(_one("breath", "D5", 0.5, 70, seconds=0.9), 2500, 2)
+    breath = breath * _env(len(breath) / SR, [(0, 0), (0.1, 1.0), (0.5, 0.4), (0.8, 0)])
+    x = A.mix_at(x, 0.25 * _norm(breath), 0.12, 1.0)
+    return _finish(x, d, 0.25, lp=4000)
 
 
 def _knock(seed: int, shift: float = 1.0) -> np.ndarray:
-    """A knuckle rap on a wooden table: a soft click and the table top's damped modes."""
+    """A knuckle rap on an oak table: the knuckle's soft click, the table top's damped
+    modes and a woodblock's grain played an octave down."""
     d = 0.3
     modes = [(185 * shift, 0.6, 0.09), (N("D4") * shift, 1.0, 0.07), (440 * shift, 0.8, 0.06),
              (690 * shift, 0.55, 0.045), (1050 * shift, 0.35, 0.03), (1600 * shift, 0.2, 0.02)]
-    burst = _bn(0.0015, 100, 3000, seed) * np.hanning(_n(0.0015))
-    y = 0.6 * _norm(_excite(burst, modes, d))
-    y += 0.4 * _norm(_modes(1.0, [m[0] for m in modes], [m[1] for m in modes], [m[2] for m in modes], d))
-    y = A.mix_at(y, _bn(0.004, 1000, 3000, seed + 1) * A.decay(0.004, 0.002, 0.0001), 0, 0.2)
+    y = _norm(_plank(modes, d, seed, 0.0015, 100, 3000))
+    grain = _choke(_repitch(_hit("low_woodblock", 70, seconds=0.5), 0.5 * shift), 0.015, 0.06)
+    y = A.mix_at(y, 0.35 * _norm(A.lowpass(grain, 2500, 2)), 0, 1.0)
     return y
 
 
@@ -1045,106 +859,212 @@ def _yield_knock() -> np.ndarray:
     return _finish(x, 0.6, 0.15)
 
 
-def _vibe(f: float, d: float) -> np.ndarray:
-    """A vibraphone bar with its motor's slow tremolo: partials 1, 4 and 10 times the note."""
-    t = _t(d)
-    y = _modes(f, [1.0, 4.0, 10.0], [1.0, 0.25, 0.06], [1.4, 0.4, 0.12], d, attack=0.001)
-    return y * (1 - 0.15 * (1 - np.cos(TAU * 5 * t)) / 2)
-
-
-def _yield_vibes() -> np.ndarray:
+def _yield_lute() -> np.ndarray:
     d = 1.2
-    x = _buf(d)
-    x = A.mix_at(x, _vibe(N("A4"), 1.0), 0, 0.5)
-    x = A.mix_at(x, _vibe(N("D4"), 0.98), 0.22, 0.55)
-    x = A.mix_at(x, _bn(0.012, 60, 1200, 731) * A.decay(0.012, 0.008, 0.0003), 0, 0.08)
-    return _finish(_verb(x, 0.4, 0.2, tail=0.5), 1.15, 0.35)
+    # one soft low lute note, its fifth brushed just after
+    notes = [Note(GM["nylon_guitar"], "D3", 0.0, 0.9, vel=72), Note(GM["nylon_guitar"], "A3", 0.035, 0.9, vel=56)]
+    x = _choke(_fit(_stem(notes, d + 0.4), d), 0.45, 1.0)
+    return _finish(_verb(x, 0.35, 0.12), 1.15, 0.45, hp=70, lp=4500)
 
 
-def _yield_8bit() -> np.ndarray:
-    d = 0.6
-    f = _hz_frames(["A4"] * 6 + ["D4"] * 40, d)
-    x = _tri4(f) * _vol([11, 11, 10, 10, 9, 9, 10, 10, 9, 9, 8, 8, 7, 7, 6, 6, 5, 5, 4, 4, 3, 3, 3, 2, 2, 2,
-                         1, 1, 1, 0], d)
-    return _finish(x, d, 0.05, lp=5000)
+def _yield_viol() -> np.ndarray:
+    d = 1.2
+    # a viol sighs: two bowed notes falling a fifth, fading as the bow slows
+    notes = [Note(GM["cello"], "A3", 0.0, 0.3, vel=88, swell=(110, 90)),
+             Note(GM["cello"], "D3", 0.3, 0.55, vel=80, swell=(95, 40))]
+    x = _fit(_stem(notes, d + 0.4, "musescore"), d)
+    return _finish(_verb(x, 0.4, 0.14), 1.15, 0.4, hp=80, lp=4500)
 
 
-# ============================================================================= the list
+def _yield_bell() -> np.ndarray:
+    d = 1.2
+    # a small chapel bell, struck softly and far away
+    notes = [Note(GM["tubular_bells"], "D5", 0.0, 0.8, vel=64), Note(GM["harp"], "D4", 0.0, 0.6, vel=40)]
+    x = _choke(_fit(_stem(notes, d + 0.4), d), 0.4, 1.0)
+    return _finish(_verb(x, 0.6, 0.28, damping=0.6), 1.15, 0.45, hp=150, lp=3500)
+
+
 CANDIDATES = [
     # hit: your attack lands and the enemy survives
-    Candidate("hit", "sword_strike", "Sword strike", "A steel blade rings off armour with a solid thud.",
+    Candidate("hit", "sword_strike", "Sword strike",
+              "A steel blade bites into a breastplate and rings, with the dull weight of the blow behind it.",
               _hit_sword, ["metal", "real"]),
-    Candidate("hit", "leather_thump", "Leather thump", "A solid punch into padded leather armour.",
+    Candidate("hit", "leather_thump", "Leather thump",
+              "A heavy, muffled thump into padded leather armour.",
               _hit_leather, ["soft", "real"]),
-    Candidate("hit", "oak_shield", "Oak shield", "A mace knocks hard on a wooden shield.",
-              _hit_oak, ["wooden"]),
-    Candidate("hit", "arcane_bolt", "Arcane bolt", "A magic bolt zaps in and bursts with a bright chime.",
+    Candidate("hit", "oak_shield", "Oak shield", "A mace knocks hard on a wooden shield.", _hit_oak, ["wooden"]),
+    Candidate("hit", "arcane_bolt", "Arcane bolt",
+              "A harp sweeps up and bursts into bright chiming bells over a kettledrum strike.",
               _hit_arcane, ["magic"]),
-    Candidate("hit", "pixel_punch", "Pixel punch", "A crunchy 8-bit hit from an old console.",
-              _hit_pixel, ["retro"]),
+    Candidate("hit", "war_drum", "War drum",
+              "A war drum's rattling snares over a deep bass drum and a kettledrum, struck once.",
+              _hit_drum, ["drum", "grand"]),
     # defeat_enemy
     Candidate("defeat_enemy", "armor_collapse", "Armour collapse",
-              "The enemy crashes down in clattering armour; the helmet rocks and settles.",
+              "The enemy crashes down: plates clatter, chain mail settles, the helmet rocks still.",
               _defeat_armor, ["metal", "real"]),
-    Candidate("defeat_enemy", "crystal_shatter", "Crystal shatter",
-              "The enemy shatters like crystal into tinkling shards.", _defeat_glass, ["glass", "bright"]),
+    Candidate("defeat_enemy", "harp_descent", "Harp descent",
+              "A gentle harp run falls two octaves to a low, quiet chord.",
+              _defeat_harp, ["soft", "strings"]),
     Candidate("defeat_enemy", "lute_flourish", "Lute flourish",
-              "A drum thump and a quick lute run ending on a bright chord.", _defeat_lute, ["tavern"]),
+              "A quick lute run and a full strummed chord over a tavern drum and a tambourine.",
+              _defeat_lute, ["tavern"]),
     Candidate("defeat_enemy", "falling_bells", "Falling bells",
-              "A deep gong and a cascade of bells stepping down.", _defeat_bells, ["magic", "bells"]),
-    Candidate("defeat_enemy", "arcade_ko", "Arcade KO",
-              "An 8-bit explosion followed by a little victory blip.", _defeat_arcade, ["retro"]),
+              "Church bells ring down a scale over a deep bell and a kettledrum.",
+              _defeat_bells, ["bells", "grand"]),
+    Candidate("defeat_enemy", "hunting_horns", "Hunting horns",
+              "Two hunting horns sound the 'quarry is down' call over a kettledrum.",
+              _defeat_horns, ["brass", "grand"]),
     # exact_kill
-    Candidate("exact_kill", "rising_chimes", "Rising chimes",
-              "Glass chimes climb up with a cloud of sparkles.", _exact_chimes, ["magic", "sparkle"]),
-    Candidate("exact_kill", "harp_glissando", "Harp glissando",
-              "A harp sweeps up two octaves to a ringing high note.", _exact_harp, ["soft", "strings"]),
     Candidate("exact_kill", "gilded_card", "Gilded card",
-              "A card flutters into your deck and lands with a golden ding.", _exact_card, ["card", "bell"]),
+              "A card flutters into your deck, slaps down and rings gold with chiming bells.",
+              _exact_card, ["card", "bells"]),
+    Candidate("exact_kill", "harp_glissando", "Harp glissando",
+              "A harp sweeps up two octaves and rings out over a low note.",
+              _exact_harp, ["strings"]),
     Candidate("exact_kill", "pipe_flourish", "Pipe flourish",
-              "A pipe runs up to a trilled high note over a tabor tap.", _exact_pipe, ["tavern"]),
-    Candidate("exact_kill", "power_up", "Power-up",
-              "A classic 8-bit power-up arpeggio climbing to a held note.", _exact_powerup, ["retro"]),
+              "A wooden pipe runs up to a trilled high note over little drum taps.",
+              _exact_pipe, ["tavern"]),
+    Candidate("exact_kill", "royal_fanfare", "Herald trumpets",
+              "Herald trumpets play a short fanfare over a rolling kettledrum.",
+              _exact_fanfare, ["brass", "grand"]),
+    Candidate("exact_kill", "golden_celesta", "Golden celesta",
+              "A soft bell-piano (a celesta) climbs to a high chime over a quiet harp.",
+              _exact_celesta, ["soft", "magic"]),
     # new_enemy
     Candidate("new_enemy", "drawn_blade", "Drawn blade",
-              "A sword slides out of its scabbard and rings.", _new_blade, ["metal", "real"]),
+              "A sword is drawn from its scabbard with a steely 'shiing' and rings free.",
+              _new_blade, ["metal", "real"]),
     Candidate("new_enemy", "war_horn", "War horn",
-              "A low horn call echoes through the castle hall.", _new_horn, ["brass", "ominous"]),
+              "A low horn call swells through the castle hall over a kettledrum.",
+              _new_horn, ["brass", "ominous"]),
     Candidate("new_enemy", "doom_drum", "Doom drum",
-              "Two deep drum booms over a dark low drone.", _new_drum, ["drum", "ominous"]),
+              "Two deep drum booms over dark, low strings.",
+              _new_drum, ["drum", "ominous"]),
     Candidate("new_enemy", "castle_gate", "Castle gate",
-              "A latch lifts, an old wooden gate creaks open and thuds.", _new_gate, ["wooden"]),
-    Candidate("new_enemy", "chiptune_boss", "Chiptune boss",
-              "An 8-bit 'dun, dun, DUN' with a minor chord.", _new_chip, ["retro"]),
+              "An iron latch lifts, an old oak gate creaks open and thuds against the stone.",
+              _new_gate, ["wooden", "real"]),
+    Candidate("new_enemy", "dark_strings", "Dark strings",
+              "A soft drum roll as low strings shiver into a dark chord.",
+              _new_strings, ["strings", "mysterious"]),
     # suffer
     Candidate("suffer", "heavy_blow", "Heavy blow",
-              "A deep, dull body blow with a gritty crunch.", _suffer_heavy, ["real", "dark"]),
+              "A deep, dull body blow: a muffled drum thud and the slap of leather.",
+              _suffer_heavy, ["real", "dark"]),
     Candidate("suffer", "armor_dent", "Armour dent",
-              "A blunt hit on your breastplate: a dark metal clang.", _suffer_armor, ["metal", "dark"]),
+              "A blunt mace dents your breastplate: a dark steel clang with a heavy thud.",
+              _suffer_armor, ["metal", "dark"]),
     Candidate("suffer", "muffled_drum", "Muffled drum",
-              "A soft, dark drum hit with a low string: the gentle choice.", _suffer_drum, ["soft"]),
+              "A soft, hand-muffled kettledrum and a low harp string: the gentle choice.",
+              _suffer_drum, ["soft"]),
     Candidate("suffer", "shadow_strike", "Shadow strike",
-              "A dark whoosh into a deep growling magic impact.", _suffer_shadow, ["magic", "dark"]),
-    Candidate("suffer", "eight_bit_hurt", "8-bit hurt",
-              "The classic retro 'ouch': a wobbling pitch drop.", _suffer_8bit, ["retro"]),
+              "A dark rush of air into a hard stab of low strings and drums.",
+              _suffer_shadow, ["strings", "dark"]),
+    Candidate("suffer", "tolling_bell", "Heavy bell",
+              "A low church bell tolls once over a muffled drum.",
+              _suffer_toll, ["bells", "dark"]),
     # jester
     Candidate("jester", "jester_bells", "Jester bells",
-              "The jingling bells of a jester's cap, shaken to a playful rhythm.", _jester_bells, ["bells", "real"]),
+              "The little bells on a jester's cap, shaken to a playful rhythm.",
+              _jester_bells, ["bells", "real"]),
     Candidate("jester", "whistle_jig", "Whistle jig",
-              "A quick tin-whistle jig with a tap of drum and bells.", _jester_jig, ["tavern"]),
-    Candidate("jester", "slide_whistle", "Slide whistle",
-              "A cheeky slide whistle swoops up and down.", _jester_slide, ["funny"]),
+              "A quick jig on a wooden whistle with a little drum, a tambourine and cap bells.",
+              _jester_jig, ["tavern"]),
+    Candidate("jester", "fiddle_trick", "Fiddle trick",
+              "A plucked string, then a fiddle slides up, turns a quick tune and ends on two plucks.",
+              _jester_fiddle, ["strings", "funny"]),
     Candidate("jester", "music_box", "Music box",
-              "A tinkly music box plays the teasing 'nyah-nyah' tune.", _jester_musicbox, ["magic", "funny"]),
-    Candidate("jester", "chip_jester", "8-bit jester",
-              "A bouncy chiptune arpeggio that slides up with a wobble.", _jester_chip, ["retro"]),
+              "A tinkly music box plays the teasing 'nyah-nyah' tune, then a jingle of bells.",
+              _jester_musicbox, ["funny"]),
+    Candidate("jester", "bassoon_prank", "Bassoon prank",
+              "A bassoon hops about over woodblock knocks, then droops with a comic slide.",
+              _jester_bassoon, ["funny"]),
     # yield
-    Candidate("yield", "cloth_sigh", "Cloth sigh", "A soft swish of a cloak, like a sigh.",
+    Candidate("yield", "cloth_sigh", "Cloth sigh",
+              "A cloak swishes back and settles with a soft breath out, like a sigh.",
               _yield_cloth, ["soft", "real"]),
-    Candidate("yield", "felt_note", "Felt note", "One low, muted piano note.", _yield_felt, ["soft"]),
     Candidate("yield", "table_knock", "Table knock",
-              "Two gentle knocks on a wooden table: a card player's 'pass'.", _yield_knock, ["wooden"]),
-    Candidate("yield", "soft_vibes", "Soft vibes", "Two soft vibraphone notes stepping down.",
-              _yield_vibes, ["soft", "chime"]),
-    Candidate("yield", "eight_bit_pass", "8-bit pass", "A gentle two-note 8-bit fall.", _yield_8bit, ["retro"]),
+              "Two gentle knuckle knocks on an oak table: a card player's 'pass'.",
+              _yield_knock, ["wooden", "real"]),
+    Candidate("yield", "soft_lute", "Soft lute",
+              "One soft, low lute note with its fifth brushed after it.",
+              _yield_lute, ["soft", "strings"]),
+    Candidate("yield", "viol_sigh", "Viol sigh",
+              "A viol (a low bowed string) plays two quiet falling notes, fading as the bow slows.",
+              _yield_viol, ["soft", "strings"]),
+    Candidate("yield", "chapel_bell", "Chapel bell",
+              "A small chapel bell struck softly, far away.",
+              _yield_bell, ["soft", "bells"]),
 ]
+
+
+# ============================================================================= the editor's pass
+# Two finishing touches over the whole family, applied after each candidate renders:
+#  - a phone's small speaker plays almost nothing below 300 Hz: a sound that would lose
+#    more than PHONE_MAX_LOSS dB of its loudness there (less for the big moments, which
+#    must stay the most present) gets a gentle low shelf (at most -8 dB below about
+#    250 Hz), so after mastering its body is that much more present;
+#  - in a turn the next sound follows closely (the app starts it once 60% of the previous
+#    file has played), so the long ringers among the hits, defeats and exact kills are
+#    damped from ``start`` (a hand on the strings, the bell or the drum) and over by ``end``.
+PHONE_MAX_LOSS = {"defeat_enemy": 1.5, "exact_kill": 1.5}          # any other event: 3 dB
+TAILS = {
+    ("hit", "arcane_bolt"): (0.30, 0.62), ("hit", "sword_strike"): (0.20, 0.55), ("hit", "war_drum"): (0.22, 0.55),
+    ("defeat_enemy", "lute_flourish"): (0.90, 1.40), ("defeat_enemy", "falling_bells"): (0.75, 1.30),
+    ("defeat_enemy", "harp_descent"): (0.85, 1.35), ("defeat_enemy", "armor_collapse"): (1.15, 1.60),
+    ("defeat_enemy", "hunting_horns"): (1.30, 1.70),
+    ("exact_kill", "gilded_card"): (1.10, 1.75), ("exact_kill", "golden_celesta"): (0.90, 1.50),
+    ("exact_kill", "harp_glissando"): (1.10, 1.65),
+}
+
+
+def _low_shelf(x: np.ndarray, f0: float, gain_db: float, q: float = 0.707) -> np.ndarray:
+    """A low shelf (RBJ biquad): ``gain_db`` below ``f0``, half of it at ``f0``."""
+    a_ = 10 ** (gain_db / 40.0)
+    w0 = TAU * f0 / SR
+    al = math.sin(w0) / (2 * q)
+    c = math.cos(w0)
+    s2 = 2 * math.sqrt(a_) * al
+    b = [a_ * ((a_ + 1) - (a_ - 1) * c + s2), 2 * a_ * ((a_ - 1) - (a_ + 1) * c), a_ * ((a_ + 1) - (a_ - 1) * c - s2)]
+    a = [(a_ + 1) + (a_ - 1) * c + s2, -2 * ((a_ - 1) + (a_ + 1) * c), (a_ + 1) + (a_ - 1) * c - s2]
+    return signal.lfilter(b, a, x)
+
+
+def _phone_loss(x: np.ndarray) -> float:
+    return A._rms_db(x) - A._rms_db(A.highpass(x, 300, 4))
+
+
+def _phone(x: np.ndarray, most: float) -> np.ndarray:
+    if _phone_loss(x) <= most:
+        return x
+    for g in range(1, 9):
+        y = _low_shelf(x, 250.0, -float(g))
+        if _phone_loss(y) <= most:
+            break
+    return y
+
+
+def _hasten(x: np.ndarray, start: float, end: float, drop_db: float = 40.0) -> np.ndarray:
+    """Damp what still rings after ``start``: an extra fall of ``drop_db`` by ``end``,
+    where the sound stops (the last few milliseconds faded)."""
+    i0, i1 = _n(start), min(len(x), _n(end))
+    if len(x) <= i0:
+        return x
+    y = x[:i1].copy()
+    y[i0:] *= 10 ** (-drop_db / 20.0 * np.arange(i1 - i0) / max(1, i1 - i0))
+    k = min(len(y), _n(0.006))
+    y[-k:] *= np.linspace(1.0, 0.0, k)
+    return y
+
+
+def _edited(c: Candidate) -> Candidate:
+    tail = TAILS.get((c.event, c.id))
+    render = c.render
+
+    def run() -> np.ndarray:
+        x = _phone(render(), PHONE_MAX_LOSS.get(c.event, 3.0))
+        return _hasten(x, *tail) if tail else x
+    return dataclasses.replace(c, render=run)
+
+
+CANDIDATES = [_edited(c) for c in CANDIDATES]
