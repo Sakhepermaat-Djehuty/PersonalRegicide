@@ -404,19 +404,22 @@ class Game:
             return {"ok": False, "reason": "No decision pending."}
         return self._forecast(str(action.get("type")), lambda g: g.decide(action))
 
-    # The copies a forecast runs on: each shuffles its reserve deck and reseeds its random
-    # state from one of these (fixed, so forecasts repeat).
+    # The copies a forecast runs on: each puts its reserve deck in a fixed order (by card id)
+    # and shuffles it, and reseeds its random state, from one of these (fixed, so forecasts
+    # repeat). Sorting first makes a copy depend on which cards the reserve holds, never on
+    # their real, face-down order.
     FORECAST_SEEDS = (101, 202, 303)
 
     def _forecast(self, kind: str, act: Callable[["Game"], None]) -> dict:
         """Run ``act`` on copies of the game and summarise what it would do (UI forecasts).
 
-        The copies are not the game's real future: each shuffles its reserve deck and
-        reseeds its random state, so a forecast never shows what a face-down card or a
+        The copies are not the game's real future: each sorts and shuffles its reserve deck
+        and reseeds its random state, so a forecast never shows what a face-down card or a
         coming shuffle holds (a mage's reveal, a corrupted card banishing the reserve's top
         card, a heal reshuffling a discard pile whose top feeds the enemy). A number the
         copies disagree on depends on such a card: it is reported as None (a power's
-        ``immune`` too), with ``uncertain`` set. A copy stops where the acting player's turn
+        ``immune`` too, compared over every copy's powers: a mage that looks at the reserve
+        reports no power, a blocked one does; ``mage_peeks`` too), with ``uncertain`` set. A copy stops where the acting player's turn
         ends (the next turn's beasts and zone cards are not this play's doing). ``suffer``
         is what the acting player would suffer: 0 when the turn ends without damage (a
         Guardian, a shield that covers the attack, a kill, a Jester), None when it is not
@@ -434,10 +437,24 @@ class Game:
             if any(run[key] != out[key] for run in runs[1:]):
                 out[key] = None
                 uncertain = True
-        for suit, ev in list(out["powers"].items()):
-            if any(bool((run["powers"].get(suit) or {}).get("immune")) != bool(ev.get("immune")) for run in runs[1:]):
+        # Every copy's powers, not only the first copy's: a power one copy has and another
+        # lacks counts as not immune in the copy that lacks it (an unblocked mage pauses on
+        # its peek and reports no power).
+        suits: List[str] = []
+        for run in runs:
+            suits.extend(s for s in run["powers"] if s not in suits)
+        for suit in suits:
+            blocked = [bool((run["powers"].get(suit) or {}).get("immune")) for run in runs]
+            if any(b != blocked[0] for b in blocked):
+                ev = next(run["powers"][suit] for run in runs if suit in run["powers"])
                 out["powers"][suit] = dict(ev, immune=None)
                 uncertain = True
+        order = list(self.rules.power_order)
+        out["powers"] = dict(sorted(out["powers"].items(),
+                                    key=lambda kv: order.index(kv[0]) if kv[0] in order else len(order)))
+        if any(run["mage_peeks"] != out["mage_peeks"] for run in runs[1:]):
+            out["mage_peeks"] = None
+            uncertain = True
         out["uncertain"] = uncertain
         return out
 
@@ -446,6 +463,7 @@ class Game:
         g = copy.deepcopy(self)
         g.forecast_copy = True
         shuffler = random.Random(seed)
+        g.tavern.sort()
         shuffler.shuffle(g.tavern)
         g.rng = random.Random(shuffler.random())
         attacker = g.active
@@ -459,8 +477,8 @@ class Game:
         decision_kind = (g.decision or {}).get("kind") if decision else None
         # Other players may still change the attack (Kinfolk Flute): forecast as if they
         # all declined. A mage peek is forecast as if nothing were added; only the number
-        # of cards it reveals is reported, never which ones (the copy's reserve is the
-        # real one and the player must not learn its order from a forecast).
+        # of cards it reveals is reported, never which ones (the copy's reserve is a
+        # shuffled stand-in, not the real one).
         while g.phase == PHASE_DECIDE and g.forecast_decision():
             events.extend(g.last_events)
         damage = 0

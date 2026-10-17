@@ -2761,8 +2761,9 @@ class Mission11Rules(LegacyRules):
     skips it). The beast then joins the face-up pile; when all four are out they are
     shuffled into a new deck. The Justicars (10/30) and the Corrupted Evergreen (20/90)
     have no class of their own: each is immune to the classes of the top cards of the
-    discard and banished piles and gains their strengths (a beast or a classless card
-    grants strength 0 and no immunity). Enemy defeated: banish the enemy; on exact damage
+    discard and banished piles and gains their strengths (a beast or a Jester grants
+    strength 0; a classless card, such as a banished Justicar, grants its strength; none of
+    them grants immunity). Enemy defeated: banish the enemy; on exact damage
     no beast is revealed at the start of the next turn."""
 
     id = "legacy_m11"
