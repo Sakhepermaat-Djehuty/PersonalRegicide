@@ -5,6 +5,10 @@ The files live in app/sounds/: ``effects/<event>.wav`` for each sound effect and
 and of each stage of the castle ("menu", "jack", "queen", "king": see ``stage``). A missing
 file is silence, so the game runs the same with none of them.
 
+The card handling and the button use Pythonista's own sounds, played by name (``BUILTIN``,
+the owner's picks); an attack makes no sound of its own (its pop-ups speak for it), and
+nothing that cannot be pressed makes a sound.
+
 Settings (App.settings): "sound_effects" and "music" switch each on or off (both on by
 default); "sound_in_silent_mode" (on by default) plays even when the phone's ring/silent
 switch is on silent, which Pythonista otherwise honours.
@@ -17,10 +21,23 @@ from __future__ import annotations
 
 import os
 import wave
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 SOUNDS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sounds")
 MUSIC_SLOTS = ("menu", "jack", "queen", "king")
+
+# Pythonista's built-in sounds the owner picked, as (name, pitch): pitch below 1 plays it
+# slower and lower. None: silence on purpose. These need no file in app/sounds.
+BUILTIN: Dict[str, Optional[Tuple[str, float]]] = {
+    "card_select": ("casino:CardPlace1", 1.0),
+    "card_deselect": ("casino:CardPlace4", 1.0),
+    "draw": ("casino:CardShuffle", 1.0),
+    "shuffle": ("casino:CardFan1", 0.85),            # "a bit less speedy"
+    "discard": ("casino:CardTakeOutPackage2", 1.0),
+    "button": ("ui:switch21", 1.0),
+    "play": None,                                    # the attack's pop-ups speak for it
+}
+BUILTIN_LENGTH = 0.35      # seconds, for spacing a turn's sounds (the built-ins are short)
 STAGES = {"J": "jack", "Q": "queen", "K": "king"}
 
 
@@ -145,22 +162,29 @@ class Audio:
         """Play a sound effect (or a jingle) now, or after ``delay`` seconds."""
         if self.sound is None or not self.on("sound_effects"):
             return
-        path = self.effect_path(event)
-        if not os.path.exists(path):
-            return
-        if delay > 0 and self.delay is not None:
-            self.delay(lambda: self._play(path), delay)
+        if event in BUILTIN:
+            if BUILTIN[event] is None:
+                return
+            name, pitch = BUILTIN[event]
         else:
-            self._play(path)
+            name, pitch = self.effect_path(event), 1.0
+            if not os.path.exists(name):
+                return
+        if delay > 0 and self.delay is not None:
+            self.delay(lambda: self._play(name, pitch), delay)
+        else:
+            self._play(name, pitch)
 
-    def _play(self, path: str) -> None:
+    def _play(self, name: str, pitch: float = 1.0) -> None:
         try:
-            self.sound.play_effect(path, 0.8)
+            self.sound.play_effect(name, 0.8, pitch)
         except Exception:
             pass
 
     def length(self, event: str) -> float:
         """How long the chosen sound for ``event`` lasts (0 when there is none)."""
+        if event in BUILTIN:
+            return BUILTIN_LENGTH if BUILTIN[event] is not None else 0.0
         if event not in self._lengths:
             try:
                 with wave.open(self.effect_path(event), "rb") as w:

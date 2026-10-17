@@ -17,7 +17,7 @@ class Effect:
 
 def play_effect(name: str, volume: float = 0.5, pitch: float = 1.0, pan: float = 0.0,
                 looping: bool = False) -> Optional[Effect]:
-    history.append(("effect", name, round(float(volume), 3)))
+    history.append(("effect", name, round(float(volume), 3)) + ((round(float(pitch), 3),) if pitch != 1.0 else ()))
     return Effect(name)
 
 
