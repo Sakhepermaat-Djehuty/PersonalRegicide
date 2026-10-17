@@ -382,3 +382,21 @@ def test_a_short_screen_keeps_the_zone_above_the_hand_and_a_full_row_behind_a_ca
         assert "%s · %d" % (MISSION_ZONE, len(g.mission_zone)) in _texts(ov)
         ui.button(ov, "Back").action(None)
         assert gs.overlay is None
+
+
+def test_the_attack_cards_rows_show_a_question_mark_for_an_amount_that_hangs_on_a_hidden_card():
+    """The forecast marks a power whose amount differs between its copies (``uncertain``):
+    the attack card shows "?" for it rather than the first copy's number."""
+    from app.screens import forecast_rows
+    from test_m11_corrupt_mage_mother import _owner_turn10
+    from helpers import set_hand
+    c, g = _owner_turn10()
+    for x in [x for x in g.tavern if x not in ("9H", "7M", "8M")]:
+        g.tavern.remove(x)
+        g.discard.append(x)
+    set_hand(g, ["AM", "3D", "2S", "9T"])
+    g.extra["flute"] = []
+    pv = g.preview_play(["AM", "3D"])
+    assert pv["powers"]["D"].get("uncertain")
+    rows = dict(forecast_rows(g, pv))
+    assert rows["Draw"] == "?", rows

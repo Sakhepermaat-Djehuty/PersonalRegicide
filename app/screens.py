@@ -2738,6 +2738,8 @@ def forecast_rows(g: Game, pv: dict) -> List[tuple]:
             value = "?"
         elif ev.get("immune"):
             value = "immune"
+        elif ev.get("uncertain") and suit in ("H", "D", "S", "R"):
+            value = "?"                 # how much hangs on a face-down card
         elif suit == "H":
             value = "%d" % ev.get("healed", 0)
         elif suit == "D":
