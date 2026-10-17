@@ -242,3 +242,76 @@ def test_a_relics_prompt_does_not_tell_what_another_player_holds():
     a, b = _unseen_swapped(g, [jester], ["4H"])
     pa = a.preview_play(["AC"])
     assert pa == b.preview_play(["AC"]) and pa["decision_kind"] == "whistle_add"
+
+
+def test_a_hidden_hands_locked_pilgrims_are_stand_ins_too():
+    """Mission 7: a pilgrim stuck in another player's hand is as hidden as any card: whether
+    the Flute, the Azure Emblem or the Scarlet Whistle would ask that player must not tell
+    the attacker that the hand holds only pilgrims."""
+    import copy
+    from regicide.engine import PHASE_DECIDE
+    from test_campaign import _mission
+    for relics, play in ((("flute",), ["3C", "3S"]), (("emblem",), ["5M"]), (("whistle",), ["AC"])):
+        c, g = _mission(7, players=2, seed=803, relics=relics)
+        while g.phase == PHASE_DECIDE:
+            g.skip_decision()
+        pil = next(cid for cid in g.cards if g.cards[cid].has("pilgrim"))
+        set_hand(g, play + ["9D"], player=0)
+        set_hand(g, ["5H"], player=1)
+        _pull(g, pil)
+        g.tavern.insert(5, pil)
+        b = copy.deepcopy(g)                      # Ben holds the pilgrim, the 5H is in the reserve
+        i = b.tavern.index(pil)
+        b.tavern[i], b.players[1].hand[0] = b.players[1].hand[0], b.tavern[i]
+        assert b.hand_locked(pil) and sorted(g.tavern + g.players[1].hand) == sorted(b.tavern + b.players[1].hand)
+        pa, pb = g.preview_play(play), b.preview_play(play)
+        assert pa["ok"] and pa == pb, relics
+        assert pa["decision_kind"] in ("flute_add", "emblem_place", "whistle_add")   # he may: said
+
+
+def test_a_powers_amount_that_hangs_on_a_hidden_card_is_a_question_mark():
+    """The owner's mission 11 turn with three cards left in the reserve, the Ace of Mages and
+    the corrupted 3 of diamonds: an unblocked mage's revealed cards leave the reserve, so the
+    diamonds draw 2 or nothing -- "?", not the first copy's 2."""
+    from app.screens import describe_preview
+    from test_m11_corrupt_mage_mother import _owner_turn10
+    c, g = _owner_turn10()
+    for x in [x for x in g.tavern if x not in ("9H", "7M", "8M")]:
+        g.tavern.remove(x)
+        g.discard.append(x)
+    set_hand(g, ["AM", "3D", "2S", "9T"])
+    g.extra["flute"] = []
+    pv = g.preview_play(["AM", "3D"])
+    assert pv["ok"] and pv["powers"]["D"].get("uncertain") and pv["uncertain"]
+    assert "♦ draw ?" in describe_preview(g, pv)
+
+
+def test_previewing_a_team_discard_takes_the_cards_owner_as_the_viewer():
+    import random
+    from regicide.bots import apply_action, random_policy
+    from regicide.engine import PHASE_DECIDE
+    from test_evergreen import _evergreen
+    g = _evergreen("E", (10, 13), (32,), players=3, seed=5001)[1]
+    rnd = random.Random("ever E p3/0")
+    for _ in range(60):
+        if g.phase == PHASE_DECIDE and g.decision.get("kind") == "team_discard":
+            break
+        apply_action(g, random_policy(g, rnd))
+    assert g.decision["kind"] == "team_discard"
+    other = [a for a in g.legal_actions() if a["player"] != g.decision["player"]]
+    assert other
+    for a in other[:3]:
+        assert g.preview_decision({"type": a["type"], "card": a["card"]})["ok"]
+
+
+def test_the_hint_uses_only_what_the_player_can_know():
+    """The Hint button asks a bot on ``stand_in_copy``: two tables the acting player cannot
+    tell apart get the same hint, and the copy keeps the player's own hand and the table."""
+    from regicide.bots import greedy_policy
+    g = _two_player_m11(relics=("mother",))
+    for ben_a, ben_b in ((["9C", "7D"], ["3C", "7D"]), (["9H", "2C"], ["2C", "9H"])):
+        a, b = _unseen_swapped(g, ben_a, ben_b)
+        sa, sb = a.stand_in_copy(), b.stand_in_copy()
+        assert sa.players[0].hand == a.players[0].hand and sa.discard == a.discard and sa.enemy.to_dict() == a.enemy.to_dict()
+        assert sa.tavern == sb.tavern and [p.hand for p in sa.players] == [p.hand for p in sb.players]
+        assert greedy_policy(sa) == greedy_policy(sb)

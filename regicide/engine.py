@@ -404,8 +404,13 @@ class Game:
         from the point of view of the player deciding."""
         if self.phase != PHASE_DECIDE:
             return {"ok": False, "reason": "No decision pending."}
-        viewer = action.get("player", (self.decision or {}).get("player", self.active))
-        return self._forecast(str(action.get("type")), lambda g: g.decide(action), viewer=int(viewer))
+        viewer = int(action.get("player", (self.decision or {}).get("player", self.active)))
+        named = [action["card"]] if action.get("card") else list(action.get("card_ids") or [])
+        for i, p in enumerate(self.players):
+            if any(c in p.hand for c in named):
+                viewer = i          # the hand the named card comes from (team damage: anyone's)
+                break
+        return self._forecast(str(action.get("type")), lambda g: g.decide(action), viewer=viewer)
 
     # The copies a forecast runs on reseed their random state from one of these (fixed, so
     # forecasts repeat); see ``_forecast_stand_ins`` for the cards they cannot see.
@@ -423,7 +428,10 @@ class Game:
         whose top feeds the enemy, a relic another player could use). A number the copies
         disagree on depends on such a card: it is reported as None (a power's ``immune``
         too, compared over every copy's powers: a mage that looks at the reserve reports no
-        power, a blocked one does; ``mage_peeks`` too), with ``uncertain`` set. A copy stops
+        power, a blocked one does; ``mage_peeks`` too; a power whose amount differs, cards
+        drawn or healed, shield, a reaver's addition, gets ``uncertain``), with ``uncertain``
+        set. Three copies try three unseen cards on top of the reserve: with more unseen
+        cards an outcome that hangs on the top one may still read as certain. A copy stops
         where the acting player's turn ends (the next turn's beasts and zone cards are not
         this play's doing). ``suffer`` is what the acting player would suffer: 0 when the
         turn ends without damage (a Guardian, a shield that covers the attack, a kill, a
@@ -459,6 +467,14 @@ class Game:
                 ev = next(run["powers"][suit] for run in runs if suit in run["powers"])
                 out["powers"][suit] = dict(ev, immune=None)
                 uncertain = True
+        # how much a power did (cards drawn or healed, shield, a reaver's addition)
+        for suit, ev in list(out["powers"].items()):
+            if "immune" in ev:
+                continue
+            amounts = [self._power_amount(run["powers"].get(suit)) for run in runs]
+            if any(a != amounts[0] for a in amounts):
+                out["powers"][suit] = dict(ev, uncertain=True)
+                uncertain = True
         order = list(self.rules.power_order)
         out["powers"] = dict(sorted(out["powers"].items(),
                                     key=lambda kv: order.index(kv[0]) if kv[0] in order else len(order)))
@@ -475,10 +491,30 @@ class Game:
         out["uncertain"] = uncertain
         return out
 
+    @staticmethod
+    def _power_amount(ev: Optional[dict]) -> Optional[tuple]:
+        """What a forecast power event did, as numbers (None: the power did not resolve)."""
+        if ev is None:
+            return None
+        drawn = ev.get("drawn")
+        return (ev.get("healed"), len(drawn) if drawn is not None else None, ev.get("shield"), ev.get("added"))
+
+    def stand_in_copy(self, viewer: Optional[int] = None) -> "Game":
+        """A copy of the game as ``viewer`` (the active player by default) knows it: every
+        card they cannot see is a stand-in (``_forecast_stand_ins``), the random state
+        reseeded. For advice (the Hint button): a bot choosing on it uses nothing the
+        player could not know. Not a forecast copy: it plays on past the turn."""
+        g = copy.deepcopy(self)
+        shuffler = random.Random(self.FORECAST_SEEDS[0])
+        self._forecast_stand_ins(g, self.active if viewer is None else viewer, 0, shuffler)
+        g.rng = random.Random(shuffler.random())
+        return g
+
     def _forecast_stand_ins(self, g: "Game", viewer: int, index: int, shuffler: random.Random) -> None:
         """Give a forecast copy stand-ins for the cards ``viewer`` cannot see: the reserve
         deck, the other players' hands (unless hands are open: one person sees every
-        seat; a card locked in a hand stays) and the face-down cards under the tops of
+        seat; a card locked in a hand too: it is hidden like the rest) and the face-down
+        cards under the tops of
         mission 9's captured piles are pooled, put in a fixed order (by id), shuffled and
         dealt back in the same places and sizes. A copy then depends only on which cards
         are unseen, never on where each one really is. Copy ``index`` puts an evenly spaced
@@ -488,7 +524,7 @@ class Game:
         if not g.config.open_hands:
             for i, p in enumerate(g.players):
                 if i != viewer:
-                    slots.append((p.hand, [k for k, cid in enumerate(p.hand) if not g.hand_locked(cid)]))
+                    slots.append((p.hand, list(range(len(p.hand)))))
         for pile in g.extra.get("captured", []):
             slots.append((pile, list(range(1, len(pile)))))
         pool = sorted(cards[k] for cards, places in slots for k in places)
