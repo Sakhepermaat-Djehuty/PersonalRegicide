@@ -78,6 +78,14 @@ def _loud(x: np.ndarray) -> float:
     return A._rms_db(x)
 
 
+def _aac_unit(unit_s: float, units: int) -> float:
+    """``unit_s`` nudged (by 0.01% at most) so a loop of ``units`` units is a whole number of
+    AAC frames (1024 samples): the phone's .m4a then carries no padding, which would be a
+    short gap at every repeat."""
+    k = int(round(units * unit_s * SR / 1024.0))
+    return k * 1024.0 / (units * SR)
+
+
 def _to_db(x: np.ndarray, target_db: float) -> np.ndarray:
     """Scale a stem to a gated-RMS level, so each part's share of the mix is set in dB."""
     cur = _loud(x)
@@ -484,7 +492,20 @@ class Mix:
         full = A.highpass(full, 35, 2)
         if master_eq:
             full = master_eq(full)
-        return A.loop_seamless(full[:self.n], full[self.n:])
+        return _aac_friendly_start(A.loop_seamless(full[:self.n], full[self.n:]))
+
+
+def _aac_friendly_start(x: np.ndarray, window: float = 0.1) -> np.ndarray:
+    """Rotate a finished loop so its file starts at a quiet zero crossing up to a tenth of
+    a second before the downbeat (critic's pass). An AAC encoder hears a file's first sample
+    as a step up from silence and leaves a faint tick there, which a looping player replays
+    every time round (it measured up to 13 dB above any other high-frequency moment in the
+    quiet Kings' court). The loop's content and length are unchanged; it only starts a
+    little earlier in its cycle."""
+    n = len(x)
+    idx = np.arange(n - _n(window), n)
+    cost = np.abs(x[idx]).max(axis=1) + 2 * np.abs(x[(idx + 1) % n] - x[idx]).max(axis=1)
+    return np.roll(x, -int(idx[np.argmin(cost)]), axis=0)
 
 
 # ----------------------------------------------------------------------------- helpers to place parts
@@ -562,8 +583,8 @@ def _jig_tune(part: str, ending: int, ornaments: bool, start_bar: int, transpose
 def _tavern_jig() -> np.ndarray:
     _CACHE.clear()
     bars = 64
-    clock = Clock(0.2, lilt=(0.07, 0.035))
-    loop_s = bars * 6 * 0.2
+    clock = Clock(JIG_UNIT, lilt=(0.07, 0.035))
+    loop_s = bars * 6 * JIG_UNIT
     mix = Mix(loop_s, tail_s=6.0)
     rng = np.random.default_rng(1207)
 
@@ -699,7 +720,7 @@ BAL_VOICING = {
 def _bards_ballad() -> np.ndarray:
     _CACHE.clear()
     bars = 32
-    unit = 60.0 / 69.0 / 2.0
+    unit = BALLAD_UNIT
     clock = Clock(unit, rubato=0.05, phrase_units=24.0, peak_at=0.9)
     loop_s = bars * 6 * unit
     mix = Mix(loop_s, tail_s=7.0)
@@ -790,7 +811,7 @@ HARP_VOICING = {  # bass, arpeggio (three notes), strings (three notes)
 def _harp_hall() -> np.ndarray:
     _CACHE.clear()
     bars = 24
-    unit = 60.0 / 72.0 / 2.0
+    unit = HARP_UNIT
     clock = Clock(unit, rubato=0.04, phrase_units=32.0, peak_at=0.92)
     loop_s = bars * 8 * unit
     mix = Mix(loop_s, tail_s=7.0)
@@ -885,19 +906,22 @@ def _harp_hall() -> np.ndarray:
 
 
 # ----------------------------------------------------------------------------- candidates
-JIG_BPM = 100.0          # dotted quarters a minute (six-eight: 300 eighth notes)
-BALLAD_BPM = 69.0
-HARP_BPM = 72.0
+JIG_UNIT = _aac_unit(0.2, 64 * 6)                  # an eighth note (six-eight)
+BALLAD_UNIT = _aac_unit(60.0 / 69.0 / 2.0, 32 * 6)
+HARP_UNIT = _aac_unit(60.0 / 72.0 / 2.0, 24 * 8)
+JIG_BPM = 60.0 / (3 * JIG_UNIT)    # dotted quarters a minute (about 100; six-eight: 300 eighth notes)
+BALLAD_BPM = 60.0 / (2 * BALLAD_UNIT)    # about 69
+HARP_BPM = 60.0 / (2 * HARP_UNIT)        # about 72
 
 CANDIDATES = [
     Candidate("music", "tavern_jig", "Tavern jig",
               "A lively, light jig: a recorder and a lute trade the tune over a soft frame drum "
               "and a quiet drone, like musicians in the corner of an inn.",
-              _tavern_jig, tags=["table"], loop_seconds=64 * 6 * 0.2, bpm=JIG_BPM),
+              _tavern_jig, tags=["table"], loop_seconds=64 * 6 * JIG_UNIT, bpm=round(JIG_BPM, 3)),
     Candidate("music", "bards_ballad", "Bard's ballad",
               "A slow, wistful song: a bowed fiddle sings over a gently rolling lute.",
-              _bards_ballad, tags=["menu"], loop_seconds=32 * 6 * (60.0 / 69.0 / 2.0), bpm=BALLAD_BPM),
+              _bards_ballad, tags=["menu"], loop_seconds=32 * 6 * BALLAD_UNIT, bpm=round(BALLAD_BPM, 3)),
     Candidate("music", "harp_hall", "Harp hall",
               "A calm harp melody over soft held strings, like a quiet great hall.",
-              _harp_hall, tags=["menu", "table"], loop_seconds=24 * 8 * (60.0 / 72.0 / 2.0), bpm=HARP_BPM),
+              _harp_hall, tags=["menu", "table"], loop_seconds=24 * 8 * HARP_UNIT, bpm=round(HARP_BPM, 3)),
 ]

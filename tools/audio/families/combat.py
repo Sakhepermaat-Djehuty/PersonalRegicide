@@ -554,17 +554,21 @@ def _drum(pitch: float, d: float, seed: int, t60: float = 0.35, slap: float = 0.
 
 
 def _defeat_lute() -> np.ndarray:
+    # critic's pass: the two drum thumps held 70% of the energy (below 200 Hz), so the lute
+    # run, the point of the sound, came out quiet and a phone played it ~6 dB under its
+    # neighbours; the drums are lighter with more skin slap, and a fast glue keeps the
+    # master limiter off the chord's ring
     d = 2.0
     x = _buf(d)
-    x = A.mix_at(x, _drum(N("A2"), 0.6, 221, 0.35, 0.35), 0, 0.7)
+    x = A.mix_at(x, _drum(N("A2"), 0.6, 221, 0.35, 0.55), 0, 0.3)
     for i, (tt, n) in enumerate([(0.0, "D4"), (0.06, "F#4"), (0.12, "A4"), (0.18, "D5")]):
         x = A.mix_at(x, _ks(N(n), 0.7, 0.55, 0.6, 222 + i), tt, 0.5)
     for i, n in enumerate(["D3", "A3", "D4", "F#4", "A4", "D5"]):
         x = A.mix_at(x, _ks(N(n), 1.6, 0.45, 1.4, 230 + i), 0.27 + 0.012 * i, 0.45 - 0.03 * i)
-    x = A.mix_at(x, _drum(N("D3"), 0.6, 240, 0.3, 0.25), 0.27, 0.7)
-    x = A.peak_eq(x, 220, 3, 1.2)
+    x = A.mix_at(x, _drum(N("D3"), 0.6, 240, 0.3, 0.45), 0.27, 0.3)
+    x = A.peak_eq(x, 220, 1.5, 1.2)
     x = A.peak_eq(x, 2800, 2, 1.5)
-    return _finish(_verb(x, 0.4, 0.2, tail=0.6), 1.95, 0.5, lp=7500)
+    return _finish(_glue(_verb(x, 0.4, 0.2, tail=0.6), 14), 1.95, 0.5, lp=7500)
 
 
 def _defeat_bells() -> np.ndarray:

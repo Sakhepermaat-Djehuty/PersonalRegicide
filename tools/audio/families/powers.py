@@ -913,12 +913,21 @@ def _blocked_knock() -> np.ndarray:
 
 
 def _blocked_stone() -> np.ndarray:
-    """The blow lands on solid stone: a deep dull thud and a little grit trickling down."""
+    """The blow lands on solid stone: a deep dull thud and a little grit trickling down.
+    (Critic's pass: the thud was nearly all below 150 Hz, so a phone played it about 13 dB
+    quieter than its neighbours; the low thump is now lighter and shorter, and the stone's
+    own hard, quickly damped knock carries the hit in the 250-1000 Hz a phone plays.)"""
     d = 0.8
     x = _buf(d + 0.4)
     rng = np.random.default_rng(951)
-    x = A.mix_at(x, _thump(120, 72, 0.035, 0.18, d, 3.0), 0.0, 0.8)
-    body = A.bandpass(A.noise(0.25, "brown", 952), 150, 1100, 2)
+    x = A.mix_at(x, _thump(160, 98, 0.035, 0.12, d, 3.0), 0.0, 0.18)
+    rb = np.random.default_rng(955)
+    nb = _n(0.0025)
+    tap = A.lowpass(rb.uniform(-1, 1, nb), 2500, 1) * np.hanning(nb)
+    knock = _excite(tap, [(N("D4"), 1.0, 0.07), (N("A4") * 1.03, 0.6, 0.05), (N("D4") * 2.63, 0.4, 0.035),
+                          (N("D4") * 4.1, 0.2, 0.02)], d)
+    x = A.mix_at(x, _norm(knock), 0.0, 0.9)
+    body = A.bandpass(A.noise(0.25, "pink", 952), 150, 1100, 2)
     x = A.mix_at(x, _norm(body) * A.decay(0.25, 0.12, 0.0005), 0.0, 0.6)
     x = A.mix_at(x, _burst(0.03, 500, 2500, 0.02, 953), 0.0, 0.4)
     # pebbles: tiny stones tapping down the wall, each a short, barely pitched tick
@@ -954,7 +963,9 @@ def _blocked_pixel() -> np.ndarray:
     f = _frames(fr, d)
     tri = _tri4(f) * _vol(lv, d, 0.07)
     sq = _pulse(f, 0.25) * _vol(lv, d, 0.07)
-    x = 0.15 * noise + 0.45 * tri + 0.4 * A.lowpass(sq, 2200, 2)
+    # critic's pass: less of the triangle's bare low fundamental and more of the pulse's
+    # harmonics, so a phone speaker plays it about as loud as the other "immune" sounds
+    x = 0.2 * noise + 0.2 * tri + 0.6 * A.lowpass(sq, 3000, 2)
     return _finish(_chip(x, 4500), d, 0.12)
 
 
@@ -1002,7 +1013,7 @@ CANDIDATES = [
               "Two dull knocks on a heavy door, the second lower: nothing gets through.", _blocked_knock,
               ["wooden", "soft"]),
     Candidate("power_blocked", "stone_wall", "Stone wall",
-              "A deep thud against solid stone, with a little grit falling.", _blocked_stone, ["realistic", "deep"]),
+              "A dull, heavy thud against solid stone, with a little grit falling.", _blocked_stone, ["realistic", "deep"]),
     Candidate("power_blocked", "pixel_dud", "Pixel dud", "A retro 8-bit puff and two sagging blips.",
               _blocked_pixel, ["8-bit", "retro"]),
 ]

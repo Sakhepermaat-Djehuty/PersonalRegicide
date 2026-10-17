@@ -215,9 +215,11 @@ class _Mix:
     rings past the loop back onto its start, so the result loops seamlessly."""
 
     def __init__(self, bpm: float, beats: float, seed: int):
-        self.bpm = float(bpm)
-        self.beat = 60.0 / self.bpm
-        self.n = _n(beats * self.beat)
+        # the loop is a whole number of AAC frames (1024 samples), so the phone's .m4a has no
+        # padding (a short gap at every repeat); the tempo moves by 0.01% at most
+        self.n = _aac_n(beats * 60.0 / float(bpm))
+        self.beat = self.n / SR / beats
+        self.bpm = 60.0 / self.beat
         self.T = self.n / SR
         self.seed = seed
         self.dry = np.zeros((self.n, 2))
@@ -293,7 +295,20 @@ class _Mix:
         total = A.highpass(total, hp, 2)
         if eq:
             total = eq(total)
-        return A.loop_seamless(total[:self.n], total[self.n:])
+        return _aac_friendly_start(A.loop_seamless(total[:self.n], total[self.n:]))
+
+
+def _aac_friendly_start(x: np.ndarray, window: float = 0.1) -> np.ndarray:
+    """Rotate a finished loop so its file starts at a quiet zero crossing up to a tenth of
+    a second before the downbeat (critic's pass). An AAC encoder hears a file's first sample
+    as a step up from silence and leaves a faint tick there, which a looping player replays
+    every time round (it measured up to 13 dB above any other high-frequency moment in the
+    quiet Kings' court). The loop's content and length are unchanged; it only starts a
+    little earlier in its cycle."""
+    n = len(x)
+    idx = np.arange(n - _n(window), n)
+    cost = np.abs(x[idx]).max(axis=1) + 2 * np.abs(x[(idx + 1) % n] - x[idx]).max(axis=1)
+    return np.roll(x, -int(idx[np.argmin(cost)]), axis=0)
 
 
 # ----------------------------------------------------------------------------- periodic beds
@@ -785,8 +800,13 @@ def _kings_court() -> np.ndarray:
 
 
 # ----------------------------------------------------------------------------- the list
+def _aac_n(seconds: float) -> int:
+    """Samples in the nearest loop that is a whole number of AAC frames (1024 samples)."""
+    return int(round(seconds * SR / 1024.0)) * 1024
+
+
 def _loop_len(bpm: float, beats: float) -> float:
-    return _n(beats * 60.0 / bpm) / SR
+    return _aac_n(beats * 60.0 / bpm) / SR
 
 
 CANDIDATES = [
