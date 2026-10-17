@@ -21,6 +21,15 @@ from build import OUT, load_manifests  # noqa: E402
 from catalog import EVENTS  # noqa: E402
 
 TEMPLATE = os.path.join(HERE, "picker_template.html")
+# music suites as the page names them, and the order of a suite's tracks
+SUITES = {"music_tavern": "Tavern Band", "music_court": "Royal Court", "music_saga": "Castle Saga"}
+STAGE_ORDER = ["menu", "jack", "queen", "king"]
+
+
+def _order(r: dict) -> tuple:
+    tags = r.get("tags", [])
+    stage = next((STAGE_ORDER.index(t) for t in tags if t in STAGE_ORDER), len(STAGE_ORDER))
+    return (r.get("family", ""), stage if r["event"] == "music" else 0, r["id"])
 
 
 def main(argv=None) -> int:
@@ -34,14 +43,14 @@ def main(argv=None) -> int:
         if not cands:
             continue
         items = []
-        for r in sorted(cands, key=lambda r: (r.get("family", ""), r["id"])):
+        for r in sorted(cands, key=_order):
             src = os.path.join(OUT, ev.id, r["id"] + ".mp3")
             rel = "a/%s/%s.mp3" % (ev.id, r["id"])
             os.makedirs(os.path.join(dest, "a", ev.id), exist_ok=True)
             shutil.copyfile(src, os.path.join(dest, rel))
             paths.append(rel)
             items.append({"id": r["id"], "name": r["name"], "note": r["note"], "tags": r.get("tags", []),
-                          "secs": r["stats"]["seconds"], "src": rel})
+                          "secs": r["stats"]["seconds"], "src": rel, "suite": SUITES.get(r.get("family", ""), "")})
         events.append({"id": ev.id, "group": ev.group, "title": ev.title, "when": ev.when, "kind": ev.kind,
                        "items": items})
     data = json.dumps({"events": events}, ensure_ascii=False, separators=(",", ":"))

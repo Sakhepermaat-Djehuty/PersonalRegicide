@@ -226,7 +226,7 @@ function renderMusic(ev) {
     const card = el("div", { class: "track", "data-id": it.id },
       el("div", { class: "row" }, pp,
         el("div", { class: "info" }, el("span", { class: "name", text: it.name }), el("span", { class: "note", text: it.note }),
-          el("span", { class: "meta", text: secs(it.secs) + (tags.length ? " · suits the " + tags.join(", ") : "") }))),
+          el("span", { class: "meta", text: (it.suite ? it.suite + " · " : "") + secs(it.secs) + (tags.length ? " · suits the " + tags.join(", ") : "") }))),
       bar);
     const slots = el("div", { class: "slots" });
     for (const [key, label] of SLOTS) {
