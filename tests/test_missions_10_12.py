@@ -359,7 +359,7 @@ def test_mission11_four_beasts_out_are_reshuffled_and_an_exact_kill_skips_the_ne
     _ids_everywhere(g)
 
 
-def test_mission11_pile_tops_grant_immunity_and_strength_but_beasts_and_classless_cards_grant_nothing():
+def test_mission11_pile_tops_grant_immunity_and_strength_beasts_nothing_classless_cards_strength_only():
     c, g = _mission11(players=3, seed=1103)
     if g.phase == PHASE_DECIDE:
         g.decide(greedy_policy(g))
