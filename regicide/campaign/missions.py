@@ -476,8 +476,8 @@ def start_steps(camp, number: int) -> List[Step]:
         # Card (confirmed): "From your corrupted party members, choose one of them that has
         # a cloak of the Eternal Vine. Rip up the chosen card." The reborn Evergreen is Esme
         # (6), the 6 of warriors in the physical game.
-        # Corruption is random in the app, so the corrupted 6 (whatever its class) dies and
-        # the reborn Evergreen, a 6, takes its place.
+        # Corruption is random in the app, so the corrupted 6 (one of the original reserve
+        # deck's four) dies and the reborn Evergreen, a 6, takes its place.
         corrupted = P.corrupted_ids(camp.party)
         sixes = [cid for cid in corrupted if P.find(camp.party, cid)["rank"] == "6"]
         steps.append({"kind": "rip_up", "card_id": sixes[0] if sixes else None,
