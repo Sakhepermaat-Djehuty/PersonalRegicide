@@ -20,3 +20,5 @@ tools/out*/
 lore_private.json
 # agent worktrees created by the harness
 .claude/worktrees/
+# generated sound candidates (tools/audio/build.py)
+tools/audio/out/
