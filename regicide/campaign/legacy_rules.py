@@ -84,6 +84,14 @@ class LegacyRules(BaseRules):
         card = game.cards.get(enemy.card_id)
         return card is not None and card.has("fixed_immunity")
 
+    @staticmethod
+    def hidden_hand(game, player: int) -> bool:
+        """In a forecast's copy, does ``player`` hold stand-ins the forecast's player cannot
+        see (``Game._forecast_stand_ins``)? A relic that asks only the players able to add
+        then asks them whenever they might be: their real cards must not show."""
+        return (game.forecast_copy and not game.config.open_hands
+                and game.forecast_viewer is not None and player != game.forecast_viewer)
+
     def unlocked_hand(self, game, player: int) -> List[str]:
         """The ids a player may give away from hand (not the locked ones, p. mission 7)."""
         return [cid for cid in game.players[player].hand if not self.hand_locked(game, game.cards[cid])]
@@ -491,6 +499,8 @@ class LegacyRules(BaseRules):
         with an Evergreen boon)."""
         if total + strength > self.kinfolk_limit(game):
             return []
+        if self.hidden_hand(game, player):
+            return [game.cards[cid] for cid in self.unlocked_hand(game, player)]
         out = []
         for cid in self.unlocked_hand(game, player):
             c = game.cards[cid]
@@ -728,6 +738,8 @@ class LegacyRules(BaseRules):
         return c.is_ace or c.has("beast")
 
     def _whistle_candidates(self, game, player: int) -> List[str]:
+        if self.hidden_hand(game, player):
+            return self.unlocked_hand(game, player)
         return [cid for cid in self.unlocked_hand(game, player) if not game.cards[cid].is_jester]
 
     def _whistle_next(self, game, queue: Sequence[int]) -> Tuple[Optional[int], List[int]]:

@@ -85,7 +85,7 @@ def _spy_immune(g):
 
 
 def _forecast_copies(g, ids):
-    return [g._forecast_once("companion", lambda x: x.play(ids), seed) for seed in g.FORECAST_SEEDS]
+    return [g._forecast_once("companion", lambda x: x.play(ids), seed, k) for k, seed in enumerate(g.FORECAST_SEEDS)]
 
 
 def test_m11_owner_turn_ace_mage_corrupted_8_mother_banishes_the_discard_top():
@@ -254,12 +254,13 @@ def test_m11_forecast_merges_the_mage_over_every_copy():
         assert pv["powers"]["M"]["immune"] is None and pv["mage_peeks"] is None and pv["uncertain"]
     else:
         assert "M" not in pv["powers"] and pv["mage_peeks"] == [9]
-    # the same merge whichever copy comes first
-    order = list(g.FORECAST_SEEDS)
-    for k in range(1, len(order)):
-        g.FORECAST_SEEDS = tuple(order[k:] + order[:k])
-        assert g.preview_play(["AM", "8C"]) == pv
-    del g.FORECAST_SEEDS
+    # the same merge whichever copy comes first (the numbers and the immunities)
+    keys = ("attack", "damage", "defeats", "exact", "enemy_hp_after", "suffer", "uncertain", "mage_peeks")
+    for k in range(1, len(runs)):
+        other = g._merge_forecasts(runs[k:] + runs[:k])
+        assert [other[x] for x in keys] == [pv[x] for x in keys]
+        assert {s: ev.get("immune") for s, ev in other["powers"].items()} == {
+            s: ev.get("immune") for s, ev in pv["powers"].items()}
     # the powers keep the order they resolve in
     assert list(pv["powers"]) == [s for s in g.rules.power_order if s in pv["powers"]]
 
@@ -285,3 +286,32 @@ def test_m11_forecast_never_depends_on_the_reserves_hidden_order(size):
         g.tavern[:] = order
         previews.append((g.preview_play(["AM", "8C"]), g.preview_play(["AM"])))
     assert all(p == previews[0] for p in previews[1:])
+
+
+def test_m11_forecast_with_a_small_reserve_tries_every_card_on_top():
+    """With three cards left in the reserve each copy puts a different one on top, so a
+    mage block that hangs on which one is banished is a "?" whatever the real order (the
+    copies once tried only two of them and could state a block for certain)."""
+    c, g = _owner_turn10()
+    for x in [x for x in g.tavern if x not in ("9H", "7M", "8M")]:
+        g.tavern.remove(x)
+        g.discard.append(x)
+    import itertools
+    for order in itertools.permutations(["9H", "7M", "8M"]):
+        g.tavern[:] = list(order)
+        pv = g.preview_play(["AM", "8C"])
+        assert pv["powers"]["M"]["immune"] is None and pv["uncertain"], order
+
+
+def test_main_ui_text_keeps_the_mage_qualifier_when_the_peek_is_uncertain():
+    import os
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
+    import fakeui
+    fakeui.install()
+    from app.screens import describe_preview
+    c, g = _owner_turn10()
+    pv = g.preview_play(["AM", "8C"])
+    pv = dict(pv, mage_peeks=None)
+    assert "The mage may reveal cards from the reserve. If nothing is added: " in describe_preview(g, pv)
+    assert "The mage reveals 9 cards" in describe_preview(g, dict(pv, mage_peeks=[9]))

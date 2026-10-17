@@ -150,3 +150,95 @@ def test_an_enemy_of_several_classes_is_named_by_them():
     assert enemy_name(Card(id="5R", rank="5", suits=("R",), value=5), legacy=True) == "5 of Reavers"
     assert enemy_name(Card(id="JH", rank="J", suits=("H",), value=10)) == "Jack of Hearts"
     assert enemy_name(Card(id="X", rank="Q", suits=("H",), value=15, name="Myla")) == "Myla"
+
+
+# ---------------------------------------------------------------- other players' hands are hidden
+# Pass-and-play (hands not open): a card the acting player cannot see may be in the reserve or
+# in another player's hand. The forecast copies deal stand-ins for all of them, so two tables
+# that look the same to the acting player give the same forecast.
+def _two_player_m11(relics=()):
+    from regicide.bots import greedy_policy
+    from regicide.engine import PHASE_DECIDE
+    from test_missions_10_12 import _ids_everywhere, _mission11, _rig, _rig_beasts, _switch_enemy
+    c, g = _mission11(players=2, relics=relics)
+    while g.phase == PHASE_DECIDE:
+        g.decide(greedy_policy(g))
+    _switch_enemy(g, "CV_J1", hp=30)
+    g.active = 0
+    set_hand(g, ["5C", "AH", "3D"], player=0)        # 5C is corrupted (a warrior)
+    _rig(g, "discard", ["4S", "8C", "6C"])
+    _rig(g, "mission_zone", [])
+    _rig_beasts(g, ["B_C", "B_S", "B_H", "B_D"])
+    assert g.cards["5C"].has("corrupted") and not g.config.open_hands
+    _ids_everywhere(g)
+    return g
+
+
+def _unseen_swapped(g, ben_a, ben_b):
+    """Two copies of ``g`` the acting player cannot tell apart: Ben holds ``ben_a`` in one
+    and ``ben_b`` in the other, the cards he does not hold sit in the reserve."""
+    import copy
+    out = []
+    for ben in (ben_a, ben_b):
+        x = copy.deepcopy(g)
+        for cid in set(ben_a) | set(ben_b):
+            _pull(x, cid)
+            x.tavern.append(cid)
+        set_hand(x, ben, player=1)
+        x.tavern.sort()
+        out.append(x)
+    a, b = out
+    assert sorted(a.tavern + a.players[1].hand) == sorted(b.tavern + b.players[1].hand)
+    assert len(a.tavern) == len(b.tavern) and a.players[0].hand == b.players[0].hand
+    return a, b
+
+
+def test_the_corrupt_mothers_forecast_never_banishes_another_players_real_card():
+    # 2+ players: a corrupted card makes another player banish a hand card, and in mission 11
+    # the enemy gains the banished top card's strength and classes.
+    g = _two_player_m11(relics=("mother",))
+    for ben_a, ben_b, play in ((["9C", "7D"], ["3C", "7D"], ["5C"]),          # strength
+                               (["9H", "7D"], ["9S", "7D"], ["AH", "5C"]),    # class
+                               (["9H", "2C"], ["2C", "9H"], ["AH", "5C"])):   # order
+        a, b = _unseen_swapped(g, ben_a, ben_b)
+        assert a.preview_play(play) == b.preview_play(play), (ben_a, ben_b)
+
+
+def test_a_forecast_does_not_tell_which_unseen_cards_are_in_the_reserve():
+    g = _two_player_m11()
+    for ben_a, ben_b in ((["9H", "7D"], ["3S", "7D"]), (["2C", "4D"], ["9H", "4D"])):
+        a, b = _unseen_swapped(g, ben_a, ben_b)
+        for x in (a, b):                                # a one-card reserve: the hardest case
+            extra = [cid for cid in x.tavern if cid not in ben_a + ben_b][:-1]
+            for cid in extra:
+                x.tavern.remove(cid)
+                x.banished.insert(0, cid)
+        assert a.preview_play(["AH", "5C"]) == b.preview_play(["AH", "5C"])
+
+
+def test_a_relics_prompt_does_not_tell_what_another_player_holds():
+    from regicide.bots import greedy_policy
+    from regicide.engine import PHASE_DECIDE
+    from test_missions_10_12 import _campaign
+    c = _campaign(1, 2, 4242, relics=("flute",), corrupted=())
+    g = c.start_attempt(seed=4242)
+    while g.phase == PHASE_DECIDE:
+        g.decide(greedy_policy(g))
+    g.active = 0
+    set_hand(g, ["5D", "2C", "3S"], player=0)
+    a, b = _unseen_swapped(g, ["5H", "8H"], ["4H", "8H"])       # Ben could add his 5 to a 5
+    pa = a.preview_play(["5D"])
+    assert pa == b.preview_play(["5D"]) and pa["decision_kind"] == "flute_add"   # he might: say so
+    # the Scarlet Whistle (3 players, Cy's hand empty): Ben holds a Jester (he cannot add it)
+    # or a 4 (he can) -- the attacker cannot tell, so the forecast says he may
+    c = _campaign(1, 3, 4242, relics=("whistle",), corrupted=())
+    g = c.start_attempt(seed=4242)
+    while g.phase == PHASE_DECIDE:
+        g.decide(greedy_policy(g))
+    g.active = 0
+    jester = [cid for cid in g.cards if g.cards[cid].is_jester][0]
+    set_hand(g, ["AC", "2C", "3S"], player=0)
+    set_hand(g, [], player=2)
+    a, b = _unseen_swapped(g, [jester], ["4H"])
+    pa = a.preview_play(["AC"])
+    assert pa == b.preview_play(["AC"]) and pa["decision_kind"] == "whistle_add"

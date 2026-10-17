@@ -164,6 +164,7 @@ class Game:
         self.last_events: List[dict] = []
         self.extra: Dict[str, Any] = {}    # mission scratch state (serialised as-is)
         self.forecast_copy = False         # a forecast's copy: stops when the acting player's turn ends
+        self.forecast_viewer: Optional[int] = None   # in a forecast's copy: the player it is for
 
     @classmethod
     def new(cls, config: GameConfig, seed: Optional[int] = None,
@@ -399,37 +400,46 @@ class Game:
         return self._forecast(info, lambda g: g.play(card_ids))
 
     def preview_decision(self, action: dict) -> dict:
-        """Simulate a decision (e.g. a Kinfolk Flute addition) the way ``preview_play`` does."""
+        """Simulate a decision (e.g. a Kinfolk Flute addition) the way ``preview_play`` does,
+        from the point of view of the player deciding."""
         if self.phase != PHASE_DECIDE:
             return {"ok": False, "reason": "No decision pending."}
-        return self._forecast(str(action.get("type")), lambda g: g.decide(action))
+        viewer = action.get("player", (self.decision or {}).get("player", self.active))
+        return self._forecast(str(action.get("type")), lambda g: g.decide(action), viewer=int(viewer))
 
-    # The copies a forecast runs on: each puts its reserve deck in a fixed order (by card id)
-    # and shuffles it, and reseeds its random state, from one of these (fixed, so forecasts
-    # repeat). Sorting first makes a copy depend on which cards the reserve holds, never on
-    # their real, face-down order.
+    # The copies a forecast runs on reseed their random state from one of these (fixed, so
+    # forecasts repeat); see ``_forecast_stand_ins`` for the cards they cannot see.
     FORECAST_SEEDS = (101, 202, 303)
 
-    def _forecast(self, kind: str, act: Callable[["Game"], None]) -> dict:
+    def _forecast(self, kind: str, act: Callable[["Game"], None], viewer: Optional[int] = None) -> dict:
         """Run ``act`` on copies of the game and summarise what it would do (UI forecasts).
 
-        The copies are not the game's real future: each sorts and shuffles its reserve deck
-        and reseeds its random state, so a forecast never shows what a face-down card or a
-        coming shuffle holds (a mage's reveal, a corrupted card banishing the reserve's top
-        card, a heal reshuffling a discard pile whose top feeds the enemy). A number the
-        copies disagree on depends on such a card: it is reported as None (a power's
-        ``immune`` too, compared over every copy's powers: a mage that looks at the reserve
-        reports no power, a blocked one does; ``mage_peeks`` too), with ``uncertain`` set. A copy stops where the acting player's turn
-        ends (the next turn's beasts and zone cards are not this play's doing). ``suffer``
-        is what the acting player would suffer: 0 when the turn ends without damage (a
-        Guardian, a shield that covers the attack, a kill, a Jester), None when it is not
-        known yet (a decision comes first)."""
+        The copies are not the game's real future: every card the player looking at the
+        forecast (``viewer``, the active player by default) cannot see is replaced by a
+        stand-in drawn only from what is unseen (``_forecast_stand_ins``) and the random
+        state is reseeded, so a forecast never shows what a face-down card, another player's
+        hand or a coming shuffle holds (a mage's reveal, a corrupted card banishing the
+        reserve's top card or another player's hand card, a heal reshuffling a discard pile
+        whose top feeds the enemy, a relic another player could use). A number the copies
+        disagree on depends on such a card: it is reported as None (a power's ``immune``
+        too, compared over every copy's powers: a mage that looks at the reserve reports no
+        power, a blocked one does; ``mage_peeks`` too), with ``uncertain`` set. A copy stops
+        where the acting player's turn ends (the next turn's beasts and zone cards are not
+        this play's doing). ``suffer`` is what the acting player would suffer: 0 when the
+        turn ends without damage (a Guardian, a shield that covers the attack, a kill, a
+        Jester), None when it is not known yet (a decision comes first)."""
+        viewer = self.active if viewer is None else viewer
         runs = []
-        for seed in self.FORECAST_SEEDS:
-            run = self._forecast_once(kind, act, seed)
+        for index, seed in enumerate(self.FORECAST_SEEDS):
+            run = self._forecast_once(kind, act, seed, index, viewer)
             if not run.get("ok"):
                 return run
             runs.append(run)
+        return self._merge_forecasts(runs)
+
+    def _merge_forecasts(self, runs: Sequence[dict]) -> dict:
+        """One forecast from its copies' (see ``_forecast``): what they agree on, None
+        (``uncertain``) where they differ."""
         out = dict(runs[0])
         out["powers"] = dict(out["powers"])
         uncertain = False
@@ -455,16 +465,52 @@ class Game:
         if any(run["mage_peeks"] != out["mage_peeks"] for run in runs[1:]):
             out["mage_peeks"] = None
             uncertain = True
+        # A decision some copies reach and others do not (another player's relic, say)
+        # may come: reported as the first copy's that does.
+        if any(run["decision_kind"] != out["decision_kind"] for run in runs[1:]):
+            out["decision"] = any(run["decision"] for run in runs)
+            out["decision_kind"] = next((run["decision_kind"] for run in runs if run["decision_kind"]), None)
+        if any(run["phase_after"] != out["phase_after"] for run in runs[1:]):
+            out["phase_after"] = None
         out["uncertain"] = uncertain
         return out
 
-    def _forecast_once(self, kind: str, act: Callable[["Game"], None], seed: int) -> dict:
+    def _forecast_stand_ins(self, g: "Game", viewer: int, index: int, shuffler: random.Random) -> None:
+        """Give a forecast copy stand-ins for the cards ``viewer`` cannot see: the reserve
+        deck, the other players' hands (unless hands are open: one person sees every
+        seat; a card locked in a hand stays) and the face-down cards under the tops of
+        mission 9's captured piles are pooled, put in a fixed order (by id), shuffled and
+        dealt back in the same places and sizes. A copy then depends only on which cards
+        are unseen, never on where each one really is. Copy ``index`` puts an evenly spaced
+        card of that order on top of the reserve, so the copies' tops differ (with up to
+        three unseen cards, each one is tried)."""
+        slots: List[Tuple[List[str], List[int]]] = [(g.tavern, list(range(len(g.tavern))))]
+        if not g.config.open_hands:
+            for i, p in enumerate(g.players):
+                if i != viewer:
+                    slots.append((p.hand, [k for k, cid in enumerate(p.hand) if not g.hand_locked(cid)]))
+        for pile in g.extra.get("captured", []):
+            slots.append((pile, list(range(1, len(pile)))))
+        pool = sorted(cards[k] for cards, places in slots for k in places)
+        if not pool:
+            return
+        top = pool[index * len(pool) // len(self.FORECAST_SEEDS)]
+        shuffler.shuffle(pool)
+        pool.remove(top)
+        pool.insert(0, top)
+        dealt = iter(pool)
+        for cards, places in slots:
+            for k in places:
+                cards[k] = next(dealt)
+
+    def _forecast_once(self, kind: str, act: Callable[["Game"], None], seed: int, index: int = 0,
+                       viewer: Optional[int] = None) -> dict:
         """One forecast copy (see ``_forecast``)."""
         g = copy.deepcopy(self)
         g.forecast_copy = True
+        g.forecast_viewer = g.active if viewer is None else viewer
         shuffler = random.Random(seed)
-        g.tavern.sort()
-        shuffler.shuffle(g.tavern)
+        self._forecast_stand_ins(g, g.forecast_viewer, index, shuffler)
         g.rng = random.Random(shuffler.random())
         attacker = g.active
         enemy_hp_before = g.enemy.hp if g.enemy else 0
