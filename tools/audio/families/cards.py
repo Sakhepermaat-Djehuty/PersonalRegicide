@@ -124,20 +124,39 @@ def _loud_db(x: np.ndarray) -> float:
     return 10 * math.log10(np.mean(keep) + 1e-20)
 
 
-def _tame(x: np.ndarray, loudness_db: float, ceiling_db: float = -1.0, margin_db: float = 1.5) -> np.ndarray:
+def _tame(x: np.ndarray, loudness_db: float, ceiling_db: float = -1.0, margin_db: float = 1.5,
+          max_shave_db: float = 4.0) -> np.ndarray:
     """Keep the peak within what mastering allows above the event's loudness (ceiling minus
     a margin), by shaving only the first milliseconds of the sharpest attacks (a 20 ms
-    release, so the body that follows keeps its level). The master's own limiter, slower
-    and applied to everything, then has nothing to do."""
+    release, so the body that follows keeps its level), so the master's slower limiter has
+    little or nothing to do. Shaving also lowers the measured loudness, so the highest
+    threshold that meets the target is found by bisection; it never shaves more than
+    ``max_shave_db`` (a slam keeps its snap)."""
     allowed = ceiling_db - margin_db - loudness_db
-    for _ in range(4):
-        peak = 20 * math.log10(float(np.max(np.abs(x))) + 1e-12)
-        loud = _loud_db(x)
-        if peak - loud <= allowed + 0.05:
-            break
-        thr = 10 ** ((loud + allowed) / 20.0)
-        x = A.limit(x / thr, 0.0, lookahead=0.0015, release=0.02) * thr
-    return x
+
+    def crest(y):
+        return 20 * math.log10(float(np.max(np.abs(y))) + 1e-12) - _loud_db(y)
+
+    def shave(th_db):
+        thr = 10 ** (th_db / 20.0)
+        return A.limit(x / thr, 0.0, lookahead=0.0015, release=0.02) * thr
+
+    if crest(x) <= allowed:
+        return x
+    top = _loud_db(x) + allowed                     # the threshold if loudness did not move
+    floor = max(top - 12.0, 20 * math.log10(float(np.max(np.abs(x)))) - max_shave_db)
+    if floor >= top:                                # out of reach within the cap: shave the cap
+        return shave(floor)
+    lo, hi = floor, top
+    best = None
+    for _ in range(12):
+        mid = 0.5 * (lo + hi)
+        y = shave(mid)
+        if crest(y) <= allowed:
+            best, lo = y, mid
+        else:
+            hi = mid
+    return best if best is not None else shave(floor)
 
 
 def _fit(x: np.ndarray, event: str, fade: float = 0.05, hp: float = 45.0) -> np.ndarray:
@@ -178,26 +197,41 @@ def _burst(dur: float, lo: float, hi: float, tau: float, seed: int, attack: floa
     return _tail(_norm(A.bandpass(exc, lo, hi, 2)), 0.25)
 
 
+def _rms1(x: np.ndarray) -> np.ndarray:
+    r = math.sqrt(float(np.mean(x ** 2)))
+    return x / r if r > 0 else x
+
+
 def _slide(dur: float, speed, lo: float = 900.0, hi: float = 6500.0, seed: int = 0, bright: float = 0.5,
            grit: float = 0.25, grain: float = 0.004, depth: float = 0.55, tick_rate: float = 320.0) -> np.ndarray:
     """Card stock rubbing on card stock. ``speed`` (0..1, points over the slide's length,
-    or a per-sample array) drives loudness, brightness and how often the fibres catch
-    (stick-slip ticks)."""
+    or a per-sample array) drives the loudness, how often the fibres catch (stick-slip
+    ticks) and where the noise's band sits: the band rises as the card speeds up and
+    falls as it slows, the "fwip" of a slide (eight band-passed copies of one noise,
+    crossfaded sample by sample). ``bright`` sets how high the band climbs."""
     n = _n(dur)
     sp = speed if isinstance(speed, np.ndarray) else _curve(n, speed)
-    sp = np.clip(sp[:n], 0.0, None)
+    sp = np.clip(sp[:n], 0.0, 1.0)
     rng = np.random.default_rng(seed)
-    mid = math.sqrt(lo * hi)
-    dark = _norm(A.bandpass(rng.standard_normal(n), lo, mid, 2))
-    brt = _norm(A.bandpass(rng.standard_normal(n), mid, hi, 2))
-    base = dark * sp + bright * brt * sp ** 2
+    w = rng.standard_normal(n)
+    K = 8
+    cs = np.geomspace(lo * 1.35, hi / 1.35, K)
+    bands = np.stack([_rms1(A.bandpass(w, c / 1.35, c * 1.35, 2)) for c in cs])
+    pos = sp * (K - 1) * (0.35 + 0.65 * bright)
+    i0 = np.minimum(pos.astype(int), K - 2)
+    fr = pos - i0
+    ar = np.arange(n)
+    swept = (1 - fr) * bands[i0, ar] + fr * bands[i0 + 1, ar]
+    wide = _rms1(A.bandpass(rng.standard_normal(n), lo, hi, 2))
+    base = (0.9 * swept + 0.15 * wide) * sp
     m = int(dur / grain) + 3
     g = rng.uniform(1.0 - depth, 1.0, m)
     gi = np.interp(_t(n) / grain, np.arange(m), g)
+    mid = math.sqrt(lo * hi)
     imp = (rng.random(n) < tick_rate * sp / SR) * rng.uniform(0.25, 1.0, n) * np.sign(rng.standard_normal(n))
     ticks = A.bandpass(imp, mid * 0.6, min(hi * 1.1, 15000.0), 2)
     pk = float(np.max(np.abs(ticks))) or 1.0
-    y = base * gi + grit * ticks / pk
+    y = (base * gi + 3.0 * grit * ticks / pk) * 0.25
     return _tail(_fade_in(y, 0.0015), 0.1)
 
 
@@ -260,7 +294,7 @@ def _wood(f: float, dur: float, seed: int, ratios=(0.42, 1.0, 2.41, 3.93), gains
 
 def _chime(f: float, dur: float, tau: float, seed: int = 0,
            parts=((2.0, 0.18, 0.5), (2.76, 0.08, 0.25), (5.4, 0.03, 0.12)), strike: float = 0.08,
-           attack: float = 0.0008) -> np.ndarray:
+           attack: float = 0.0015) -> np.ndarray:
     """A clear tone with short-lived inharmonic partials (glass or a small bell) and a
     soft strike; partials above 7.8 kHz are left out."""
     n = _n(dur)
@@ -274,6 +308,18 @@ def _chime(f: float, dur: float, tau: float, seed: int = 0,
         s = _snap(seed, center=min(f * 2.5, 5500.0), tau=0.0012, dur=min(dur, 0.02), ring=0.0, lp=7000)
         y[:len(s)] += strike * s
     return _tail(y, 0.35)
+
+
+def _room(x: np.ndarray, room: float = 0.3, wet: float = 0.15, damping: float = 0.6, tail: float = 0.4,
+          lo: float = 250.0, hi: float = 3500.0) -> np.ndarray:
+    """A small room's reflections added to ``x``, with the reverb's own sound band-limited
+    (a wooden room soaks up the highs and the boom), so its tail never hisses or rumbles.
+    The wet part is what the reverb adds beyond its dry path (pedalboard's dry gain is
+    2 x (1 - wet / 2) on a mono input, with no delay)."""
+    full = A.reverb(x, room, wet, damping, tail=tail)
+    dry = np.concatenate([x, np.zeros(len(full) - len(x))])
+    w = full - dry * 2.0 * (1.0 - wet * 0.5)
+    return dry + A.bandpass(w, lo, hi, 2) / (2.0 * (1.0 - wet * 0.5))
 
 
 # ----------------------------------------------------------------------------- 8-bit pieces
@@ -386,10 +432,11 @@ def _deck_tap(seed: int) -> np.ndarray:
 
 
 def _table_knock(seed: int, scale: float = 1.0) -> np.ndarray:
-    """A deck knocked on a thick wooden tabletop: a hard wooden tock around 440 Hz (A4),
-    damped low modes under it, and the papery edge of the cards."""
-    modes = [(147 * scale, 0.45, 0.06), (233 * scale, 0.5, 0.05), (440 * scale, 1.0, 0.045),
-             (612 * scale, 0.6, 0.03), (905 * scale, 0.45, 0.02), (1380 * scale, 0.25, 0.012)]
+    """A deck knocked on a thick wooden tabletop: a hard wooden tock on A4, damped low
+    modes under it (D3, A3, E5: the modes that ring long enough to be heard as a pitch sit
+    on the D scale) and short inharmonic ones above, and the papery edge of the cards."""
+    modes = [(147 * scale, 0.3, 0.05), (220 * scale, 0.4, 0.045), (440 * scale, 1.0, 0.045),
+             (659 * scale, 0.6, 0.03), (905 * scale, 0.45, 0.018), (1380 * scale, 0.25, 0.012)]
     wood = _en(_modal(_mallet(0.3, 0.0009, seed), modes))
     pap = _en(_burst(0.04, 700, 4500, 0.003, seed + 1))
     return _norm(_place([(wood, 0, 1.0), (pap, 0, 0.55)]))
@@ -415,7 +462,7 @@ def sel_card_lift():
                        grit=0.2))
     edge = _en(_snap(13, center=3400, tau=0.0015, dur=0.02, ring=0.2, lp=7000))
     x = _place([(snap, 0, 1.0), (slide, 0.002, 0.8), (edge, 0.058, 0.35)], 0.14)
-    return _fit(x, "card_select", 0.03)
+    return _fit(A.lowpass(x, 7000), "card_select", 0.03)
 
 
 def sel_felt_tap():
@@ -491,7 +538,7 @@ def play_felt_slap():
 
 
 def play_soft_place():
-    pat = _en(A.lowpass(_burst(0.04, 400, 2600, 0.005, 112), 3000))
+    pat = _en(A.lowpass(_burst(0.05, 400, 2600, 0.009, 112, attack=0.002), 3000))
     th = _en(_thump(200, 160, 0.022, seed=111, knock=0.5, knock_lp=800))
     slide = _en(_slide(0.17, [(0, 0.25), (0.25, 0.6), (1, 0.0)], lo=500, hi=3200, seed=113, bright=0.25, grit=0.12))
     x = _place([(pat, 0, 1.0), (th, 0, 0.55), (slide, 0.03, 0.6)], 0.3)
@@ -500,10 +547,10 @@ def play_soft_place():
 
 def play_tavern_slam():
     table = _en(_table_knock(121))
-    slap = _en(_burst(0.06, 600, 5200, 0.007, 122))
-    slap2 = _en(_burst(0.05, 800, 5000, 0.004, 123))
+    slap = _en(_burst(0.06, 600, 5200, 0.009, 122))
+    slap2 = _en(_burst(0.05, 800, 5000, 0.005, 123))
     x = _place([(table, 0, 1.0), (slap, 0, 0.8), (slap2, 0.04, 0.35)], 0.5)
-    x = A.reverb(_soften(x, 1.5), room=0.32, wet=0.16, damping=0.6, tail=0.45)
+    x = _room(_soften(x, 1.5), room=0.25, wet=0.12, damping=0.65, tail=0.4, lo=250, hi=3000)
     return _fit(x, "play", 0.25)
 
 
@@ -536,11 +583,11 @@ def _draw_one(seed: int, length: float = 0.17, lo: float = 900, hi: float = 6500
     """One card pushed off the deck by the thumb: the push, the slide over the next card,
     the snap as it clears the deck's edge, and a soft landing in the hand."""
     push = _en(_snap(seed, center=2200, tau=0.0022, dur=0.03, ring=0.2, lp=7000))
-    slide = _en(_slide(length, [(0, 0.35), (0.15, 0.8), (0.6, 1.0), (0.85, 0.5), (1, 0.0)], lo, hi, seed + 1,
-                       bright=0.45, grit=0.25))
+    slide = _en(_slide(length, [(0, 0.3), (0.45, 1.0), (0.8, 0.55), (1, 0.0)], lo, hi, seed + 1,
+                       bright=0.5, grit=0.25))
     edge = _en(_snap(seed + 2, center=3200, tau=0.0025, dur=0.03, ring=0.35, lp=7500))
     land = _en(A.lowpass(_snap(seed + 3, center=1500, tau=0.004, dur=0.03, ring=0.0), 3500))
-    return _place([(push, 0, 0.5), (slide, 0.002, 1.0), (edge, length * 0.85, 0.45), (land, length + 0.02, 0.35)])
+    return _place([(push, 0, 0.4), (slide, 0.002, 1.0), (edge, length * 0.85, 0.32), (land, length + 0.02, 0.3)])
 
 
 def draw_deck_slide():
@@ -563,12 +610,12 @@ def draw_dealer():
         s = 230 + 10 * k
         flick = _snap(s, center=3600, tau=0.002, dur=0.03, ring=0.4)
         slide = _slide(0.06, [(0, 0.9), (1, 0.1)], 1200, 7000, s + 1, bright=0.6, grit=0.3)
-        knock = _norm(_modal(_mallet(0.12, 0.0006, s + 2), [(330, 0.7, 0.03), (520, 0.8, 0.025),
+        knock = _norm(_modal(_mallet(0.12, 0.0012, s + 2), [(330, 0.7, 0.03), (494, 0.8, 0.025),
                                                               (880, 0.6, 0.018), (1350, 0.3, 0.012)]))
-        slap = _burst(0.04, 700, 5000, 0.0035, s + 3)
+        slap = A.lowpass(_burst(0.04, 700, 4500, 0.0035, s + 3, attack=0.0008), 5000)
         parts += [(flick, t0, 0.6), (slide, t0 + 0.002, 0.35), (slap, t0 + 0.075, 0.7), (knock, t0 + 0.075, 0.5)]
     x = _place(parts, 0.55)
-    x = A.reverb(_soften(x, 1.5), room=0.22, wet=0.12, damping=0.6, tail=0.35)
+    x = _room(_soften(x, 1.5), room=0.22, wet=0.12, damping=0.6, tail=0.35, lo=250, hi=3000)
     return _fit(x, "draw", 0.2)
 
 
@@ -579,7 +626,7 @@ def draw_fairy():
         parts.append((_chime(_hz(nm), 0.55, 0.12, seed=242 + i), at, g))
     parts += _glitter(249, 9, 0.03, 0.42)
     x = _place(parts, 0.7)
-    x = A.reverb(x, room=0.3, wet=0.12, damping=0.5, tail=0.4)
+    x = _room(x, room=0.3, wet=0.12, damping=0.5, tail=0.4, lo=400, hi=6000)
     return _fit(x, "draw", 0.2)
 
 
@@ -619,7 +666,7 @@ def shuf_tavern():
     k1 = _table_knock(342, 1.0)
     k2 = _table_knock(343, 1.02)
     x = _place([(rif, 0, 1.0), (k1, 0.62, 0.8), (k2, 0.80, 0.7)], 1.1)
-    x = A.reverb(_soften(x, 1.4), room=0.3, wet=0.15, damping=0.6, tail=0.4)
+    x = _room(_soften(x, 1.4), room=0.25, wet=0.12, damping=0.65, tail=0.4, lo=250, hi=3000)
     return _fit(x, "shuffle", 0.25)
 
 
@@ -629,34 +676,35 @@ def shuf_fairy():
     for i in range(26):
         t0 = 0.0 if i == 0 else float(rng.uniform(0.0, 0.75))
         sw = math.sin(math.pi * min(1.0, t0 / 0.75)) ** 0.7
-        flap = A.lowpass(_burst(0.025, 1500, 5000, float(rng.uniform(0.003, 0.005)), 35200 + i), 6000)
+        flap = A.lowpass(_burst(0.04, 1000, 4000, float(rng.uniform(0.006, 0.01)), 35200 + i, attack=0.002), 5000)
         parts.append((flap, t0, (0.35 + 0.35 * sw) * float(rng.uniform(0.7, 1.0))))
     for i, nm in enumerate(("D6", "E6", "F#6", "A6", "B6", "D7")):
         parts.append((_chime(_hz(nm), 0.5, 0.12, seed=360 + i), 0.08 * i, 0.35))
     for i, nm in enumerate(("D6", "F#6", "A6")):
         parts.append((_chime(_hz(nm), 0.85, 0.25, seed=370 + i), 0.62 + 0.012 * i, 0.45))
     x = _place(parts, 1.4)
-    x = A.reverb(x, room=0.3, wet=0.12, damping=0.5, tail=0.3)
+    x = _room(x, room=0.3, wet=0.12, damping=0.5, tail=0.3, lo=400, hi=6000)
     return _fit(x, "shuffle", 0.25)
 
 
 def shuf_pixel():
-    # the rattle: one short noise tick per frame on the console's quarter-frame envelope,
+    # the rattle: short noise ticks on the console's quarter-frame envelope, 40 a second,
     # the two halves alternating in pitch, swelling and fading
-    ticks = 36
+    ticks = 22
     clocks, vols = [], []
     for i in range(ticks):
         sw = 0.55 + 0.45 * math.sin(math.pi * (i + 0.5) / ticks)
-        clocks += [9000 if i % 2 == 0 else 6000] * 4
-        vols += [round(10 * sw), round(5 * sw), round(2 * sw), 0]
+        clocks += [4000 if i % 2 == 0 else 2600] * 6
+        vols += [round(10 * sw), round(4 * sw), 1, 0, 0, 0]
     vols[-1] = 1
-    rattle = _chip_noise(clocks, vols, seed=381, frame=FRAME / 4)
+    rattle = A.highpass(_chip_noise(clocks, vols, seed=381, lp=4000, frame=FRAME / 4), 200, 2)
     arp = [_hz(n) for n in ("D5", "F#5", "A5", "D6")]
-    tone = _chip([arp[(i // 2) % 4] for i in range(ticks)], [5] * (ticks - 1) + [2], duty=0.125, lp=4500)
+    k = 33
+    tone = _chip([arp[(i // 2) % 4] for i in range(k)], [5] * (k - 1) + [2], duty=0.125, lp=4500)
     end_v = [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
     end = _chip([_hz("D6")] * 12, end_v, duty=0.25, lp=5000)
     end2 = _chip([_hz("A5")] * 12, [e - 1 for e in end_v[:-1]] + [1], duty=0.5, lp=5000)
-    x = _place([(rattle, 0, 0.6), (tone, 0, 0.35), (end, 0.65, 0.5), (end2, 0.65, 0.35)])
+    x = _place([(rattle, 0, 0.8), (tone, 0, 0.3), (end, 0.6, 0.5), (end2, 0.6, 0.35)])
     return _fit(x, "shuffle", 0.03)
 
 
@@ -677,7 +725,7 @@ def disc_pile_toss():
 
 
 def disc_soft_drop():
-    pap = _en(A.lowpass(_burst(0.05, 400, 2000, 0.006, 411), 2500))
+    pap = _en(A.lowpass(_burst(0.06, 400, 2000, 0.01, 411, attack=0.002), 2500))
     th = _en(_thump(210, 170, 0.02, seed=412, knock=0.5, knock_lp=900))
     sigh = _en(_slide(0.15, [(0, 0.6), (1, 0.0)], 400, 2200, 413, bright=0.2, grit=0.08))
     x = _place([(pap, 0, 1.0), (th, 0, 0.6), (sigh, 0.01, 0.6)], 0.3)
@@ -685,15 +733,16 @@ def disc_soft_drop():
 
 
 def disc_crate_drop():
-    # a small wooden tray: its hollow note near D4, the panels above it
-    modes = [(294, 0.8, 0.07), (445, 0.9, 0.05), (742, 0.5, 0.035), (1105, 0.35, 0.022), (1650, 0.18, 0.014)]
+    # a small wooden tray: its hollow note on D4, the panels above it on A4, F#5 and B5,
+    # and one short inharmonic mode for the wood's roughness
+    modes = [(294, 0.8, 0.07), (440, 0.9, 0.05), (740, 0.5, 0.035), (988, 0.35, 0.022), (1650, 0.18, 0.014)]
     parts = []
     for i, (at, g) in enumerate(((0.0, 1.0), (0.045, 0.45), (0.08, 0.2))):
         box = _en(_modal(_mallet(0.4, 0.0015, 421 + i), modes))
         slap = _en(_burst(0.05, 600, 4500, 0.004, 425 + i))
         parts += [(box, at, g), (slap, at, 0.55 * g)]
     x = _place(parts, 0.5)
-    x = A.reverb(_soften(x, 1.2), room=0.18, wet=0.1, damping=0.6, tail=0.3)
+    x = _room(_soften(x, 1.2), room=0.18, wet=0.1, damping=0.6, tail=0.3, lo=250, hi=3000)
     return _fit(x, "discard", 0.2)
 
 
@@ -709,7 +758,7 @@ def disc_fading_glyph():
     breath = A.bandpass(np.random.default_rng(437).standard_normal(n), 900, 3000) * (1 - np.exp(-t / 0.04)) * np.exp(-t / 0.12)
     parts.append((_tail(_norm(breath), 0.3), 0.0, 0.12))
     x = _place(parts, 0.85)
-    x = A.reverb(x, room=0.3, wet=0.12, damping=0.5, tail=0.3)
+    x = _room(x, room=0.3, wet=0.12, damping=0.5, tail=0.3, lo=300, hi=5000)
     return _fit(x, "discard", 0.15)
 
 
