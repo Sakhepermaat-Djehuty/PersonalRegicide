@@ -661,7 +661,7 @@ def test_corruption_is_random_one_strength_each_and_skips_special_cards():
     P.add_card(party, {"id": "5R", "rank": "5", "suits": ["R"], "value": 5, "name": "Harore", "flags": []})
     P.add_card(party, {"id": "3R", "rank": "3", "suits": ["R"], "value": 3, "name": "Oaken", "flags": []})
     cands = P.corruption_candidates(party)
-    assert "5R" in cands and "3R" not in cands             # Harore stays, Oaken is a visitor
+    assert "5R" not in cands and "3R" not in cands         # Reavers are not the original deck
     assert "GOR8" not in cands and "B_ASH" not in cands and "AH" not in cands and "10S" not in cands
     picked = []
     for _ in range(8):
@@ -678,6 +678,35 @@ def test_corruption_is_random_one_strength_each_and_skips_special_cards():
         tgt = P.pick_corruption_target(P.starting_party(), random.Random(seed))
         counts[P.find(P.starting_party(), tgt)["rank"]] = counts.get(P.find(P.starting_party(), tgt)["rank"], 0) + 1
     assert set(counts) == set("23456789") and min(counts.values()) > 15
+
+
+def test_only_the_original_reserve_deck_is_ever_corrupted():
+    """Mission 10 has rules for the original classes as enemies, none for corrupted mages or
+    class-deck members: corruption picks only from the 40 starting cards, stickers and all."""
+    party = P.starting_party()
+    for card in list(M.MAGE_DECK) + list(M.REAVERS) + list(M.GUARDIANS) + list(M.DRUIDS) + list(M.CHANTERS):
+        if P.find(party, str(card["id"])) is None:
+            P.add_card(party, dict(card))
+    P.add_card(party, dict(M.ESME_REBORN))
+    P.add_card(party, dict(M.GORAN_RENEWED))
+    P.add_suit(party, "8C", "G")                           # a class sticker keeps it original
+    cands = P.corruption_candidates(party)
+    assert cands and all(cid in P.ORIGINAL_IDS for cid in cands)
+    assert "8C" in cands and not any(cid.endswith("M") for cid in cands)
+    for seed in range(200):
+        p = [dict(c, flags=list(c.get("flags", []))) for c in party]
+        rng = random.Random(seed)
+        for _ in range(8):
+            tgt = P.pick_corruption_target(p, rng)
+            assert tgt in P.ORIGINAL_IDS, tgt
+            P.add_flag(p, tgt, "corrupted")
+        assert P.pick_corruption_target(p, rng) is None
+    # the choice form (a choice step offers the candidates) offers originals only too
+    c = CampaignState.new(1, ["Ana"], seed=4)
+    for card in M.MAGE_DECK:
+        if P.find(c.party, str(card["id"])) is None:
+            P.add_card(c.party, dict(card))
+    assert all(cid in P.ORIGINAL_IDS for cid in P.corruption_candidates(c.party))
 
 
 def test_mercenary_costs_match_the_cards():

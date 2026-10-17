@@ -83,6 +83,11 @@ TEMPORARY_IDS = ("3R", "7R", "9R", "5G", "7G", "9G", "3U", "5U", "9U", "3T", "5T
 # and gains class stickers from mission 5 on, so the id list keeps him out as well.
 SPECIAL_IDS = ("GOR8", "GOR8E", "MYLA7", "ARC25", "ESME6E", "B_ASH")
 
+# The original reserve deck: the Golden Blade Syndicate's 40 cards (starting_party), the
+# only cards the campaign corrupts. Mission 10 has rules for these as enemies and none
+# for corrupted mages or class-deck members (owner's patch; balance to be looked at).
+ORIGINAL_IDS = frozenset(r + s for s in BASIC_SUITS for r in NUMBER_RANKS)
+
 
 def corruption_candidates(party: Sequence[CardDict]) -> List[str]:
     """Party cards that may be corrupted now.
@@ -91,16 +96,18 @@ def corruption_candidates(party: Sequence[CardDict]) -> List[str]:
     3, dwarves 4, avions 5, humans 6, elves 7, feltrix 8, drakonids 9) and discarded, then
     a feature card picks one character of that race. The owner plays a themeless deck, so
     the app simply corrupts a random card: one strength among 2 to 9 that has not been
-    corrupted yet, then a random card of that strength. Eligible cards have a class, are
-    not already corrupted or restored, are not special characters (Gøran, Myla, the
-    Evergreens, beasts, pilgrims, mercenaries) and are not class-deck visitors that leave
-    after the mission.
+    corrupted yet, then a random card of that strength. Only the original reserve deck
+    (the 40 starting cards of the four basic classes, class stickers and all) is eligible,
+    never the mages, the class decks or the special characters, and a card already
+    corrupted or restored is not corrupted again.
     """
     used_ranks = set(c["rank"] for c in party if "corrupted" in c.get("flags", []))
     candidates = []
     for c in party:
         flags = c.get("flags", [])
         if c["rank"] not in ("2", "3", "4", "5", "6", "7", "8", "9") or c["rank"] in used_ranks:
+            continue
+        if str(c["id"]) not in ORIGINAL_IDS:
             continue
         if not c.get("suits") or str(c["id"]) in TEMPORARY_IDS or str(c["id"]) in SPECIAL_IDS:
             continue
