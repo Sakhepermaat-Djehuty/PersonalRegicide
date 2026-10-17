@@ -54,10 +54,8 @@ def app(tmp_path, monkeypatch, sounds):
 
 
 def _played():
-    """The effects played, by event name, in order (Pythonista's built-in sounds by the
-    event they stand for)."""
-    builtin = {v[0]: k for k, v in AU.BUILTIN.items() if v is not None}
-    return [builtin.get(h[1]) or os.path.basename(h[1])[:-4] for h in sound.history if h[0] == "effect"]
+    """The effects played, by event name, in order."""
+    return [os.path.basename(h[1])[:-4] for h in sound.history if h[0] == "effect"]
 
 
 def _music():
@@ -142,8 +140,6 @@ def test_card_taps_buttons_and_an_attack(app):
     ui.tap(app, *ui.root_point(app, gs.hand.views["5H"]))
     ui.tap(app, *ui.root_point(app, gs.hand.views["9D"]))
     assert _played() == ["card_select", "card_deselect", "card_select"]
-    names = [h[1] for h in sound.history if h[0] == "effect"]
-    assert names == ["casino:CardPlace1", "casino:CardPlace4", "casino:CardPlace1"]   # Pythonista's own
     del sound.history[:]
     _tap_button(app, "Play")
     assert _played()[:1] == ["button"]                    # an attack makes no sound of its own
@@ -151,12 +147,11 @@ def test_card_taps_buttons_and_an_attack(app):
     assert _played() == ["button", "hit", "draw", "suffer"]   # 9♦: the blow, the Bard's draw, the enemy's
 
 
-def test_the_owners_built_in_sounds_and_silence_for_what_cannot_be_pressed(app):
+def test_an_attack_and_what_cannot_be_pressed_are_silent(app):
     a = AU.Audio({})
     del sound.history[:]
-    a.effect("shuffle")
-    a.effect("play")
-    assert sound.history == [("effect", "casino:CardFan1", 0.8, 0.85)]     # slower, and the play silent
+    a.effect("play")                                      # even with a play.wav in the folder
+    assert _played() == []
     gs, g = _solo(app)
     set_enemy(g, "J", "C")
     set_hand(g, ["5H", "9D", "2S", "3C"])
