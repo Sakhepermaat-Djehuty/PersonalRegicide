@@ -201,7 +201,7 @@ def test_the_settings_turn_effects_music_and_silent_mode_on_and_off(app):
 
 
 def test_silent_mode_plays_by_default(sounds):
-    a = AU.Audio({})
+    AU.Audio({})
     assert ("honors_silent_switch", False) in sound.history
     del sound.history[:]
     AU.Audio({"sound_in_silent_mode": False})

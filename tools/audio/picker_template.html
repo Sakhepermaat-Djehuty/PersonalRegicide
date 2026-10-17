@@ -1,0 +1,363 @@
+<title>Regicide Sound Picker</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap">
+<style>
+/* Layout: one column. A header with the volume, "Hear a turn" and the count of picks; a
+   sticky row of group links; one section per group of events, each event a row of
+   candidates drawn as small playing cards (tap to hear and pick, gold border = picked);
+   the music section lists tracks with a player and three slots (menus, table, Kings);
+   then the picks summary. Single dark look on purpose: the app's own table colours. */
+:root {
+  --bg: #171a21; --panel: #242938; --panel-2: #2e3447; --fg: #f3f4f6; --muted: #9aa3b5;
+  --accent: #e3b84f; --face: #f8f4ea; --face-dim: #cfcabd; --edge: #1e1e1e; --ink: #262626;
+  --ink-muted: #6b6458; --btn: #3a62c7; --ok: #6ccf7a; --danger: #e0605a;
+  --display: "Cinzel", "Trajan Pro", Georgia, serif;
+  --ui: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-padding-top: 64px; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--ui); font-size: 15px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 48px;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+main { max-width: 820px; margin: 0 auto; display: grid; gap: 30px; }
+main > *, section > *, .event > * { min-width: 0; }
+h1 { font-family: var(--display); font-size: 28px; font-weight: 700; margin: 0; letter-spacing: 0.02em; text-wrap: balance; }
+h2 { font-family: var(--display); font-size: 20px; font-weight: 600; margin: 0; letter-spacing: 0.03em; text-wrap: balance; }
+h3 { font-size: 16px; margin: 0; }
+p { margin: 0; max-width: 65ch; color: var(--muted); }
+p strong { color: var(--fg); font-weight: 600; }
+button { font: inherit; color: inherit; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header { display: grid; gap: 12px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding: 12px 14px; background: var(--panel); border-radius: 14px; }
+.vol { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+.vol input { width: 120px; accent-color: var(--accent); }
+.btn { border: 0; border-radius: 10px; padding: 9px 14px; font-weight: 600; cursor: pointer; background: var(--btn); color: #fff; }
+.btn.quiet { background: var(--panel-2); color: var(--fg); }
+.count { margin-left: auto; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.count b { color: var(--accent); }
+.saved { font-size: 12px; color: var(--muted); }
+
+nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 8px; margin-inline: -4px; }
+nav .links { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-inline: 4px; }
+nav a { flex: none; text-decoration: none; color: var(--muted); font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 999px; background: var(--panel); white-space: nowrap; }
+nav a .n { color: var(--accent); font-variant-numeric: tabular-nums; margin-left: 4px; }
+
+section { display: grid; gap: 18px; }
+.event { display: grid; gap: 10px; padding-top: 4px; }
+.event .head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.event .head .pick { font-size: 13px; color: var(--accent); }
+.event .head .pick.none { color: var(--muted); }
+.event .when { font-size: 13px; }
+
+/* candidates: small cream playing cards */
+.cands { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; }
+.cand {
+  position: relative; text-align: left; border: 2px solid var(--edge); border-radius: 12px; cursor: pointer;
+  background: var(--face); color: var(--ink); padding: 10px 10px 12px; display: grid; gap: 4px; align-content: start;
+  min-height: 104px; transition: transform 0.08s ease;
+}
+.cand:active { transform: scale(0.98); }
+.cand .name { font-weight: 700; font-size: 14px; line-height: 1.2; padding-right: 22px; }
+.cand .note { font-size: 12px; color: var(--ink-muted); line-height: 1.3; }
+.cand .len { font-size: 11px; color: var(--ink-muted); font-family: var(--mono); margin-top: auto; }
+.cand .play { position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; border-radius: 50%; background: var(--ink); opacity: 0.18; }
+.cand .play::after { content: ""; position: absolute; left: 6.5px; top: 4.5px; border-left: 7px solid var(--face); border-block: 4.5px solid transparent; }
+.cand.playing .play { opacity: 0.85; background: var(--btn); }
+.cand[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent); }
+.cand.none { background: var(--panel-2); color: var(--fg); border-color: var(--panel-2); }
+.cand.none .note { color: var(--muted); }
+.cand.none[aria-pressed="true"] { border-color: var(--accent); }
+
+/* music */
+.tracks { display: grid; gap: 12px; }
+.track { display: grid; gap: 10px; padding: 12px; background: var(--panel); border-radius: 14px; border: 2px solid transparent; }
+.track.assigned { border-color: var(--accent); }
+.track .row { display: flex; gap: 12px; align-items: center; }
+.track .pp { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--face); cursor: pointer; position: relative; }
+.track .pp::after { content: ""; position: absolute; left: 17px; top: 13px; border-left: 14px solid var(--ink); border-block: 9px solid transparent; }
+.track.playing .pp::after { left: 15px; top: 14px; width: 4px; height: 16px; border: 0; background: var(--ink); box-shadow: 9px 0 0 var(--ink); }
+.track .info { min-width: 0; display: grid; gap: 2px; }
+.track .name { font-weight: 700; }
+.track .note { font-size: 13px; color: var(--muted); }
+.track .meta { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+.bar { height: 4px; background: var(--panel-2); border-radius: 2px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+.slots { display: flex; flex-wrap: wrap; gap: 8px; }
+.slot { border: 1px solid var(--panel-2); background: transparent; color: var(--muted); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.slot[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.slot .hint { font-weight: 400; opacity: 0.8; }
+
+.summary { display: grid; gap: 12px; padding: 14px; background: var(--panel); border-radius: 14px; }
+.summary pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: var(--mono); font-size: 12px; color: var(--fg); background: var(--bg); padding: 10px; border-radius: 10px; max-height: 220px; overflow: auto; }
+.summary .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+@media (prefers-reduced-motion: reduce) { .cand { transition: none; } }
+</style>
+
+<main>
+  <header>
+    <h1>Regicide Sound Picker</h1>
+    <p>Every sound here is original, made for your game. <strong>Tap a card to hear it and pick it</strong>; tap another to change your mind, or <strong>None</strong> for silence. For music, play a track and set it for the menus, the table or the Kings. Your picks save as you go.</p>
+    <div class="controls">
+      <label class="vol" for="vol">Volume <input id="vol" type="range" min="0" max="1" step="0.05" value="0.8"></label>
+      <button class="btn" id="turn" type="button">Hear a turn</button>
+      <span class="count" id="count"></span>
+    </div>
+  </header>
+  <nav aria-label="Groups"><div class="links" id="links"></div></nav>
+  <div id="groups"></div>
+  <section class="summary" id="summary" aria-labelledby="sum-h">
+    <h2 id="sum-h">Your picks</h2>
+    <p id="save-note">Your picks are kept on this page. When you are happy, say <strong>done</strong> in our chat and I'll put them in the game.</p>
+    <pre id="picks"></pre>
+    <div class="actions">
+      <button class="btn quiet" id="copy" type="button">Copy for Claude</button>
+      <span class="saved" id="saved"></span>
+    </div>
+  </section>
+</main>
+
+<script>
+const DATA = /*__DATA__*/null;
+const SLOTS = [["menu", "Menus"], ["table", "Table"], ["boss", "Kings"]];
+const TURN = [["card_select", 0], ["card_select", 420], ["play", 800], ["power_double", 700], ["hit", 600],
+              ["suffer", 1100], ["discard", 1000], ["draw", 900], ["card_select", 900], ["play", 450],
+              ["defeat_enemy", 650], ["new_enemy", 1500], ["button", 1400], ["popup", 300]];
+
+const effects = DATA.events.filter(e => e.kind !== "music");
+const musicEv = DATA.events.find(e => e.kind === "music");
+let picks = { effects: {}, music: { menu: undefined, table: undefined, boss: undefined } };
+let db = null, saveTimer = null;
+const audioCache = new Map();
+let volume = 0.8;
+
+function store(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function recall(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+
+function el(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") n.className = v; else if (k === "text") n.textContent = v; else n.setAttribute(k, v);
+  }
+  for (const k of kids) if (k) n.append(k);
+  return n;
+}
+function secs(s) { return s >= 60 ? Math.floor(s / 60) + ":" + String(Math.round(s % 60)).padStart(2, "0") : s.toFixed(s < 1 ? 2 : 1) + " s"; }
+
+function audioFor(src) {
+  if (!audioCache.has(src)) { const a = new Audio(src); a.preload = "auto"; audioCache.set(src, a); }
+  return audioCache.get(src);
+}
+function playSrc(src, card) {
+  const a = audioFor(src);
+  a.volume = volume;
+  try { a.currentTime = 0; } catch (e) {}
+  const p = a.play();
+  if (card) {
+    card.classList.add("playing");
+    const off = () => card.classList.remove("playing");
+    a.onended = off; setTimeout(off, 4000);
+  }
+  if (p && p.catch) p.catch(() => {});
+}
+
+function render() {
+  const links = document.getElementById("links");
+  const groups = document.getElementById("groups");
+  links.textContent = ""; groups.textContent = "";
+  const byGroup = new Map();
+  for (const ev of DATA.events) {
+    if (!byGroup.has(ev.group)) byGroup.set(ev.group, []);
+    byGroup.get(ev.group).push(ev);
+  }
+  let gi = 0;
+  for (const [group, evs] of byGroup) {
+    const gid = "g" + (gi++);
+    const n = evs.reduce((k, e) => k + e.items.length, 0);
+    links.append(el("a", { href: "#" + gid }, group, el("span", { class: "n", text: String(n) })));
+    const sec = el("section", { id: gid, "aria-label": group }, el("h2", { text: group }));
+    for (const ev of evs) sec.append(ev.kind === "music" ? renderMusic(ev) : renderEvent(ev));
+    groups.append(sec);
+  }
+  refresh();
+}
+
+function renderEvent(ev) {
+  const pick = el("span", { class: "pick", id: "pick-" + ev.id });
+  const box = el("div", { class: "event", id: "ev-" + ev.id },
+    el("div", { class: "head" }, el("h3", { text: ev.title }), pick),
+    el("p", { class: "when", text: ev.when }));
+  const cands = el("div", { class: "cands", role: "group", "aria-label": ev.title });
+  for (const it of ev.items) {
+    const b = el("button", { class: "cand", type: "button", "aria-pressed": "false", "data-ev": ev.id, "data-id": it.id },
+      el("span", { class: "play", "aria-hidden": "true" }),
+      el("span", { class: "name", text: it.name }),
+      el("span", { class: "note", text: it.note }),
+      el("span", { class: "len", text: secs(it.secs) }));
+    b.addEventListener("click", () => { playSrc(it.src, b); setPick(ev.id, it.id); });
+    cands.append(b);
+  }
+  const none = el("button", { class: "cand none", type: "button", "aria-pressed": "false", "data-ev": ev.id, "data-id": "" },
+    el("span", { class: "name", text: "None" }), el("span", { class: "note", text: "No sound for this." }));
+  none.addEventListener("click", () => setPick(ev.id, null));
+  cands.append(none);
+  box.append(cands);
+  return box;
+}
+
+let musicAudio = null, musicCard = null;
+function renderMusic(ev) {
+  const box = el("div", { class: "event", id: "ev-music" },
+    el("p", { class: "when", text: "Each track loops seamlessly. Set one for the menus, one for the table and one for the last enemies (the Kings), or leave a slot empty for silence there." }));
+  const list = el("div", { class: "tracks" });
+  for (const it of ev.items) {
+    const bar = el("div", { class: "bar" }, el("i"));
+    const pp = el("button", { class: "pp", type: "button", "aria-label": "Play " + it.name });
+    const tags = (it.tags || []).map(t => ({ menu: "menus", table: "table", boss: "Kings" }[t] || t));
+    const card = el("div", { class: "track", "data-id": it.id },
+      el("div", { class: "row" }, pp,
+        el("div", { class: "info" }, el("span", { class: "name", text: it.name }), el("span", { class: "note", text: it.note }),
+          el("span", { class: "meta", text: secs(it.secs) + (tags.length ? " · suits the " + tags.join(", ") : "") }))),
+      bar);
+    const slots = el("div", { class: "slots" });
+    for (const [key, label] of SLOTS) {
+      const s = el("button", { class: "slot", type: "button", "aria-pressed": "false", "data-slot": key, "data-id": it.id }, label);
+      s.addEventListener("click", () => setSlot(key, picks.music[key] === it.id ? null : it.id));
+      slots.append(s);
+    }
+    card.append(slots);
+    pp.addEventListener("click", () => toggleMusic(it, card));
+    list.append(card);
+  }
+  box.append(list);
+  return box;
+}
+
+function toggleMusic(it, card) {
+  if (musicCard === card && musicAudio && !musicAudio.paused) { musicAudio.pause(); card.classList.remove("playing"); return; }
+  if (musicAudio) { musicAudio.pause(); if (musicCard) musicCard.classList.remove("playing"); }
+  musicAudio = audioFor(it.src); musicCard = card;
+  musicAudio.loop = true; musicAudio.volume = volume;
+  const fill = card.querySelector(".bar i");
+  musicAudio.ontimeupdate = () => { if (musicAudio.duration) fill.style.width = (100 * musicAudio.currentTime / musicAudio.duration) + "%"; };
+  const p = musicAudio.play(); if (p && p.catch) p.catch(() => {});
+  card.classList.add("playing");
+}
+
+function setPick(ev, id) { picks.effects[ev] = id; changed(); }
+function setSlot(slot, id) { picks.music[slot] = id; changed(); }
+
+function refresh() {
+  for (const b of document.querySelectorAll(".cand")) {
+    const cur = picks.effects[b.dataset.ev];
+    b.setAttribute("aria-pressed", String(cur !== undefined && (cur === null ? b.dataset.id === "" : cur === b.dataset.id)));
+  }
+  for (const ev of effects) {
+    const p = document.getElementById("pick-" + ev.id);
+    if (!p) continue;
+    const cur = picks.effects[ev.id];
+    const it = ev.items.find(i => i.id === cur);
+    p.textContent = cur === undefined ? "" : (cur === null ? "None" : it ? it.name : "");
+    p.className = "pick" + (cur === null ? " none" : "");
+  }
+  for (const s of document.querySelectorAll(".slot")) s.setAttribute("aria-pressed", String(picks.music[s.dataset.slot] === s.dataset.id));
+  for (const t of document.querySelectorAll(".track")) t.classList.toggle("assigned", Object.values(picks.music).includes(t.dataset.id));
+  const done = effects.filter(e => picks.effects[e.id] !== undefined).length + SLOTS.filter(([k]) => picks.music[k] !== undefined).length;
+  const total = effects.length + (musicEv ? SLOTS.length : 0);
+  document.getElementById("count").innerHTML = "";
+  document.getElementById("count").append(el("b", { text: String(done) }), " of " + total + " picked");
+  document.getElementById("picks").textContent = summaryText();
+}
+
+function summaryText() {
+  const lines = ["Sound picks"];
+  for (const ev of effects) {
+    const cur = picks.effects[ev.id];
+    lines.push(ev.id + " = " + (cur === undefined ? "(not picked)" : cur === null ? "none" : cur));
+  }
+  if (musicEv) for (const [k, label] of SLOTS) {
+    const cur = picks.music[k];
+    lines.push("music " + k + " = " + (cur === undefined ? "(not picked)" : cur === null ? "none" : cur));
+  }
+  return lines.join("\n");
+}
+
+function changed() {
+  refresh();
+  store("regicide-sound-picks", picks);
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveDb, 700);
+}
+
+async function saveDb() {
+  const saved = document.getElementById("saved");
+  if (!db) { saved.textContent = "Kept in this browser."; return; }
+  try {
+    const clean = { effects: {}, music: {} };
+    for (const [k, v] of Object.entries(picks.effects)) if (v !== undefined) clean.effects[k] = v;
+    for (const [k, v] of Object.entries(picks.music)) if (v !== undefined) clean.music[k] = v;
+    clean.updated = new Date().toISOString();
+    await db.doc("picks/current").set(clean);
+    saved.textContent = "Saved.";
+  } catch (e) {
+    saved.textContent = "Kept in this browser (could not save to the page).";
+  }
+}
+
+function hearTurn() {
+  // a tap unlocks each sound first, so the timed ones may play afterwards
+  const steps = TURN.map(([ev, gap]) => {
+    const e = effects.find(x => x.id === ev);
+    const id = picks.effects[ev];
+    const it = e && (id === undefined ? e.items[0] : e.items.find(i => i.id === id));
+    return [it ? it.src : null, gap];
+  });
+  for (const [src] of steps) if (src) { const a = audioFor(src); a.muted = true; const p = a.play(); if (p && p.then) p.then(() => { a.pause(); a.currentTime = 0; a.muted = false; }).catch(() => { a.muted = false; }); else a.muted = false; }
+  let t = 120;
+  for (const [src, gap] of steps) { t += gap; if (src) setTimeout(() => playSrc(src), t); }
+}
+
+document.getElementById("vol").addEventListener("input", e => {
+  volume = Number(e.target.value);
+  for (const a of audioCache.values()) a.volume = volume;
+});
+document.getElementById("turn").addEventListener("click", hearTurn);
+document.getElementById("copy").addEventListener("click", async () => {
+  const text = summaryText();
+  const saved = document.getElementById("saved");
+  try { await navigator.clipboard.writeText(text); saved.textContent = "Copied. Paste it in our chat."; }
+  catch (e) {
+    const r = document.createRange(); r.selectNodeContents(document.getElementById("picks"));
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    saved.textContent = "Selected: copy it from the box above.";
+  }
+});
+
+const local = recall("regicide-sound-picks");
+if (local && local.effects) picks = { effects: local.effects || {}, music: Object.assign(picks.music, local.music || {}) };
+render();
+
+(async () => {
+  try {
+    db = window.claude && window.claude.use ? await window.claude.use("db") : null;
+    if (!db) return;
+    const snap = await db.doc("picks/current").get();
+    if (snap.exists) {
+      const d = snap.data() || {};
+      picks.effects = Object.assign({}, picks.effects, d.effects || {});
+      picks.music = Object.assign({}, picks.music, d.music || {});
+      refresh();
+      document.getElementById("saved").textContent = "Your saved picks are loaded.";
+    }
+  } catch (e) { db = null; }
+})();
+</script>
