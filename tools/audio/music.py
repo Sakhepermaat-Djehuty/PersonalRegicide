@@ -115,3 +115,26 @@ class Song:
             return mix
 
         return A.render_loop(full, total)
+
+
+# ----------------------------------------------------------------------------- loops for the phone
+def aac_unit(unit_s: float, units: int) -> float:
+    """``unit_s`` (a beat, a bar) nudged by a hundredth of a percent at most so a loop of
+    ``units`` of them is a whole number of AAC frames (1024 samples): the phone's .m4a then
+    carries no padding, which would be a short gap at every repeat."""
+    k = int(round(units * unit_s * A.SR / 1024.0))
+    return k * 1024.0 / (units * A.SR)
+
+
+def aac_friendly_start(x: np.ndarray, window: float = 0.1) -> np.ndarray:
+    """Rotate a finished loop so its file starts at a quiet zero crossing up to ``window``
+    seconds before the downbeat. An AAC encoder hears a file's first sample as a step up
+    from silence and leaves a faint tick there, which a looping player replays every time
+    round. The loop's content and length are unchanged; it only starts a little earlier."""
+    n = len(x)
+    w = A.n_of(window)
+    idx = np.arange(n - w, n)
+    xs = x if x.ndim == 2 else x[:, None]
+    cost = np.abs(xs[idx]).max(axis=1) + 2 * np.abs(xs[(idx + 1) % n] - xs[idx]).max(axis=1)
+    return np.roll(x, -int(idx[np.argmin(cost)]), axis=0)
+

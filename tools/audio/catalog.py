@@ -65,9 +65,9 @@ EVENTS: List[Event] = [
     Event("victory", "Jingles", "Victory", "You win a game or a mission.", -17, 6.0, 0.5, "jingle"),
     Event("loss", "Jingles", "Loss", "You lose a game or a mission attempt.", -19, 6.0, 0.5, "jingle"),
     Event("mission_start", "Jingles", "Mission start", "A new mission or attempt begins.", -19, 5.0, 0.5, "jingle"),
-    # music: any track can be picked for the menus, the table or the final enemies
-    Event("music", "Music", "Music", "A looping track; pick one for the menus, one for the table and one for the "
-                                        "Kings (or none).", -21, 150.0, 20.0, "music"),
+    # music: any track can be picked for the menus or for each stage of the castle
+    Event("music", "Music", "Music", "A looping track; pick one for the menus and one for each stage of the castle: "
+                                        "the Jacks, the Queens and the Kings (or none).", -21, 150.0, 20.0, "music"),
 ]
 
 EVENT_BY_ID: Dict[str, Event] = {e.id: e for e in EVENTS}
@@ -80,7 +80,7 @@ class Candidate:
     name: str                        # what the picker page shows ("Paper flick")
     note: str                        # one line: what it sounds like
     render: Callable[[], np.ndarray] = field(repr=False)
-    tags: List[str] = field(default_factory=list)     # e.g. ["warm", "wooden"]; music: ["menu", "table", "boss"]
+    tags: List[str] = field(default_factory=list)     # e.g. ["warm", "wooden"]; music: ["menu", "jack", "queen", "king"]
     loop_seconds: Optional[float] = None              # music: the loop's exact length (render_loop's)
     bpm: Optional[float] = None                       # music, optional
 
