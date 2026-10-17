@@ -77,6 +77,15 @@ Jester's while suffering. The cards played against the enemy sit under the hand,
 the buttons (Settings: "Played cards under the hand" puts them back above it). On a short
 screen they share a row with the mission zone.
 
+## Sound
+
+Sound effects for the table (card taps, plays, the class powers, hits, defeats, the
+Jester...), jingles (mission start, victory, loss) and looping music for the menus, the
+table and the castle's last four enemies. Every sound is original, made with
+tools/audio (see tools/audio/build.py); the chosen files live in app/sounds/. Settings,
+"Sound": sound effects, music, and "Play sound when the phone is on silent" (on by
+default; off honours the ring/silent switch).
+
 ## What the client offers
 
 Solo and pass-and-play Regicide with full rules enforcement, play forecasts, suggested

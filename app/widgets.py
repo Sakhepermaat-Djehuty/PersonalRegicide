@@ -16,11 +16,26 @@ from regicide.engine import Game
 from . import theme as T
 
 
+TAP_SOUND: Optional[Callable[[], None]] = None   # set by the app: the button sound
+
+
+def with_tap_sound(action: Optional[Callable]) -> Optional[Callable]:
+    """``action`` preceded by the button sound (when the app has one)."""
+    if action is None:
+        return None
+
+    def run(sender):
+        if TAP_SOUND is not None:
+            TAP_SOUND()
+        return action(sender)
+    return run
+
+
 def make_button(title: str, action: Callable, frame=(0, 0, 100, 44), primary: bool = True,
                 font_size: int = 16) -> ui.Button:
     b = ui.Button(frame=frame)
     b.title = title
-    b.action = action
+    b.action = with_tap_sound(action)
     b.font = (T.FONT_BOLD, font_size)
     b.background_color = T.BTN if primary else T.PANEL_2
     b.tint_color = T.BTN_TEXT
@@ -976,6 +991,7 @@ class HandGrid(ui.View):
         self.views: Dict[str, CardView] = {}
         self.selected: List[str] = []
         self.on_change: Optional[Callable[[], None]] = None
+        self.on_card_tap: Optional[Callable[[bool], None]] = None   # a tap selected (True) or dropped a card
         self.selectable: Callable[[Card], bool] = lambda c: True
         self.warned: set = set()      # selected cards whose class power the enemy blocks (red edge)
         self.badges: Dict[str, str] = {}
@@ -1054,6 +1070,8 @@ class HandGrid(ui.View):
         self._number()
         self.layout()
         v.set_needs_display()
+        if self.on_card_tap:
+            self.on_card_tap(v.selected)
         if self.on_change:
             self.on_change()
 

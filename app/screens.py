@@ -183,6 +183,10 @@ class Screen(ui.View):
     def on_show(self) -> None:
         pass
 
+    def music_slot(self) -> Optional[str]:
+        """The music this screen plays ("menu", "table", "boss" or None)."""
+        return "menu"
+
     def layout(self) -> None:
         pass
 
@@ -207,6 +211,10 @@ class App(ui.View):
         self.name = "PersonalRegicide"
         self.settings = store.load_settings()
         apply_face_style(self.settings)
+        from . import widgets
+        from .audio import Audio
+        self.audio = Audio(self.settings, delay=ui.delay)
+        widgets.TAP_SOUND = lambda: self.audio.effect("button")
         self.game: Optional[Game] = None
         self.undo_stack: List[dict] = []
         self.current: Optional[Screen] = None
@@ -228,6 +236,7 @@ class App(ui.View):
         self.add_subview(screen)
         screen.layout()
         screen.on_show()
+        self.audio.music(screen.music_slot())
 
     def layout(self) -> None:
         cur = getattr(self, "current", None)
@@ -247,6 +256,7 @@ class App(ui.View):
         self.undo_stack = []
         self.autosave()
         self.show(GameScreen(self))
+        self.audio.effect("mission_start")
 
     def resume_game(self) -> bool:
         g = store.load_game()
@@ -296,6 +306,7 @@ class App(ui.View):
         screen = GameScreen(self)
         screen.rules_pending = self.rules_card_due()
         self.show(screen)
+        self.audio.effect("mission_start")
 
     def rules_card_due(self) -> bool:
         """The rules card pops up the first time a mission loads, until it is dismissed
@@ -315,6 +326,7 @@ class App(ui.View):
         self.save_campaign()
         self.autosave()
         self.show(GameScreen(self))
+        self.audio.effect("mission_start")
 
     def resume_attempt(self) -> bool:
         if self.campaign is None:
@@ -386,7 +398,9 @@ class App(ui.View):
         store.save_settings(self.settings)
 
     def will_close(self) -> None:
+        """Quit: the game is saved and the music stops with the app."""
         self.autosave()
+        self.audio.stop_music()
 
 
 # ============================================================================ menu
@@ -692,6 +706,7 @@ class GameScreen(Screen):
         self.zone.hidden = True
         self.hand = HandGrid()
         self.hand.on_change = self._selection_changed
+        self.hand.on_card_tap = lambda picked: self.app.audio.effect("card_select" if picked else "card_deselect")
         self.left_btn = make_button("Yield", self._left, (0, 0, 10, 10), False)
         self.mid_btn = make_button("Jester", self._mid, (0, 0, 10, 10), False)
         self.right_btn = make_button("Play", self._right, (0, 0, 10, 10), True)
@@ -760,9 +775,20 @@ class GameScreen(Screen):
         self.refresh(after_action=False)
 
     # ------------------------------------------------------------------ refresh
+    def music_slot(self) -> Optional[str]:
+        """The table's music; the last four enemies of the castle (the Kings, in the base
+        game) have their own; none once the game is over (its jingle plays alone)."""
+        g = self.game
+        if g is None or g.is_over:
+            return None
+        if g.enemy is not None and len(g.castle) <= 3:
+            return "boss"
+        return "table"
+
     def refresh(self, after_action: bool = True) -> None:
         self.return_overlay = None
         g = self.game = self.app.game  # type: ignore[assignment]
+        self.app.audio.music(self.music_slot())
         # (mission 10's face-up enemy deck shows its next enemy in the enemy panel)
         self.status.text = status_text(g, self.status.width)
         self._refresh_piles()
@@ -1216,8 +1242,10 @@ class GameScreen(Screen):
             fn()
         except IllegalAction as e:
             self.app.undo_stack.pop()
+            self.app.audio.effect("error")
             self.show_toast(str(e))
             return
+        self.app.audio.game_events(g.last_events)
         if g.is_over:
             if self.app.in_campaign:
                 self.campaign_result = self.app.finish_attempt()
@@ -2935,6 +2963,9 @@ def show_card_popup(screen: ui.View, popup: CardPopup) -> CardPopup:
     """Lay ``popup`` over the whole of ``screen``'s app: on the root view, above the screen,
     where the screen rebuilding itself cannot take it away. ``App.show`` closes it."""
     host = screen.superview if screen.superview is not None else screen
+    app = getattr(screen, "app", None)
+    if app is not None and hasattr(app, "audio"):
+        app.audio.effect("popup")
     popup.frame = (0, 0, host.width, host.height)
     popup.layout()                  # built before it is added: a failure leaves nothing on screen
     host.add_subview(popup)
@@ -3654,6 +3685,7 @@ class MercenaryScreen(Screen):
             import console
             console.hud_alert(str(e), "error")
             return
+        self.app.audio.effect("coin")
         try:
             self.app.save_campaign()
         finally:
@@ -4302,43 +4334,67 @@ class HistoryScreen(TextScreen):
 
 
 class SettingsScreen(Screen):
+    ROWS = [
+        ("show_hints", "Hint button in multiplayer games", False),
+        ("jester_may_choose_self", "Jester's player may choose themselves", False),
+        ("open_hands", "Open hands by default (pass and play)", False),
+        ("rules_card", "Show a mission's rules card when it first loads", True),
+        ("classic_faces", "Classic card faces: a 7 shows seven symbols, like a playing card", False),
+    ]
+    SOUND_ROWS = [
+        ("sound_effects", "Sound effects", True),
+        ("music", "Music", True),
+        ("sound_in_silent_mode", "Play sound when the phone is on silent", True),
+    ]
+
     def layout(self) -> None:
         if not hasattr(self, "app"):
             return
+        old = [v for v in self.subviews if isinstance(v, ui.ScrollView)]
+        keep_y = float(old[0].content_offset[1]) if old else 0.0
         for v in list(self.subviews):
             self.remove_subview(v)
-        w = self.width
+        w, h = self.width, self.height
         m = T.MARGIN
         y = T.TOP_INSET
         self.add_subview(make_button("‹ Back", lambda s: self.app.show(MenuScreen(self.app)), (m, y, 80, 36), False, 14))
         self.add_subview(make_label("Settings", (96, y, w - 110, 36), 18, True, T.TEXT, ui.ALIGN_LEFT))
         y += 56
-        rows = [
-            ("show_hints", "Hint button in multiplayer games", False),
-            ("jester_may_choose_self", "Jester's player may choose themselves", False),
-            ("open_hands", "Open hands by default (pass and play)", False),
-            ("rules_card", "Show a mission's rules card when it first loads", True),
-            ("classic_faces", "Classic card faces: a 7 shows seven symbols, like a playing card", False),
-        ]
-        for key, label, default in rows:
-            self.add_subview(make_label(label, (m, y, w - 2 * m - 60, 44), 15, False, T.TEXT, lines=2))
-            sw = ui.Switch(frame=(w - m - 51, y + 6, 51, 31))
+        # the rows scroll on a short phone
+        sv = ui.ScrollView(frame=(0, y, w, h - y - T.BOTTOM_INSET))
+        yy = 0.0
+        step = 56 if h >= 640 else 48      # a short phone: closer rows
+
+        def switch_row(key: str, label: str, default: bool, yy: float) -> float:
+            sv.add_subview(make_label(label, (m, yy, w - 2 * m - 60, 44), 15, False, T.TEXT, lines=2))
+            sw = ui.Switch(frame=(w - m - 51, yy + 6, 51, 31))
             sw.value = bool(self.app.settings.get(key, default))
             sw.action = (lambda k: lambda s: self._toggle(k, s.value))(key)
-            self.add_subview(sw)
-            y += 56 if self.height >= 640 else 48      # a short phone: closer rows
+            sv.add_subview(sw)
+            return yy + step
+
+        for key, label, default in self.ROWS:
+            yy = switch_row(key, label, default, yy)
         # the card backs: a tap on the button tries the next style; the card beside it shows it
         from . import backs
         from .widgets import BackSample
         style = str(self.app.settings.get("card_back", "lattice"))
         style = style if style in backs.STYLES else "lattice"
-        self.add_subview(make_label("Card backs", (m, y + 18, w - 2 * m - 170, 30), 15, False, T.TEXT))
-        btn = make_button(backs.NAMES[style] + " ›", self._next_back, (w - m - 160, y + 14, 110, 36), False, 14)
-        self.add_subview(btn)
-        self.add_subview(BackSample(frame=(w - m - 42, y, 42, 64)))
-        y += 74
-        y += 10
-        self.add_subview(make_label("Saves live in %s" % store.save_dir(), (m, y, w - 2 * m, 60), 12, False, T.MUTED, lines=3))
+        sv.add_subview(make_label("Card backs", (m, yy + 18, w - 2 * m - 170, 30), 15, False, T.TEXT))
+        btn = make_button(backs.NAMES[style] + " ›", self._next_back, (w - m - 160, yy + 14, 110, 36), False, 14)
+        sv.add_subview(btn)
+        sv.add_subview(BackSample(frame=(w - m - 42, yy, 42, 64)))
+        yy += 74
+        sv.add_subview(make_label("Sound", (m, yy, w - 2 * m, 24), 13, True, T.ACCENT))
+        yy += 28
+        for key, label, default in self.SOUND_ROWS:
+            yy = switch_row(key, label, default, yy)
+        yy += 10
+        sv.add_subview(make_label("Saves live in %s" % store.save_dir(), (m, yy, w - 2 * m, 60), 12, False, T.MUTED, lines=3))
+        yy += 64
+        sv.content_size = (w, yy)
+        sv.content_offset = (0, max(0.0, min(keep_y, yy - sv.height)))
+        self.add_subview(sv)
 
     def _next_back(self, sender) -> None:
         from . import backs
@@ -4354,6 +4410,9 @@ class SettingsScreen(Screen):
         self.app.settings[key] = value
         self.app.save_settings()
         apply_face_style(self.app.settings)
+        if key in ("sound_effects", "music", "sound_in_silent_mode"):
+            self.app.audio.apply_settings()
+            self.app.audio.music(self.music_slot())     # music back on: the menus' track
 
 
 RULES_TEXT = """Defeat all 12 enemies: four Jacks (20 health, 10 attack), then four Queens (30/15), then four Kings (40/20).

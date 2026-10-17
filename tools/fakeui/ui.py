@@ -676,10 +676,12 @@ def delay(fn: Callable, seconds: float) -> None:
 
 
 def run_delays() -> int:
-    """Test helper: run every pending ``ui.delay`` callback now."""
+    """Test helper: run every pending ``ui.delay`` callback now, the shortest delay first
+    (as they would fire; equal delays in the order they were asked for)."""
     n = 0
     while _delayed:
-        _, fn = _delayed.pop(0)
+        i = min(range(len(_delayed)), key=lambda k: _delayed[k][0])
+        _, fn = _delayed.pop(i)
         fn()
         n += 1
     return n

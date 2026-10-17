@@ -15,10 +15,12 @@ import sys
 
 
 def install() -> None:
-    """Register this package's modules as ``ui``, ``console`` and ``dialogs``."""
+    """Register this package's modules as ``ui``, ``console``, ``dialogs`` and ``sound``."""
     from . import ui as fake_ui
     from . import console as fake_console
     from . import dialogs as fake_dialogs
+    from . import sound as fake_sound
     sys.modules.setdefault("ui", fake_ui)
     sys.modules.setdefault("console", fake_console)
     sys.modules.setdefault("dialogs", fake_dialogs)
+    sys.modules.setdefault("sound", fake_sound)
