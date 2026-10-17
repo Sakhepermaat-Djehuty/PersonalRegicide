@@ -621,25 +621,25 @@ def _double_surge() -> np.ndarray:
     t = _t(rise)
     f = A.glide(N("D3"), N("D4"), rise)
     saw = A.osc("saw", f * 0.994, rise) + A.osc("saw", f * 1.006, rise, 1.1)
-    r = _svf(saw, 250 * (3200 / 250) ** (t / rise), 1.6, "lp")
+    r = _svf(saw, 250 * (2800 / 250) ** (t / rise), 1.6, "lp")
     trate = 8 + 18 * (t / rise)
     trem = 1 - 0.3 * (0.5 + 0.5 * np.sin(TAU * np.cumsum(trate) / SR))
-    nz = _svf(A.noise(rise, "white", 301), 600 * (4500 / 600) ** (t / rise), 2.5, "bp")
+    nz = _bp2(A.noise(rise, "pink", 301), 500 * (3000 / 500) ** (t / rise), 1.4)
     amp = (0.35 + 0.65 * (t / rise) ** 1.5) * np.minimum(1.0, (rise - t) / 0.012)
-    riser = (0.5 * _norm(r) + 0.25 * _norm(nz)) * amp * trem
+    riser = A.lowpass(0.55 * _norm(r) + 0.15 * _norm(nz), 5000, 2) * amp * trem
     x = A.mix_at(x, riser, 0.0, 0.8)
-    x = A.mix_at(x, _thump(140, 90, 0.03, 0.1, 0.3, 1.5), 0.0, 0.3)
+    x = A.mix_at(x, _thump(180, 120, 0.03, 0.1, 0.3, 1.5), 0.0, 0.25)
     hits = ((rise, ("D4", "A4", "D5"), 0.8), (rise + 0.1, ("D5", "A5", "D6"), 1.0))
     for k, (at, notes, g) in enumerate(hits):
-        x = A.mix_at(x, _thump(160, 75, 0.04, 0.25, 0.7, 2.2), at, 0.7 * g)
+        x = A.mix_at(x, _thump(220, 110, 0.04, 0.22, 0.7, 2.2), at, 0.4 * g)
         for nm in notes:
             x = A.mix_at(x, A.bell(N(nm), 0.9, ratio=2.0, index=1.5, t60=0.75), at, 0.22 * g)
-        x = A.mix_at(x, _burst(0.02, 1500, 6000, 0.008, 310 + k), at, 0.35 * g)
+        x = A.mix_at(x, _burst(0.02, 1500, 5500, 0.008, 310 + k), at, 0.3 * g)
     sp = _sparkle(0.6, 9, 0.0, 0.5, 333)
-    x = A.mix_at(x, sp, rise + 0.12, 0.12)
+    x = A.mix_at(x, sp, rise + 0.12, 0.1)
     x = _verb(x, 0.5, 0.2)
     x = _glue(x, 15)
-    return _finish(x, d, 0.35, lp=7500)
+    return _finish(x, d, 0.35, lp=7000)
 
 
 SPARK = [N(n) for n in ("D7", "E7", "F#7", "A7")]
