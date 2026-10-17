@@ -1136,7 +1136,7 @@ class GameScreen(Screen):
         elif g.n_players == 1 or g.phase == PHASE_SUFFER:
             self._act(g.use_solo_jester)
         else:
-            act = greedy_policy(g)
+            act = greedy_policy(g.stand_in_copy())      # advice from what this player can know
             if act["type"] == "play":
                 self.hand.set_selection(act["cards"])
                 self.show_toast("Hint: " + " + ".join(g.card(c).label() for c in act["cards"]))
@@ -3732,15 +3732,15 @@ def describe_preview(g: Game, pv: dict) -> str:
         elif ev.get("immune"):
             parts.append("%s immune" % sym)
         elif suit == "H":
-            parts.append("%s heal %d" % (sym, ev.get("healed", 0)))
+            parts.append("%s heal %s" % (sym, "?" if ev.get("uncertain") else ev.get("healed", 0)))
         elif suit == "D":
-            parts.append("%s draw %d" % (sym, len(ev.get("drawn", []))))
+            parts.append("%s draw %s" % (sym, "?" if ev.get("uncertain") else len(ev.get("drawn", []))))
         elif suit == "C":
             parts.append("%s double" % sym)
         elif suit == "S":
-            parts.append("%s shield +%d" % (sym, ev.get("shield", 0)))
+            parts.append("%s shield +%s" % (sym, "?" if ev.get("uncertain") else ev.get("shield", 0)))
         elif suit == "R":
-            parts.append("%s +%d then double" % (sym, ev.get("added", 0)))
+            parts.append("%s +%s then double" % (sym, "?" if ev.get("uncertain") else ev.get("added", 0)))
         elif suit == "G":
             parts.append("%s no damage this turn" % sym)
         elif suit == "U":

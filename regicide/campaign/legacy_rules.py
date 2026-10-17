@@ -93,7 +93,11 @@ class LegacyRules(BaseRules):
                 and game.forecast_viewer is not None and player != game.forecast_viewer)
 
     def unlocked_hand(self, game, player: int) -> List[str]:
-        """The ids a player may give away from hand (not the locked ones, p. mission 7)."""
+        """The ids a player may give away from hand (not the locked ones, p. mission 7). In
+        a forecast's copy a hidden hand's stand-ins all count: which of the player's real
+        cards are locked is not for the forecast's player to know."""
+        if self.hidden_hand(game, player):
+            return list(game.players[player].hand)
         return [cid for cid in game.players[player].hand if not self.hand_locked(game, game.cards[cid])]
 
     def extra_card_ids(self, game) -> List[str]:
