@@ -10,11 +10,13 @@ default); "sound_in_silent_mode" (on by default) plays even when the phone's rin
 switch is on silent, which Pythonista otherwise honours.
 
 What one game action does can make several sounds (a play, its power, the damage, the next
-enemy...): ``game_events`` spaces them out in the order they happen.
+enemy...): ``game_events`` spaces them out in the order they happen, waiting a little longer
+after a long sound so the next one does not land on its heels (``spaced``).
 """
 from __future__ import annotations
 
 import os
+import wave
 from typing import Callable, Dict, List, Optional, Sequence
 
 SOUNDS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sounds")
@@ -90,12 +92,29 @@ def sounds_for(events: Sequence[dict]) -> List[tuple]:
     return out
 
 
+def spaced(steps: Sequence[tuple], length: Callable[[str], float], share: float = 0.6,
+           most: float = 0.5) -> List[tuple]:
+    """``steps`` ((delay, sound) from ``sounds_for``) moved later where a sound would start
+    while the one before it is still in its first ``share`` of its length (its point), by
+    ``most`` seconds at most, so a turn never drags. Order is kept."""
+    out: List[tuple] = []
+    for delay, name in steps:
+        start = delay
+        if out:
+            prev_start, prev = out[-1]
+            point = prev_start + share * length(prev)
+            start = max(prev_start, delay, min(point, delay + most))
+        out.append((round(start, 3), name))
+    return out
+
+
 class Audio:
     def __init__(self, settings: dict, delay: Optional[Callable[[Callable[[], None], float], None]] = None) -> None:
         self.settings = settings
         self.delay = delay
         self.player = None
         self.slot: Optional[str] = None
+        self._lengths: Dict[str, float] = {}
         try:
             import sound  # Pythonista (or the tests' stand-in)
             self.sound = sound
@@ -140,8 +159,18 @@ class Audio:
         except Exception:
             pass
 
+    def length(self, event: str) -> float:
+        """How long the chosen sound for ``event`` lasts (0 when there is none)."""
+        if event not in self._lengths:
+            try:
+                with wave.open(self.effect_path(event), "rb") as w:
+                    self._lengths[event] = w.getnframes() / float(w.getframerate() or 1)
+            except Exception:
+                self._lengths[event] = 0.0
+        return self._lengths[event]
+
     def game_events(self, events: Sequence[dict]) -> None:
-        for delay, name in sounds_for(events):
+        for delay, name in spaced(sounds_for(events), self.length):
             self.effect(name, delay)
 
     # ------------------------------------------------------------------ music

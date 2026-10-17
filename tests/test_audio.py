@@ -93,6 +93,19 @@ def test_the_powers_and_the_other_moves_have_their_own_sounds():
     assert s({"t": "decide"}, {"t": "turn"}) == []
 
 
+def test_a_long_sound_delays_the_next_a_little_never_much_and_order_is_kept():
+    steps = [(0.0, "play"), (0.18, "power_double"), (0.42, "hit"), (0.55, "draw"), (1.15, "suffer")]
+    short = {"play": 0.1, "power_double": 0.2, "hit": 0.2, "draw": 0.2, "suffer": 0.3}
+    assert AU.spaced(steps, short.get) == steps                     # short sounds: as timed
+    long_power = dict(short, power_double=1.2)                      # its point at 0.18 + 0.72 = 0.9
+    out = AU.spaced(steps, long_power.get)
+    assert [n for _, n in out] == [n for _, n in steps]
+    assert out[2] == (0.9, "hit")                                   # the double's point, within +0.5 s
+    assert out[3] == (1.02, "draw")                                 # then after the (moved) hit's point
+    assert AU.spaced(steps, dict(short, power_double=5.0).get)[2] == (0.92, "hit")   # at most +0.5
+    assert all(b[0] >= a[0] for a, b in zip(out, out[1:]))
+
+
 def test_the_last_blow_then_the_jingle_and_nothing_of_a_next_turn():
     won = AU.sounds_for([{"t": "play"}, {"t": "damage"}, {"t": "defeat", "exact": False}, {"t": "reveal"},
                          {"t": "won"}])
