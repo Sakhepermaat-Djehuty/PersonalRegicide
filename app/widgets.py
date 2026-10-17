@@ -695,6 +695,114 @@ class PlayingCardFace(ui.View):
                                   size * 1.3), (T.FONT_BOLD, size), color, ui.ALIGN_CENTER)
 
 
+class InfoCardFace(ui.View):
+    """An info pop-up's card, landscape: the descriptor of one game phase (portrait stays for
+    the playable cards). Top left the strength that matters (``number``), the class icon
+    right of it (``icon``: a class letter, ``TREE_PIP`` or any short text), the title right of
+    that; a rule in the card's colour; a brief breakdown (``lines``); and, for a damage card,
+    a big number in the middle (``middle``, with ``middle_caption`` under it). When the
+    enemy is immune (``immune``) the card is greyed a little and IMMUNITY is stamped across
+    it: bold, red and diagonal."""
+
+    RATIO = 0.64          # height / width: a playing card turned on its side
+
+    def __init__(self, title: str, number: str = "", icon: str = "", lines: Sequence[str] = (),
+                 middle: str = "", middle_caption: str = "", immune: bool = False, edge: str = "",
+                 **kw) -> None:
+        super().__init__(**kw)
+        self.title = title
+        self.number = str(number)
+        self.icon = icon
+        self.lines = [str(x) for x in lines]
+        self.middle = str(middle)
+        self.middle_caption = middle_caption
+        self.immune = immune
+        self.edge = edge or T.SUIT_COLOR.get(icon, T.CARD_BORDER)
+        self.background_color = None
+
+    # taps on the card stop here (see PlayingCardFace)
+    def touch_began(self, touch) -> None:
+        pass
+
+    def touch_ended(self, touch) -> None:
+        pass
+
+    def draw(self) -> None:
+        w, h = float(self.width), float(self.height)
+        r = 16.0
+        ui.set_color(T.CARD_FACE_DIM if self.immune else T.CARD_FACE)
+        ui.Path.rounded_rect(1, 1, w - 2, h - 2, r).fill()
+        edge = ui.Path.rounded_rect(3, 3, w - 6, h - 6, r - 2)
+        edge.line_width = 3
+        ui.set_color(self.edge)
+        edge.stroke()
+        ink = T.CARD_INK_MUTED if self.immune else T.CARD_INK
+        pad = 16.0
+        top = 12.0
+        # the strength, the class icon, the title, side by side
+        x = pad
+        row = 40.0
+        if self.number:
+            nw = text_size(self.number, 0, 34, True)[0]
+            ui.draw_string(self.number, (x, top - 2, nw + 4, row + 4), (T.FONT_BOLD, 34), self.edge, ui.ALIGN_LEFT)
+            x += nw + 10
+        if self.icon:
+            size = 28.0
+            draw_symbol(self.icon, x + size * 0.6, top + row * 0.55, size, self.edge)
+            x += size * 1.3 + 6
+        tsize = 22
+        while tsize > 14 and text_size(self.title, 0, tsize, True)[0] > w - x - pad:
+            tsize -= 1
+        ui.draw_string(self.title, (x, top + (row - tsize * 1.25) / 2 + 1, w - x - pad, tsize * 1.3),
+                       (T.FONT_BOLD, tsize), ink, ui.ALIGN_LEFT)
+        y = top + row + 6
+        rule = ui.Path.rect(pad, y, w - 2 * pad, 1.5)
+        ui.set_color(self.edge)
+        rule.fill()
+        y += 10
+        body = "\n".join(self.lines)
+        if self.middle:
+            msize = 60
+            mh = msize * 1.15
+            cap = 13 if self.middle_caption else 0
+            free = h - y - pad
+            text_h = text_size(body, w - 2 * pad, 14)[1] if body else 0.0
+            my = y + max(0.0, (free - text_h - mh - cap * 1.3) / 2)
+            ui.draw_string(self.middle, (pad, my, w - 2 * pad, mh), (T.FONT_BOLD, msize), ink, ui.ALIGN_CENTER)
+            if cap:
+                ui.draw_string(self.middle_caption, (pad, my + mh - 4, w - 2 * pad, cap * 1.3), (T.FONT, cap),
+                               T.CARD_INK_MUTED, ui.ALIGN_CENTER)
+            if body:
+                ui.draw_string(body, (pad, h - pad - text_h, w - 2 * pad, text_h + 2), (T.FONT, 14), ink,
+                               ui.ALIGN_CENTER)
+        elif body:
+            ui.draw_string(body, (pad, y, w - 2 * pad, h - y - pad), (T.FONT, 15), ink, ui.ALIGN_LEFT)
+        if self.immune:
+            self.draw_stamp(w, h)
+
+    @staticmethod
+    def draw_stamp(w: float, h: float) -> None:
+        """IMMUNITY across the card: bold red capitals in a red frame, turned up to the right."""
+        red = "#c8261f"
+        size = max(26.0, min(48.0, w / 7.5))
+        tw = text_size("IMMUNITY", 0, size, True)[0] + size * 1.0
+        th = size * 1.75
+        with ui.GState():
+            # turned about its own centre, then moved to the card's (concat: the first applies first)
+            ui.concat_ctm(ui.Transform.rotation(-0.32).concat(ui.Transform.translation(w / 2.0, h / 2.0 + 10)))
+            for inset, width in ((0.0, 4.0), (7.0, 1.5)):          # a stamp's double frame
+                x0, y0, x1, y1 = -tw / 2 + inset, -th / 2 + inset, tw / 2 - inset, th / 2 - inset
+                box = ui.Path()
+                box.move_to(x0, y0)
+                for px, py in ((x1, y0), (x1, y1), (x0, y1), (x0, y0)):
+                    box.line_to(px, py)
+                box.line_width = width
+                ui.set_color(red)
+                box.stroke()
+            ui.draw_string("IMMUNITY", (-tw / 2, -size * 0.66, tw, size * 1.3), (T.FONT_BOLD, size), red,
+                           ui.ALIGN_CENTER)
+
+
 class TableHeader(ui.View):
     """The enemy at the top of the table: its card large in the middle (drawn as a royal:
     letter, the classes it is immune to, a corrupted sleeve), the attack it will deal on
