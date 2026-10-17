@@ -24,7 +24,7 @@ import math
 import os
 import subprocess
 import wave
-from typing import Callable, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Callable, List, Sequence, Tuple, Union
 
 import numpy as np
 from scipy import signal
