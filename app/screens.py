@@ -4265,8 +4265,11 @@ def describe_preview(g: Game, pv: dict) -> str:
         prefix = "Wild Animal: you declare its class (a warrior here). "
     elif pv.get("decision_kind") == "declare_value":
         prefix = "2/5: you declare 2 or 5 (5 here). "
-    peeks = pv.get("mage_peeks") or []
-    if peeks:
+    peeks = pv.get("mage_peeks", [])
+    if peeks is None:
+        # the copies disagree: a face-down card decides whether the mage is blocked
+        prefix += "The mage may reveal cards from the reserve. If nothing is added: "
+    elif peeks:
         n = int(peeks[0])
         if n:
             prefix += "The mage reveals %d card%s from the reserve. If nothing is added: " % (n, "" if n == 1 else "s")
