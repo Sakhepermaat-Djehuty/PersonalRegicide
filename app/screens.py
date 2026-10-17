@@ -184,7 +184,7 @@ class Screen(ui.View):
         pass
 
     def music_slot(self) -> Optional[str]:
-        """The music this screen plays ("menu", "table", "boss" or None)."""
+        """The music this screen plays ("menu", "jack", "queen", "king" or None)."""
         return "menu"
 
     def layout(self) -> None:
@@ -776,14 +776,16 @@ class GameScreen(Screen):
 
     # ------------------------------------------------------------------ refresh
     def music_slot(self) -> Optional[str]:
-        """The table's music; the last four enemies of the castle (the Kings, in the base
-        game) have their own; none once the game is over (its jingle plays alone)."""
+        """The table's music follows the castle's stage: the Jacks', the Queens' or the
+        Kings' (``audio.stage`` of the enemy in play); none once the game is over (its
+        jingle plays alone)."""
+        from .audio import stage
         g = self.game
         if g is None or g.is_over:
             return None
-        if g.enemy is not None and len(g.castle) <= 3:
-            return "boss"
-        return "table"
+        if g.enemy is None:
+            return self.app.audio.slot or "jack"
+        return stage(g.card(g.enemy.card_id).rank, g.enemy.attack)
 
     def refresh(self, after_action: bool = True) -> None:
         self.return_overlay = None

@@ -80,9 +80,12 @@ screen they share a row with the mission zone.
 ## Sound
 
 Sound effects for the table (card taps, plays, the class powers, hits, defeats, the
-Jester...), jingles (mission start, victory, loss) and looping music for the menus, the
-table and the castle's last four enemies. Every sound is original, made with
-tools/audio (see tools/audio/build.py); the chosen files live in app/sounds/. Settings,
+Jester...), jingles (mission start, victory, loss) and looping music for the menus and
+for each stage of the castle: the Jacks, the Queens and the Kings (an enemy of another
+rank, as in mission 10, goes by its strength). The sounds are made for the game with
+tools/audio (see tools/audio/build.py) from real instrument recordings, the MIT-licensed
+Fluid R3 and MuseScore General sample banks, and modelled table sounds; the chosen files
+live in app/sounds/. Settings,
 "Sound": sound effects, music, and "Play sound when the phone is on silent" (on by
 default; off honours the ring/silent switch).
 

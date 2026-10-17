@@ -1,7 +1,7 @@
 """Sound effects and music (app/audio.py): what each game action plays and in what order,
 the taps, buttons and pop-ups, the settings (effects, music, playing on silent), each
-screen's music (the Kings' track for the castle's last four enemies, none once the game is
-over), and silence, never an error, when a sound file is missing."""
+screen's music (the table's follows the castle's stage, Jacks, Queens and Kings; none once
+the game is over), and silence, never an error, when a sound file is missing."""
 import os
 import sys
 
@@ -111,10 +111,10 @@ def _solo(app):
     return gs, app.game
 
 
-def test_a_game_starts_with_its_jingle_and_the_table_music(app):
+def test_a_game_starts_with_its_jingle_and_the_jacks_music(app):
     gs, g = _solo(app)
     assert _played() == ["mission_start"]
-    assert _music()[-1] == ("play", "table")
+    assert g.card(g.enemy.card_id).rank == "J" and _music()[-1] == ("play", "jack")
 
 
 def test_card_taps_buttons_and_an_attack(app):
@@ -160,22 +160,35 @@ def test_a_card_pop_up_and_a_hire_have_their_sounds(app):
     assert _played() == ["popup", "button", "coin"]
 
 
-def test_each_screen_has_its_music_and_the_kings_theirs(app):
+def test_the_tables_music_follows_the_castles_stage(app):
     from app.screens import MenuScreen
     gs, g = _solo(app)
-    assert _music()[-1] == ("play", "table")
-    while len(g.castle) > 3:                              # on to the last four enemies
-        g.castle.pop(0)
+    assert _music()[-1] == ("play", "jack")
+    del sound.history[:]
+    set_enemy(g, "J", "S")                                # another Jack: the same track goes on
     gs.refresh(after_action=False)
-    assert _music()[-2:] == [("stop", "table"), ("play", "boss")]
+    assert _music() == []
+    set_enemy(g, "Q", "H")                                # the Queens' stage
+    gs.refresh(after_action=False)
+    assert _music() == [("stop", "jack"), ("play", "queen")]
+    set_enemy(g, "K", "C")                                # the Kings'
+    gs.refresh(after_action=False)
+    assert _music()[-2:] == [("stop", "queen"), ("play", "king")]
     del sound.history[:]
     gs.refresh(after_action=False)
-    assert _music() == []                                 # the same track goes on
+    assert _music() == []
     g._lose("test")
     gs.refresh(after_action=False)
-    assert _music()[-1] == ("stop", "boss")               # the game is over: silence for its jingle
+    assert _music()[-1] == ("stop", "king")               # the game is over: silence for its jingle
     app.show(MenuScreen(app))
     assert _music()[-1] == ("play", "menu")
+
+
+def test_an_enemys_stage_is_its_rank_or_for_other_ranks_its_strength():
+    assert [AU.stage(r, 10) for r in "JQK"] == ["jack", "queen", "king"]
+    assert AU.stage("K", 25) == "king" and AU.stage("J", 10) == "jack"        # Legacy royals keep their rank
+    # mission 10's corrupted party members, strength 2 (first) to 9 (last)
+    assert [AU.stage(str(v), v) for v in range(2, 10)] == ["jack"] * 3 + ["queen"] * 3 + ["king"] * 2
 
 
 def test_the_settings_turn_effects_music_and_silent_mode_on_and_off(app):
@@ -214,5 +227,5 @@ def test_a_missing_file_is_silence_not_an_error(sounds, monkeypatch, tmp_path):
     del sound.history[:]
     a.effect("hit")
     a.game_events([{"t": "play"}, {"t": "damage"}])
-    a.music("table")
+    a.music("jack")
     assert sound.history == [] and a.player is None

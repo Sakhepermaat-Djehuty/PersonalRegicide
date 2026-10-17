@@ -1,9 +1,9 @@
 """Sound effects and music, through Pythonista's ``sound`` module.
 
 The files live in app/sounds/: ``effects/<event>.wav`` for each sound effect and jingle
-(the events of tools/audio/catalog.py) and ``music/<slot>.m4a`` for the music of the menus,
-the table and the last enemies ("menu", "table", "boss"). A missing file is silence, so the
-game runs the same with none of them.
+(the events of tools/audio/catalog.py) and ``music/<slot>.m4a`` for the music of the menus
+and of each stage of the castle ("menu", "jack", "queen", "king": see ``stage``). A missing
+file is silence, so the game runs the same with none of them.
 
 Settings (App.settings): "sound_effects" and "music" switch each on or off (both on by
 default); "sound_in_silent_mode" (on by default) plays even when the phone's ring/silent
@@ -18,7 +18,18 @@ import os
 from typing import Callable, Dict, List, Optional, Sequence
 
 SOUNDS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sounds")
-MUSIC_SLOTS = ("menu", "table", "boss")
+MUSIC_SLOTS = ("menu", "jack", "queen", "king")
+STAGES = {"J": "jack", "Q": "queen", "K": "king"}
+
+
+def stage(rank: str, strength: int) -> str:
+    """The castle stage an enemy belongs to, for its music: a royal's own rank (Legacy and
+    Evergreen enemies keep the royals' J, Q, K); an enemy of another rank (mission 10's
+    corrupted party members, strength 2 to 9) by strength, so the tension still rises:
+    up to 4 the Jacks' stage, up to 7 the Queens', above that the Kings'."""
+    if rank in STAGES:
+        return STAGES[rank]
+    return "jack" if strength <= 4 else "queen" if strength <= 7 else "king"
 
 # The order of a turn's sounds and the gap before each (seconds after the action).
 STEPS = [("play", 0.0), ("power", 0.18), ("strike", 0.42), ("jester", 0.0), ("yield", 0.0),
@@ -139,7 +150,7 @@ class Audio:
         return os.path.join(SOUNDS, "music", slot + ".m4a")
 
     def music(self, slot: Optional[str]) -> None:
-        """Play the music for ``slot`` ("menu", "table", "boss"; None: none), looping. The
+        """Play the music for ``slot`` ("menu", "jack", "queen", "king"; None: none), looping. The
         same slot keeps playing; another changes the track."""
         if self.sound is None or not self.on("music") or slot is None:
             self.stop_music()

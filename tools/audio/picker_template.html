@@ -7,7 +7,7 @@
 /* Layout: one column. A header with the volume, "Hear a turn" and the count of picks; a
    sticky row of group links; one section per group of events, each event a row of
    candidates drawn as small playing cards (tap to hear and pick, gold border = picked);
-   the music section lists tracks with a player and three slots (menus, table, Kings);
+   the music section lists tracks with a player and four slots (menus, Jacks, Queens, Kings);
    then the picks summary. Single dark look on purpose: the app's own table colours. */
 :root {
   --bg: #171a21; --panel: #242938; --panel-2: #2e3447; --fg: #f3f4f6; --muted: #9aa3b5;
@@ -106,7 +106,7 @@ section { display: grid; gap: 18px; }
 <main>
   <header>
     <h1>Regicide Sound Picker</h1>
-    <p>Every sound here is original, made for your game. <strong>Tap a card to hear it and pick it</strong>; tap another to change your mind, or <strong>None</strong> for silence. For music, play a track and set it for the menus, the table or the Kings. Your picks save as you go.</p>
+    <p>Every sound here was made for your game from real instrument recordings and modelled table sounds. <strong>Tap a card to hear it and pick it</strong>; tap another to change your mind, or <strong>None</strong> for silence. For music, play a track and set it for the menus or a stage of the castle: the Jacks, the Queens or the Kings. Your picks save as you go.</p>
     <div class="controls">
       <label class="vol" for="vol">Volume <input id="vol" type="range" min="0" max="1" step="0.05" value="0.8"></label>
       <button class="btn" id="turn" type="button">Hear a turn</button>
@@ -128,14 +128,14 @@ section { display: grid; gap: 18px; }
 
 <script>
 const DATA = /*__DATA__*/null;
-const SLOTS = [["menu", "Menus"], ["table", "Table"], ["boss", "Kings"]];
+const SLOTS = [["menu", "Menus"], ["jack", "Jacks"], ["queen", "Queens"], ["king", "Kings"]];
 const TURN = [["card_select", 0], ["card_select", 420], ["play", 800], ["power_double", 700], ["hit", 600],
               ["suffer", 1100], ["discard", 1000], ["draw", 900], ["card_select", 900], ["play", 450],
               ["defeat_enemy", 650], ["new_enemy", 1500], ["button", 1400], ["popup", 300]];
 
 const effects = DATA.events.filter(e => e.kind !== "music");
 const musicEv = DATA.events.find(e => e.kind === "music");
-let picks = { effects: {}, music: { menu: undefined, table: undefined, boss: undefined } };
+let picks = { effects: {}, music: { menu: undefined, jack: undefined, queen: undefined, king: undefined } };
 let db = null, saveTimer = null;
 const audioCache = new Map();
 let volume = 0.8;
@@ -217,12 +217,12 @@ function renderEvent(ev) {
 let musicAudio = null, musicCard = null;
 function renderMusic(ev) {
   const box = el("div", { class: "event", id: "ev-music" },
-    el("p", { class: "when", text: "Each track loops seamlessly. Set one for the menus, one for the table and one for the last enemies (the Kings), or leave a slot empty for silence there." }));
+    el("p", { class: "when", text: "Each track loops seamlessly. Set one for the menus and one for each stage of the castle (the Jacks, the Queens, the Kings), or leave a slot empty for silence there. The tracks come in suites that belong together, but mix them as you like." }));
   const list = el("div", { class: "tracks" });
   for (const it of ev.items) {
     const bar = el("div", { class: "bar" }, el("i"));
     const pp = el("button", { class: "pp", type: "button", "aria-label": "Play " + it.name });
-    const tags = (it.tags || []).map(t => ({ menu: "menus", table: "table", boss: "Kings" }[t] || t));
+    const tags = (it.tags || []).map(t => ({ menu: "menus", jack: "Jacks", queen: "Queens", king: "Kings" }[t] || t));
     const card = el("div", { class: "track", "data-id": it.id },
       el("div", { class: "row" }, pp,
         el("div", { class: "info" }, el("span", { class: "name", text: it.name }), el("span", { class: "note", text: it.note }),
@@ -342,8 +342,28 @@ document.getElementById("copy").addEventListener("click", async () => {
   }
 });
 
+// Picks of sounds that have since been replaced are dropped (that event asks again), and
+// only today's music slots are kept.
+function prune() {
+  let dropped = 0;
+  for (const [ev, id] of Object.entries(picks.effects)) {
+    const e = effects.find(x => x.id === ev);
+    if (id !== null && id !== undefined && !(e && e.items.some(i => i.id === id))) { delete picks.effects[ev]; dropped++; }
+  }
+  const tracks = musicEv ? musicEv.items.map(i => i.id) : [];
+  const music = {};
+  for (const [k] of SLOTS) {
+    const id = picks.music[k];
+    if (id === undefined || id === null || tracks.includes(id)) music[k] = id;
+    else dropped++;
+  }
+  picks.music = music;
+  return dropped;
+}
+
 const local = recall("regicide-sound-picks");
 if (local && local.effects) picks = { effects: local.effects || {}, music: Object.assign(picks.music, local.music || {}) };
+prune();
 render();
 
 (async () => {
@@ -355,8 +375,11 @@ render();
       const d = snap.data() || {};
       picks.effects = Object.assign({}, picks.effects, d.effects || {});
       picks.music = Object.assign({}, picks.music, d.music || {});
+      const dropped = prune();
       refresh();
-      document.getElementById("saved").textContent = "Your saved picks are loaded.";
+      document.getElementById("saved").textContent = dropped
+        ? "Your saved picks are loaded; " + dropped + " " + (dropped === 1 ? "was a sound that has" : "were sounds that have") + " been replaced: pick again there."
+        : "Your saved picks are loaded.";
     }
   } catch (e) { db = null; }
 })();
