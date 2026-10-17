@@ -525,7 +525,6 @@ def _heal_glow() -> np.ndarray:
 def _heal_holy() -> np.ndarray:
     """A choir sings out a D major chord as a run of glass chimes climbs into the light."""
     d = 1.58
-    t = _t(d)
     x = _buf(d + 1.2)
     run = ["A5", "B5", "D6", "E6", "F#6", "A6", "B6", "D7"]
     for k, nm in enumerate(run):
@@ -579,9 +578,9 @@ def _heal_pixel() -> np.ndarray:
     steps.append(("D6", len(hold), hold))
     fr, lv = _seq(steps)
     f = _frames(fr, d)
-    nf = int(len(fr))
-    vib = np.where(np.arange(len(f)) / SR * FPS > 32,
-                   1 + 0.012 * np.sign(np.sin(TAU * 7.5 * _t(d))), 1.0)
+    # the held note's vibrato: a gentle wobble stepped once a frame, as a console's would be
+    frame = np.arange(80)
+    vib = _frames(np.where(frame > 34, 1 + 0.006 * np.sin(TAU * frame / 8.0), 1.0), d)
     lead = _pulse(f * vib, 0.25) * _vol(lv, d, 0.08)
     echo_lv = [0.0] * 4 + [v * 0.45 for v in lv]
     echo_f = _frames([fr[0]] * 4 + fr, d)
@@ -590,7 +589,6 @@ def _heal_pixel() -> np.ndarray:
     bfr, blv = _seq(bass_steps)
     bass = _tri4(_frames(bfr, d)) * _vol(blv, d, 0.12)
     x = 0.5 * lead + 0.35 * echo + 0.55 * bass
-    del nf
     return _finish(_chip(x), d, 0.15)
 
 
@@ -654,22 +652,35 @@ def _sparkle(d: float, count: int, t0: float, t1: float, seed: int, notes: Seque
     for tt in times:
         f = float(rng.choice(notes)) * (1 + rng.uniform(-0.002, 0.002))
         amp = rng.uniform(0.4, 1.0) * (1 - 0.6 * (tt - t0) / max(1e-6, t1 - t0))
-        y = A.mix_at(y, _ping(f, rng.uniform(*t60), pgain=0.0), tt, amp)
+        y = A.mix_at(y, _ping(f, rng.uniform(*t60), pgain=0.0, attack=0.0015), tt, amp)
     return _fit(y, d)
 
 
+def _war_drum(f0: float, d: float, seed: int, t60: float, power: float = 1.0) -> np.ndarray:
+    """A big barrel drum hit with a wooden beater: the deep skin (taiko modes), the barrel's
+    wooden shell ringing in the mids where a phone can play it, and the beater's knock."""
+    skin = _taiko(f0, d, seed, t60, 3.0)
+    rng = np.random.default_rng(seed + 50)
+    nb = _n(0.003)
+    burst = A.lowpass(rng.uniform(-1, 1, nb), 3000, 1) * np.hanning(nb)
+    shell = _norm(_excite(burst, [(f0 * 3.1, 1.0, 0.3), (f0 * 4.7, 0.7, 0.22), (f0 * 6.9, 0.45, 0.15),
+                                  (f0 * 10.2, 0.25, 0.08)], d))
+    slap = _fit(_burst(0.04, 400, 2500, 0.025, seed + 51), d)
+    return 0.45 * skin + 1.6 * shell * power + 1.2 * slap
+
+
 def _double_drums() -> np.ndarray:
-    """Two war drums: a strong boom, a grace flam, and a bigger, deeper BOOM."""
+    """Two war drums: a strong boom, a quick grace stroke, and a bigger, deeper BOOM."""
     d = 1.15
     x = _buf(d + 1.0)
-    x = A.mix_at(x, _taiko(N("A2"), 0.9, 401, 0.6, 2.2), 0.0, 0.65)
-    x = A.mix_at(x, _stick(0.06, 403), 0.0, 0.3)
-    x = A.mix_at(x, _taiko(N("D3"), 0.3, 405, 0.2, 1.6), 0.19, 0.25)
-    x = A.mix_at(x, _taiko(N("D2"), 1.1, 402, 0.85, 2.6), 0.22, 1.0)
-    x = A.mix_at(x, _stick(0.06, 404), 0.22, 0.35)
+    x = A.mix_at(x, _war_drum(N("D3"), 0.9, 401, 0.35, 0.9), 0.0, 0.6)
+    x = A.mix_at(x, _stick(0.06, 403), 0.0, 0.18)
+    x = A.mix_at(x, _war_drum(N("A3"), 0.25, 405, 0.15, 0.6), 0.17, 0.18)
+    x = A.mix_at(x, _war_drum(N("A2"), 1.1, 402, 0.55, 1.0), 0.22, 1.0)
+    x = A.mix_at(x, _stick(0.06, 404), 0.22, 0.22)
     x = _verb(x, 0.6, 0.18, 0.4)
     x = _glue(x, 15)
-    return _finish(x, d, 0.4, lp=7000)
+    return _finish(x, d, 0.4, lp=6000)
 
 
 def _stick(d: float, seed: int) -> np.ndarray:
@@ -677,7 +688,7 @@ def _stick(d: float, seed: int) -> np.ndarray:
     rng = np.random.default_rng(seed)
     nb = _n(0.0015)
     burst = rng.uniform(-1, 1, nb) * np.hanning(nb)
-    return _norm(_excite(burst, [(980, 1.0, 0.03), (1720, 0.5, 0.02), (2900, 0.25, 0.012)], d))
+    return _norm(_excite(burst, [(880, 1.0, 0.03), (1560, 0.5, 0.02), (2600, 0.2, 0.012)], d))
 
 
 def _double_horn() -> np.ndarray:
@@ -694,34 +705,33 @@ def _double_horn() -> np.ndarray:
         a1 = np.where(t < on2 - 0.02, 0.75 * (1 - np.exp(-t / 0.008)), 0.0)
         a1 *= np.where(t < on2 - 0.04, 1.0, np.clip((on2 - 0.02 - t) / 0.02, 0, 1))
         t2 = np.clip(t - on2, 0, None)
-        a2 = np.where(t >= on2, (1 - np.exp(-t2 / 0.012)) * (0.8 + 0.25 * np.clip(t2 / 0.3, 0, 1)), 0.0)
-        a2 *= np.where(t < 0.78, 1.0, np.exp(-(t - 0.78) / 0.09))
+        a2 = np.where(t >= on2, (1 - np.exp(-t2 / 0.012)) * (0.65 + 0.4 * np.clip(t2 / 0.4, 0, 1) ** 1.5), 0.0)
+        a2 *= np.where(t < 0.72, 1.0, np.exp(-(t - 0.72) / 0.08))
         amp = a1 + a2
-        y = _brass(f * scoop * vib, amp, sd, 2200 if k == 0 else 1300, (0.0, on2))
+        y = _brass(f * scoop * vib, amp, sd, 1600 if k == 0 else 900, (0.0, on2))
         x = A.mix_at(x, y, 0.0, g)
     x = _verb(x, 0.65, 0.22, 0.5)
-    return _finish(x, d, 0.3, lp=6500)
+    return _finish(x, d, 0.3, lp=4500)
 
 
 def _double_pixel() -> np.ndarray:
     """An 8-bit power-up: rising arpeggios climbing two octaves, then a doubled ding-ding."""
-    d = 1.0
-    groups = [("D4", "A4", "D5"), ("E4", "B4", "E5"), ("F#4", "D5", "F#5"), ("A4", "E5", "A5"),
-              ("D5", "A5", "D6")]
+    d = 1.05
+    groups = [("D4", "A4", "D5"), ("F#4", "D5", "F#5"), ("A4", "E5", "A5"), ("D5", "A5", "D6")]
     steps = []
     for gi, grp in enumerate(groups):
         for j, nm in enumerate(grp):
             steps.append((nm, 2, 13 if j == 0 else 10))
-    steps.append((None, 2, 0))
+    steps.append((None, 1, 0))
     steps.append(("A5", 2, 13))
-    steps.append(("D6", 5, [14, 12, 10, 9, 8]))
-    steps.append((None, 2, 0))
+    steps.append(("D6", 4, [14, 12, 10, 8]))
+    steps.append((None, 1, 0))
     steps.append(("A5", 2, 13))
-    steps.append(("D6", 14, [15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2]))
+    steps.append(("D6", 12, [15, 13, 12, 11, 10, 9, 8, 6, 5, 4, 3, 2]))
     fr, lv = _seq(steps)
     lead = _pulse(_frames(fr, d), 0.5) * _vol(lv, d, 0.07)
-    bfr, blv = _seq([("D3", 6, 10), ("E3", 6, 10), ("F#3", 6, 10), ("A3", 6, 10), ("D4", 6, 10),
-                     (None, 2, 0), ("D3", 9, 10), (None, 2, 0), ("D3", 14, 10)])
+    bfr, blv = _seq([("D3", 6, 10), ("F#3", 6, 10), ("A3", 6, 10), ("D4", 6, 10),
+                     (None, 1, 0), ("D3", 6, 10), (None, 1, 0), ("D3", 14, [10, 10, 9, 9, 8, 7, 6, 5, 4, 3, 2, 1])])
     bass = _tri4(_frames(bfr, d)) * _vol(blv, d, 0.08)
     x = 0.5 * lead + 0.6 * bass
     return _finish(_chip(x), d, 0.12)
@@ -738,8 +748,8 @@ def _shield_bash() -> np.ndarray:
     burst = A.lowpass(rng.uniform(-1, 1, nb), 2500, 1) * np.hanning(nb)
     wood = _excite(burst, [(158, 1.0, 0.14), (236, 0.9, 0.12), (351, 0.75, 0.1), (497, 0.5, 0.08),
                            (668, 0.38, 0.06), (873, 0.25, 0.05)], d)
-    x = A.mix_at(x, _norm(wood), 0.0, 0.9)
-    x = A.mix_at(x, _thump(130, 80, 0.03, 0.13, d, 1.8), 0.0, 0.75)
+    x = A.mix_at(x, _norm(wood), 0.0, 1.0)
+    x = A.mix_at(x, _thump(150, 95, 0.03, 0.12, d, 2.0), 0.0, 0.5)
     x = A.mix_at(x, _burst(0.012, 700, 4500, 0.005, 552), 0.0, 0.5)
     boss = _modes(N("A5"), [1.0, 1.48, 2.13, 2.71, 3.36], [1.0, 0.7, 0.5, 0.3, 0.2],
                   [0.35, 0.28, 0.2, 0.15, 0.1], d, beat=0.002)
@@ -755,9 +765,11 @@ def _shield_steel() -> np.ndarray:
     """A steel shield takes a firm blow and rings out on D, its tones slowly beating."""
     d = 1.2
     x = _buf(d + 0.6)
-    ratios = [1.0, 1.59, 2.14, 3.0, 3.42, 4.2, 5.03, 6.1]
-    gains = [1.0, 0.45, 0.5, 0.65, 0.3, 0.22, 0.15, 0.1]
-    t60s = [1.3, 0.9, 0.85, 1.0, 0.6, 0.45, 0.35, 0.28]
+    # a plate's modes on D4: the strongest a twelfth up (A5) gives the ring its pitch;
+    # the upper ones are the steel's shimmer and die first
+    ratios = [1.0, 1.59, 2.14, 3.0, 3.42, 4.2, 5.03, 6.1, 7.3, 8.6, 10.2, 12.1, 14.6]
+    gains = [1.0, 0.45, 0.5, 0.65, 0.3, 0.3, 0.25, 0.2, 0.16, 0.13, 0.1, 0.07, 0.05]
+    t60s = [1.3, 0.9, 0.85, 1.0, 0.6, 0.5, 0.42, 0.36, 0.3, 0.25, 0.2, 0.16, 0.13]
     ring = _modes(N("D4"), ratios, gains, t60s, d + 0.3, beat=0.0025)
     x = A.mix_at(x, ring, 0.0, 1.0)
     x = A.mix_at(x, _burst(0.008, 2000, 7000, 0.003, 601), 0.0, 0.6)
@@ -812,9 +824,9 @@ def _shield_crystal() -> np.ndarray:
     x = A.mix_at(x, sing, 0.0, 0.22)
     sw_d = 0.3
     ts = _t(sw_d)
-    sw = _svf(A.noise(sw_d, "white", 702), 5000 * (1200 / 5000) ** (ts / sw_d), 1.5, "bp")
+    sw = _bp2(A.noise(sw_d, "pink", 702), 3500 * (1000 / 3500) ** (ts / sw_d), 1.5)
     sw = _norm(sw) * np.sin(math.pi * ts / sw_d) ** 2
-    x = A.mix_at(x, sw, 0.0, 0.08)
+    x = A.mix_at(x, sw, 0.0, 0.06)
     x = _verb(x, 0.6, 0.28)
     return _finish(x, d, 0.4, lp=7500)
 
@@ -844,13 +856,13 @@ def _blocked_clank() -> np.ndarray:
     d = 0.6
     x = _buf(d + 0.4)
     ratios = [1.0, 1.71, 2.53, 3.48, 4.62]
-    plate = _modes(N("A3"), ratios, [1.0, 0.7, 0.45, 0.25, 0.15], [0.2, 0.13, 0.09, 0.07, 0.05], d,
+    plate = _modes(N("D4"), ratios, [1.0, 0.75, 0.5, 0.3, 0.18], [0.2, 0.13, 0.09, 0.07, 0.05], d,
                    beat=0.003)
-    x = A.mix_at(x, plate, 0.0, 0.7)
-    x = A.mix_at(x, _burst(0.015, 150, 1800, 0.008, 801), 0.0, 0.5)
-    x = A.mix_at(x, _thump(150, 100, 0.03, 0.09, d, 1.6), 0.0, 0.6)
+    x = A.mix_at(x, plate, 0.0, 0.8)
+    x = A.mix_at(x, _burst(0.015, 200, 1800, 0.008, 801), 0.0, 0.5)
+    x = A.mix_at(x, _thump(170, 120, 0.03, 0.08, d, 1.8), 0.0, 0.4)
     x = A.mix_at(x, plate, 0.05, 0.12)
-    x = A.lowpass(x, 2600, 2)
+    x = A.lowpass(x, 2800, 2)
     x = _verb(x, 0.25, 0.1)
     x = _glue(x, 14)
     return _finish(x, d, 0.25, lp=4000)
@@ -905,22 +917,24 @@ def _blocked_stone() -> np.ndarray:
     d = 0.8
     x = _buf(d + 0.4)
     rng = np.random.default_rng(951)
-    x = A.mix_at(x, _thump(105, 62, 0.035, 0.2, d, 2.6), 0.0, 0.9)
-    body = A.lowpass(A.noise(0.25, "brown", 952), 900, 2)
-    x = A.mix_at(x, _norm(body) * A.decay(0.25, 0.12, 0.0005), 0.0, 0.45)
+    x = A.mix_at(x, _thump(120, 72, 0.035, 0.18, d, 3.0), 0.0, 0.8)
+    body = A.bandpass(A.noise(0.25, "brown", 952), 150, 1100, 2)
+    x = A.mix_at(x, _norm(body) * A.decay(0.25, 0.12, 0.0005), 0.0, 0.6)
     x = A.mix_at(x, _burst(0.03, 500, 2500, 0.02, 953), 0.0, 0.4)
-    tt = 0.05
-    while tt < 0.55:
-        g = 0.3 * (1 - tt / 0.6) * rng.uniform(0.4, 1.0)
-        fc = rng.uniform(1200, 3200)
-        nb = _n(0.001)
-        click = _excite(rng.uniform(-1, 1, nb), [(fc, 1.0, 0.015), (fc * 1.7, 0.4, 0.01)], 0.03)
+    # pebbles: tiny stones tapping down the wall, each a short, barely pitched tick
+    tt = 0.06
+    while tt < 0.5:
+        g = 0.16 * (1 - tt / 0.55) * rng.uniform(0.4, 1.0)
+        fc = rng.uniform(700, 1900)
+        nb = _n(0.0012)
+        click = _excite(rng.uniform(-1, 1, nb) * np.hanning(nb),
+                        [(fc, 1.0, 0.007), (fc * 1.83, 0.5, 0.005), (fc * 0.57, 0.4, 0.006)], 0.02)
         x = A.mix_at(x, _norm(click), tt, g)
-        tt += rng.uniform(0.015, 0.06) * (1 + 2 * tt)
+        tt += rng.uniform(0.02, 0.06) * (1 + 2 * tt)
     grit_d = 0.4
     tg = _t(grit_d)
     grains = A.lowpass(np.repeat(rng.uniform(0, 1, int(grit_d * 300) + 1) ** 3, int(SR / 300) + 1)[:len(tg)], 300, 1)
-    grit = _bn(grit_d, 900, 3500, 954, "pink") * grains * np.exp(-6.9078 * tg / 0.35)
+    grit = _bn(grit_d, 600, 2800, 954, "pink") * grains * np.exp(-6.9078 * tg / 0.35)
     x = A.mix_at(x, _norm(grit), 0.02, 0.1)
     x = _verb(x, 0.25, 0.08)
     x = _glue(x, 15)
@@ -928,18 +942,20 @@ def _blocked_stone() -> np.ndarray:
 
 
 def _blocked_pixel() -> np.ndarray:
-    """An 8-bit dud: a soft puff and two low blips sagging downwards."""
+    """An 8-bit dud: a soft puff and two low blips, A then F, each sagging as it fades."""
     d = 0.6
-    nlv = [8, 6, 4, 2, 1]
-    noise = _lfsr(np.full(_n(d), 7000.0), short=False, seed=5) * _vol(nlv, d, 0.03)
-    steps = [("A3", 2, 12), ("G#3", 2, 11), ("G3", 2, 9), (None, 2, 0),
-             ("F3", 2, 12), ("E3", 2, 11), ("D#3", 2, 10), ("D3", 8, [9, 8, 7, 6, 5, 4, 3, 2])]
-    fr, lv = _seq(steps)
+    nlv = [7, 5, 3, 2, 1]
+    noise = _lfsr(np.full(_n(d), 6000.0), short=False, seed=5) * _vol(nlv, d, 0.03)
+    # per-frame pitch: each note starts on its scale note and sags a little, frame by frame
+    a3, f3 = N("A3"), N("F3")
+    fr = [a3, a3, a3 * 0.985, a3 * 0.97, a3 * 0.955, a3 * 0.955, a3 * 0.955,
+          f3, f3, f3 * 0.985, f3 * 0.97, f3 * 0.955, f3 * 0.94, f3 * 0.925, f3 * 0.91, f3 * 0.9]
+    lv = [12, 11, 10, 8, 5, 0, 0, 12, 11, 10, 9, 8, 6, 4, 3, 2]
     f = _frames(fr, d)
-    tri = _tri4(f) * _vol(lv, d, 0.06)
-    sq = _pulse(f * 2, 0.5) * _vol([v * 0.4 for v in lv], d, 0.06)
-    x = 0.2 * noise + 0.7 * tri + 0.3 * sq
-    return _finish(_chip(x), d, 0.12)
+    tri = _tri4(f) * _vol(lv, d, 0.07)
+    sq = _pulse(f, 0.25) * _vol(lv, d, 0.07)
+    x = 0.15 * noise + 0.45 * tri + 0.4 * A.lowpass(sq, 2200, 2)
+    return _finish(_chip(x, 4500), d, 0.12)
 
 
 # ============================================================================= the list

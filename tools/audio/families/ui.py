@@ -22,7 +22,9 @@ The pieces, all private to this file:
 Every sound starts within a millisecond or two, is mixed by each layer's share of the
 energy (``_en``), ends by decaying on its own and then a short fade, and keeps its energy
 below 8 kHz. Tonal parts use D major pentatonic (D E F# A B), with D dorian's F natural
-once (the muted lute's "no"). Everything is seeded, so each sound is rebuilt identically.
+in two places (the muted lute's F3 and the dim bells' minor-third overtone); knocks and
+thumps sit on scale notes too. Coins are inharmonic, with their lowest mode on a scale
+note. Everything is seeded, so each sound is rebuilt identically.
 """
 from __future__ import annotations
 
@@ -204,14 +206,19 @@ def _coin(dur: float, hits, f1: float, t60: float, seed: int, width: float = 0.0
 
 # ----------------------------------------------------------------------------- strings, filters
 def _pluck(freq: float, dur: float, t60: float = 1.0, bright: float = 0.5, seed: int = 0,
-           pick: float = 0.2) -> np.ndarray:
+           pick: float = 0.2, mute: float = 0.0) -> np.ndarray:
     """Karplus-Strong: a noise burst (low-passed by ``bright``, comb-filtered by where the
     string is plucked) circulating in a delay line with a two-point average, a loss for
-    the ring time and a first-order all-pass that makes up the fractional delay."""
+    the ring time and a first-order all-pass that makes up the fractional delay.
+    ``mute`` (0..0.7) adds a one-pole low-pass to the loop, as a palm resting on the
+    strings: the upper harmonics die much faster than the note. The low-pass's own delay
+    at the note is counted in the tuning."""
     n = _n(dur)
     P = SR / freq
-    N = int(P - 0.6)
-    d = P - 0.5 - N                        # the all-pass's share of the delay, 0.1..1.1
+    w0 = 2 * np.pi * freq / SR
+    D = math.atan2(mute * math.sin(w0), 1 - mute * math.cos(w0)) / w0 if mute else 0.0
+    N = int(P - 0.6 - D)
+    d = P - 0.5 - D - N                    # the all-pass's share of the delay, 0.1..1.1
     C = (1 - d) / (1 + d)
     g = 10 ** (-3.0 * P / (max(t60, 0.02) * SR))
     rng = np.random.default_rng(seed)
@@ -224,12 +231,16 @@ def _pluck(freq: float, dur: float, t60: float = 1.0, bright: float = 0.5, seed:
     xs = x.tolist()
     y = [0.0] * n
     lp = 0.0
+    mp = 0.0
     ax = 0.0
     ay = 0.0
     for i in range(n):
         v = y[i - N] if i >= N else 0.0
         w = 0.5 * (v + lp)
         lp = v
+        if mute:
+            mp = (1 - mute) * w + mute * mp
+            w = mp
         a = C * w + ax - C * ay
         ax = w
         ay = a
@@ -237,9 +248,17 @@ def _pluck(freq: float, dur: float, t60: float = 1.0, bright: float = 0.5, seed:
     return np.asarray(y)
 
 
-def _svf_bp(x: np.ndarray, fc, q: float = 1.0) -> np.ndarray:
+def _svf_bp(x: np.ndarray, fc, q: float = 1.0, order: int = 2) -> np.ndarray:
     """A band-pass (state-variable, unity gain at the centre) whose centre ``fc`` may move
-    sample by sample."""
+    sample by sample; ``order`` passes through it in turn (each one 6 dB per octave
+    steeper on both sides)."""
+    y = x
+    for _ in range(order):
+        y = _svf_bp1(y, fc, q)
+    return y
+
+
+def _svf_bp1(x: np.ndarray, fc, q: float) -> np.ndarray:
     fc = np.broadcast_to(np.asarray(fc, float), x.shape)
     g = np.tan(np.pi * np.clip(fc, 20.0, SR * 0.45) / SR)
     k = 1.0 / q
@@ -316,14 +335,14 @@ def _lfsr(n: int, clock: float, seed: int = 1) -> np.ndarray:
 # ============================================================================= button
 def _btn_felt() -> np.ndarray:
     """A fingertip on the felt-covered table: a soft, damped knock of the board under the
-    cloth (190-660 Hz) and the muffled pat of skin on felt."""
+    cloth (F#3 to E5, damped by the felt) and the muffled pat of skin on felt."""
     dur = 0.075
     n = _n(dur)
-    body = _modal(dur, [(190.0, 0.07, 0.6), (_hz("F#4"), 0.05, 1.0), (660.0, 0.03, 0.45),
-                        (1180.0, 0.018, 0.12)], 0.0024)
+    body = _modal(dur, [(_hz("F#3"), 0.07, 0.45), (_hz("F#4"), 0.05, 1.0), (_hz("E5"), 0.03, 0.6),
+                        (_hz("D6"), 0.018, 0.2)], 0.0022)
     pat = _band(_noise(n, 11), 300, 1800) * _env(n, 0.0045, 0.0003)
     y = _en(body) + 0.5 * _en(pat)
-    return _tail(A.lowpass(y, 3200, 1), 0.02)
+    return _tail(A.lowpass(y, 3000, 2), 0.02)
 
 
 def _btn_wood() -> np.ndarray:
@@ -335,7 +354,7 @@ def _btn_wood() -> np.ndarray:
     body = _modal(dur, [(f, 0.075, 1.0), (f * 2.76, 0.04, 0.4), (f * 5.4, 0.02, 0.12),
                         (_hz("D4"), 0.055, 0.3)], 0.0008)
     click = _band(_noise(n, 12), 1500, 4500) * _env(n, 0.0008, 0.0002)
-    return _tail(_en(body) + 0.25 * _en(click), 0.025)
+    return _tail(A.lowpass(_en(body) + 0.2 * _en(click), 5000, 2), 0.025)
 
 
 def _btn_drop() -> np.ndarray:
@@ -354,15 +373,15 @@ def _btn_crystal() -> np.ndarray:
     dur = 0.14
     n = _n(dur)
     f = _hz("D6")
-    ring = _modal(dur, [(f, 0.12, 1.0), (f * 2.32, 0.07, 0.3), (f * 4.25, 0.035, 0.1)], 0.0003)
-    tick = _band(_noise(n, 14), 3000, 7000) * _env(n, 0.0006, 0.0001)
-    return _tail(_en(ring) + 0.15 * _en(tick), 0.03)
+    ring = _modal(dur, [(f, 0.12, 1.0), (f * 2.32, 0.07, 0.3), (f * 4.25, 0.035, 0.1)], 0.00045)
+    tick = _band(_noise(n, 14), 2500, 6000) * _env(n, 0.0006, 0.0002)
+    return _tail(A.lowpass(_en(ring) + 0.1 * _en(tick), 7000, 4), 0.03)
 
 
 def _btn_chip() -> np.ndarray:
     """An 8-bit blip: one frame of A5, then D6 stepping down in volume."""
     frames = [(_hz("A5"), 9), (_hz("D6"), 8), (_hz("D6"), 5), (_hz("D6"), 2)]
-    return A.lowpass(_chip(frames, duty=0.25), 4500, 2)
+    return A.lowpass(_chip(frames, duty=0.5), 4000, 4)
 
 
 # ============================================================================= popup
@@ -373,21 +392,21 @@ def _pop_flip() -> np.ndarray:
     dur = 0.36
     nf = _n(0.03)
     flick = _band(_noise(nf, 21), 2200, 6500) * _env(nf, 0.0025, 0.0002)
-    card = _modal(0.04, [(2950.0, 0.03, 1.0), (1720.0, 0.04, 0.7)], 0.0003)
-    m = _n(0.14)
+    card = _modal(0.04, [(_hz("F#7"), 0.03, 1.0), (_hz("A6"), 0.04, 0.7)], 0.0003)
+    m = _n(0.085)
     tt = np.linspace(0.0, 1.0, m)
-    fc = 700.0 * (1700.0 / 700.0) ** np.sin(np.pi * tt * 0.85)
+    fc = 900.0 * (2200.0 / 900.0) ** np.sin(np.pi * tt * 0.8)
     grain = 0.65 + 0.35 * A.lowpass(np.random.default_rng(22).uniform(-1, 1, m), 150, 1) * 2.5
-    air = _svf_bp(_noise(m, 22), fc, 1.4) * np.sin(np.pi * tt) ** 1.3 * np.clip(grain, 0.2, 1.2)
+    air = _svf_bp(_noise(m, 22), fc, 1.4) * np.sin(np.pi * tt) ** 2.2 * np.clip(grain, 0.2, 1.2)
     ns = _n(0.06)
     slap = _band(_noise(ns, 23), 450, 4000) * _env(ns, 0.006, 0.0004)
-    thump = _modal(0.15, [(165.0, 0.12, 0.8), (_hz("F#4"), 0.07, 1.0), (720.0, 0.04, 0.3)], 0.002)
+    thump = _modal(0.15, [(_hz("E3"), 0.12, 0.8), (_hz("F#4"), 0.07, 1.0), (_hz("F#5"), 0.04, 0.3)], 0.002)
     nst = _n(0.05)
     settle = A.paper(0.05, 1500, 6000, seed=24, grain=0.7) * _curve(nst, [(0, 0), (0.004, 1), (0.05, 0)])
-    land = 0.13
-    y = _place([(_en(flick), 0.0, 0.55), (_en(card), 0.0, 0.18), (_en(air), 0.004, 0.75),
+    land = 0.1
+    y = _place([(_en(flick), 0.0, 0.55), (_en(card), 0.0, 0.18), (_en(air), 0.008, 0.7),
                 (_en(slap), land, 0.8), (_en(thump), land, 0.6), (_en(settle), land + 0.012, 0.2)], dur)
-    return _tail(y, 0.06)
+    return _tail(A.lowpass(y, 6500, 4), 0.06)
 
 
 def _pop_swish() -> np.ndarray:
@@ -397,7 +416,7 @@ def _pop_swish() -> np.ndarray:
     m = _n(0.3)
     tt = _t(m)
     fc = 450.0 * (2600.0 / 450.0) ** np.clip(tt / 0.26, 0.0, 1.0)
-    sw = _svf_bp(A.noise(0.3, "pink", 31), fc, 1.3)
+    sw = _svf_bp(A.noise(0.3, "pink", 31), fc, 1.1)
     env = _curve(m, [(0, 0.35), (0.06, 1.0), (0.14, 0.55), (0.29, 0.0), (0.3, 0.0)])
     env = A.lowpass(env, 40, 1) * _rise(m, 0.002)
     sw = sw * env
@@ -411,32 +430,37 @@ def _pop_swish() -> np.ndarray:
 
     y = _place([(_en(sw), 0.0, 1.0), (_en(tone(_hz("A5"))), 0.0, 0.7), (_en(tone(_hz("D6"))), 0.05, 0.6)],
                dur)
-    return _tail(y, 0.12)
+    return _tail(A.lowpass(y, 5000, 4), 0.12)
 
 
 def _pop_parchment() -> np.ndarray:
-    """A sheet of parchment unrolled on the table (a grainy rustle, the crackle of its
-    fibres and a soft flump as it settles), over a soft lute strum of A4 and D5."""
+    """A sheet of parchment unrolled on the table (a grainy rustle, the dry crackles of
+    its fibres bending and a soft flump as it settles), over a soft lute strum of A4 and
+    D5."""
     dur = 0.66
     rng = np.random.default_rng(41)
-    m = _n(0.3)
-    bed = A.paper(0.3, 1100, 5500, seed=42, grain=0.85)
-    bed = bed * _curve(m, [(0, 0.0), (0.003, 0.8), (0.12, 1.0), (0.22, 0.5), (0.3, 0.0)])
-    imp = np.zeros(m)
-    t = 0.002
-    while t < 0.26:
-        imp[_n(t)] += rng.uniform(0.3, 1.0) * rng.choice([-1.0, 1.0])
-        t += rng.exponential(0.006 + 0.04 * t)
-    crack = _band(imp, 1500, 6000)
+    m = _n(0.28)
+    gesture = _curve(m, [(0, 0.0), (0.003, 0.7), (0.09, 1.0), (0.19, 0.55), (0.28, 0.0)])
+    bed = A.paper(0.28, 700, 4000, seed=42, grain=0.95) * gesture
+    crack = np.zeros(m)
+    t = 0.001
+    k = 0
+    while t < 0.24:
+        nb = _n(rng.uniform(0.0008, 0.003)) + 4
+        b = _band(_noise(nb + 64, 400 + k), 1800, 6000)[64:] * np.hanning(nb)
+        i = _n(t)
+        crack[i:i + nb] += _norm(b)[:m - i] * rng.uniform(0.2, 1.0) * gesture[i]
+        t += rng.exponential(0.009)
+        k += 1
     nfl = _n(0.12)
-    flump = _en(_modal(0.12, [(160.0, 0.08, 1.0), (330.0, 0.05, 0.6)], 0.003)) + \
+    flump = _en(_modal(0.12, [(_hz("E3"), 0.08, 1.0), (_hz("E4"), 0.05, 0.6)], 0.003)) + \
         0.5 * _en(A.lowpass(_noise(nfl, 43), 1200, 2) * _env(nfl, 0.018, 0.002))
     lute = _place([(_pluck(_hz("A4"), 0.62, 0.55, 0.35, seed=44), 0.0, 1.0),
                    (_pluck(_hz("D5"), 0.6, 0.6, 0.35, seed=45), 0.022, 0.9)], 0.64)
     lute = A.peak_eq(lute, 260, 3, 1.0)
-    y = _place([(_en(bed), 0.0, 0.75), (_en(crack), 0.0, 0.45), (_en(flump), 0.2, 0.35),
-                (_en(lute), 0.0, 0.8)], dur)
-    return _tail(y, 0.12)
+    y = _place([(_en(bed), 0.0, 0.5), (_en(crack), 0.0, 0.6), (_en(flump), 0.2, 0.35),
+                (_en(lute), 0.0, 0.85)], dur)
+    return _tail(A.lowpass(y, 7000, 4), 0.12)
 
 
 def _pop_fairy() -> np.ndarray:
@@ -457,10 +481,10 @@ def _pop_fairy() -> np.ndarray:
         g = np.sin(2 * np.pi * f * _t(ng)) * _env(ng, 0.012, 0.0005)
         glints.append((_en(g), 0.03 + rng.uniform(0, 0.3), 0.12 * rng.uniform(0.5, 1.0)))
     na = _n(0.35)
-    air = _band(_noise(na, 52), 2500, 6500) * _curve(na, [(0, 0.2), (0.12, 1.0), (0.35, 0.0)])
-    y = _place(bells + glints + [(_en(air), 0.0, 0.12)], dur - 0.15)
+    air = _svf_bp(_noise(na, 52), 3800.0, 1.2, order=3) * _curve(na, [(0, 0.2), (0.12, 1.0), (0.35, 0.0)])
+    y = _place(bells + glints + [(_en(air), 0.0, 0.07)], dur - 0.15)
     y = A.reverb(y, room=0.3, wet=0.2, damping=0.6, tail=0.15)
-    return _tail(y[:_n(dur)], 0.14)
+    return _tail(A.lowpass(y[:_n(dur)], 7500, 4), 0.14)
 
 
 def _pop_pixel() -> np.ndarray:
@@ -475,7 +499,7 @@ def _pop_pixel() -> np.ndarray:
     nz = A.lowpass(_lfsr(nn, 9000.0, 3), 6000, 2) * np.repeat([0.25, 0.18, 0.1, 0.05], _n(FRAME) + 1)[:nn]
     nz = A.lowpass(nz, 6000, 1)
     y = _place([(y, 0.0, 1.0), (nz, 0.0, 1.0)], len(y) / SR)
-    return A.lowpass(y, 5500, 2)
+    return A.lowpass(y, 5000, 4)
 
 
 # ============================================================================= coin
@@ -504,13 +528,13 @@ def _coin_single() -> np.ndarray:
     tt = _t(n)
     damp = np.exp(-np.clip(tt - flat, 0.0, None) / 0.16)
     ring = ring * damp
-    tock = _modal(dur, [(430.0, 0.03, 1.0), (980.0, 0.02, 0.5)], 0.0004, hits)
+    tock = _modal(dur, [(_hz("A4"), 0.03, 1.0), (_hz("B5"), 0.02, 0.5)], 0.0004, hits)
     clicks = np.zeros(n)
     for k, (at, amp) in enumerate(hits):
         clicks = A.mix_at(clicks, _click(0.01, 2000, 7000, 0.0005, 70 + k), at, amp)
     clicks = clicks[:n]
     y = _en(ring) + 0.12 * _en(tock) + 0.06 * _en(clicks)
-    return _tail(y, 0.08)
+    return _tail(A.lowpass(y, 8500, 4), 0.08)
 
 
 def _coin_purse() -> np.ndarray:
@@ -518,12 +542,12 @@ def _coin_purse() -> np.ndarray:
     the coins inside clink against each other and settle (muffled a little)."""
     dur = 0.9
     rng = np.random.default_rng(81)
-    thud = _modal(0.3, [(110.0, 0.14, 0.8), (230.0, 0.09, 1.0), (480.0, 0.045, 0.4)], 0.004)
+    thud = _modal(0.3, [(_hz("A2"), 0.14, 0.8), (_hz("A3"), 0.09, 1.0), (_hz("B4"), 0.045, 0.4)], 0.004)
     nc = _n(0.14)
     crunch = A.paper(0.14, 250, 2200, seed=82, grain=0.9) * _env(nc, 0.03, 0.001)
     sizes = [_hz("F#6"), _hz("A6"), _hz("B6"), _hz("D7")]
     clinks = []
-    t = 0.001
+    t = 0.006
     k = 0
     while t < 0.6:
         amp = rng.uniform(0.35, 1.0) * math.exp(-t / 0.25)
@@ -536,26 +560,28 @@ def _coin_purse() -> np.ndarray:
         t += rng.exponential(0.012 + 0.09 * t)
     coins = A.lowpass(_place(clinks, dur), 5000, 1)
     y = _place([(_en(thud), 0.0, 0.5), (_en(crunch), 0.0, 0.4), (_en(coins), 0.0, 1.0)], dur)
-    return _tail(y, 0.15)
+    return _tail(A.lowpass(y, 8000, 4), 0.15)
 
 
 def _coin_count() -> np.ndarray:
     """Three coins counted onto the tavern table, one after another: each lands with a
     knock of the wooden board and a short clink, the second and third onto the first."""
     dur = 0.82
-    times = [0.0, 0.19, 0.37]
+    times = [0.0, 0.17, 0.34]
     parts = []
     for k, at in enumerate(times):
-        knock = _modal(0.12, [(260.0, 0.07, 1.0), (590.0, 0.045, 0.6), (1130.0, 0.025, 0.3)], 0.0006)
+        knock = _modal(0.12, [(_hz("B3"), 0.07, 1.0), (_hz("D5"), 0.045, 0.6), (_hz("A5") * 1.3, 0.025, 0.3)],
+                       0.001)
         if k == 0:
-            clink = _coin(0.42, [(0.0, 1.0)], _hz("B6"), 0.3, seed=91)
+            clink = _coin(0.5, [(0.0, 1.0)], _hz("B6"), 0.45, seed=91, width=0.00025)
         else:      # onto the coins already there: two coins ring, a little brighter
-            clink = _coin(0.42, [(0.0, 1.0)], _hz("B6") * (1 + 0.004 * k), 0.26, seed=91 + k) + \
-                0.6 * _coin(0.42, [(0.0, 1.0)], _hz("B6"), 0.2, seed=95 + k)
+            clink = _coin(0.5, [(0.0, 1.0)], _hz("B6") * (1 + 0.004 * k), 0.4, seed=91 + k, width=0.0002) + \
+                0.6 * _coin(0.5, [(0.0, 1.0)], _hz("B6"), 0.3, seed=95 + k, width=0.0002)
         cl = _click(0.01, 1500, 6000, 0.0006, 97 + k)
         g = [0.9, 0.95, 1.0][k]
-        parts += [(_en(knock), at, 0.55 * g), (_en(clink), at, 0.9 * g), (_en(cl), at, 0.08 * g)]
-    return _tail(_place(parts, dur), 0.12)
+        # the coin's edge touches first, its face lands flat on the wood a moment later
+        parts += [(_en(clink), at, 0.9 * g), (_en(cl), at, 0.08 * g), (_en(knock), at + 0.003, 0.45 * g)]
+    return _tail(A.lowpass(_place(parts, dur), 8500, 4), 0.12)
 
 
 def _coin_sparkle() -> np.ndarray:
@@ -584,7 +610,7 @@ def _coin_sparkle() -> np.ndarray:
 def _coin_pixel() -> np.ndarray:
     """An 8-bit coin: a short A5, then a long D6 that fades in console volume steps."""
     frames = [(_hz("A5"), 13)] * 4 + [(_hz("D6"), max(0, 14 - k // 2)) for k in range(28)]
-    return A.lowpass(_chip(frames, duty=0.25, after=0.03), 6000, 2)
+    return A.lowpass(_chip(frames, duty=0.25, after=0.03), 5000, 4)
 
 
 # ============================================================================= error
@@ -593,7 +619,7 @@ def _hum_note(f: float, dur: float, droop: float = 0.0) -> np.ndarray:
     t = _t(n)
     freq = f * (1.0 - droop * np.clip((t - dur * 0.4) / (dur * 0.6), 0.0, 1.0))
     ph = 2 * np.pi * np.cumsum(freq) / SR
-    y = sum(h * np.sin(k * ph) for k, h in enumerate([1.0, 0.55, 0.3, 0.16, 0.08, 0.04], start=1))
+    y = sum(h * np.sin(k * ph) for k, h in enumerate([1.0, 0.85, 0.6, 0.38, 0.2, 0.1, 0.05], start=1))
     rel = _n(0.07)
     env = _rise(n, 0.004)
     env[-rel:] *= 0.5 + 0.5 * np.cos(np.pi * np.linspace(0.0, 1.0, rel))
@@ -604,33 +630,33 @@ def _err_hum() -> np.ndarray:
     """A soft hummed "mm-mm": A3 then F#3 (a falling minor third), warm and closed."""
     y = _place([(_hum_note(_hz("A3"), 0.15), 0.0, 1.0),
                 (_hum_note(_hz("F#3"), 0.25, droop=0.012), 0.19, 0.95)], 0.48)
-    y = A.peak_eq(y, 280, 3, 1.0)
-    return A.lowpass(y, 1500, 2)
+    y = A.peak_eq(y, 600, 4, 1.2)
+    return A.lowpass(y, 1800, 2)
 
 
 def _err_knock() -> np.ndarray:
     """Two knuckle knocks on a hollow wooden box, the second deeper: the box's air
     (A3, then E3) and its wooden walls."""
     def knock(f0: float, seed: int) -> np.ndarray:
-        body = _modal(0.4, [(f0, 0.17, 1.0), (f0 * 2.42, 0.08, 0.55), (f0 * 4.1, 0.05, 0.3),
-                            (f0 * 6.3, 0.03, 0.15)], 0.0013)
+        body = _modal(0.4, [(f0, 0.17, 0.75), (f0 * 2.42, 0.09, 0.9), (f0 * 4.1, 0.055, 0.55),
+                            (f0 * 6.3, 0.03, 0.22)], 0.0013)
         return _place([(_en(body), 0.0, 1.0), (_en(_click(0.02, 700, 3000, 0.002, seed)), 0.0, 0.18)], 0.4)
 
     y = _place([(knock(_hz("A3"), 121), 0.0, 1.0), (knock(_hz("E3"), 122), 0.17, 1.0)], 0.56)
-    return _tail(y, 0.08)
+    return _tail(A.lowpass(y, 3500, 2), 0.08)
 
 
 def _err_lute() -> np.ndarray:
     """Two low lute notes muted by the palm, F3 then D3: a shrugging "nuh-uh"."""
     def note(f: float, seed: int) -> np.ndarray:
-        s = _pluck(f, 0.42, 0.22, 0.28, seed=seed, pick=0.22)
+        s = _pluck(f, 0.42, 0.3, 0.25, seed=seed, pick=0.22, mute=0.45)
         s = A.peak_eq(s, 220, 4, 1.2)
         n = len(s)
         thumb = A.lowpass(_noise(n, seed + 7), 1200, 2) * _env(n, 0.003, 0.0003)
         return _en(s) + 0.12 * _en(thumb)
 
     y = _place([(note(_hz("F3"), 131), 0.0, 1.0), (note(_hz("D3"), 132), 0.17, 1.05)], 0.58)
-    return _tail(A.lowpass(y, 2500, 1), 0.1)
+    return _tail(A.lowpass(y, 2400, 4), 0.1)
 
 
 def _err_chime() -> np.ndarray:
@@ -642,17 +668,17 @@ def _err_chime() -> np.ndarray:
     b2 = _partials(_hz("B4"), 0.44, bell, 0.002, 142)
     m = _n(0.2)
     tt = _t(m)
-    fz = _svf_bp(_noise(m, 143), 2400.0 * (600.0 / 2400.0) ** (tt / 0.2), 2.0)
-    fz = fz * _curve(m, [(0, 0.0), (0.01, 1.0), (0.2, 0.0)])
-    y = _place([(_en(b1), 0.0, 1.0), (_en(b2), 0.16, 1.0), (_en(fz), 0.17, 0.18)], 0.6)
-    return _tail(A.lowpass(y, 4000, 1), 0.1)
+    fz = _svf_bp(_noise(m, 143), 1600.0 * (400.0 / 1600.0) ** (tt / 0.2), 1.5, order=3)
+    fz = A.lowpass(fz * _curve(m, [(0, 0.0), (0.02, 1.0), (0.2, 0.0)]), 2500, 4)
+    y = _place([(_en(b1), 0.0, 1.0), (_en(b2), 0.16, 1.0), (_en(fz), 0.17, 0.12)], 0.6)
+    return _tail(A.lowpass(y, 3500, 4), 0.1)
 
 
 def _err_pixel() -> np.ndarray:
-    """An 8-bit "uh-uh": two low square notes, A3 then D3, softened."""
-    frames = [(_hz("A3"), v) for v in (11, 11, 10, 9, 8, 7)] + [(_hz("A3"), 0)] * 2 + \
+    """An 8-bit "uh-uh": two low pulse-wave notes, A3 then D3, softened."""
+    frames = [(_hz("A3"), v) for v in (11, 11, 10, 9, 7, 4, 2)] + [(_hz("A3"), 0)] + \
         [(_hz("D3"), v) for v in (11, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)]
-    return A.lowpass(_chip(frames, duty=0.5), 1400, 2)
+    return A.lowpass(_chip(frames, duty=0.25, smooth=0.002), 1800, 4)
 
 
 # ============================================================================= candidates
@@ -702,6 +728,6 @@ CANDIDATES = [
               _fx("error", _err_lute), ["tavern", "string"]),
     Candidate("error", "dim_bells", "Dim bells", "Two soft, dark bells falling, like a spell that fizzles.",
               _fx("error", _err_chime), ["magical", "bell"]),
-    Candidate("error", "pixel_no", "Pixel no", "A low, soft 8-bit 'uh-uh': two square notes going down.",
+    Candidate("error", "pixel_no", "Pixel no", "A low, soft 8-bit 'uh-uh': two short notes going down.",
               _fx("error", _err_pixel, hp=0), ["retro", "8-bit"]),
 ]
