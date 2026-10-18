@@ -295,8 +295,14 @@ def test_zero_damage_turn_passes_automatically():
 
 # ---------------------------------------------------------------- yielding
 def test_yield_rules():
-    g1 = new_game(1)
-    assert not g1.can_yield()
+    # solo (the owner's ruling): yield, then a Jester can recover the hand; never twice running
+    g1 = new_game(1, seed=8)
+    set_enemy(g1, "J", "H", hp=100)
+    set_hand(g1, ["9C", "9D", "2S"])
+    assert g1.can_yield()
+    g1.yield_turn()
+    g1.suffer(["9C", "9D"])
+    assert g1.phase == PHASE_PLAY and not g1.can_yield()
     with pytest.raises(IllegalAction):
         g1.yield_turn()
     g = new_game(2, seed=8)

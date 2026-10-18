@@ -1578,9 +1578,10 @@ The official compendium at regicidelegacy.com/compendium has a page per mission;
 cards themselves are definitive. For each mission, confirm: enemy strength/health per
 tier, immunities, the start/end-of-turn effects, the enemy-defeated sequence and its
 perfect-kill variant, what joins and leaves the party, and the reward pack contents.
-Globally confirm: whether a solo player may yield in Legacy (the base reading forbids it;
-the fan engine allows it unless the previous action was a yield; the solo rules on p.26
-do not mention yielding), whether unspent coins are lost when a mission is won, the
+Owner's rulings (settled): a solo player may yield, but not twice running (a Jester can
+then recover the hand), in every mode; a claimed Jester whose attack contains a mage is
+banished with that mage attack (the attack is "added to the Jester"). Globally confirm:
+whether unspent coins are lost when a mission is won, the
 nothing else: pack E is complete. Already confirmed from the cards: every
 mission, every relic on both sides, the class-ability text and resolution order, the
 coin and mercenary rules and costs, the Jester claim rules, the 2/5 and Wild Animal

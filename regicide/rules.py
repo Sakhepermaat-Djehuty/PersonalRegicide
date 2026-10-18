@@ -217,10 +217,12 @@ class BaseRules:
 
     def can_yield(self, game: "Game") -> bool:
         """Official: "A player may not yield if every other player has yielded on their
-        last turn." With one player the condition is vacuously true, so solo never yields."""
+        last turn." Solo (the owner's ruling: yield, then a Jester can recover the hand) a
+        player may yield, but not twice running. (``config.solo_can_yield`` is kept in saves
+        for older versions; it no longer decides.)"""
         me = game.active
         if game.n_players == 1:
-            return bool(game.config.solo_can_yield) and game.last_action[0] != "yielded"
+            return game.last_action[0] != "yielded"
         return not all(game.last_action[i] == "yielded" for i in range(game.n_players) if i != me)
 
     def sequential_discard(self, game: "Game") -> bool:

@@ -3560,3 +3560,32 @@ def test_bots_play_out_missions_7_to_9(number, players):
                 if key in line:
                     seen.add(key)
     assert expected <= seen, seen
+
+
+def test_a_claimed_jester_is_banished_with_the_mage_attack_added_to_it():
+    """The owner's ruling: a claimed Jester's attack is "added to the Jester" (p.20), so when
+    that attack contains a mage (banished at the enemy-defeated step, p.23) the Jester goes
+    with it; a claimed attack without a mage leaves the Jester to the discard pile."""
+    from helpers import set_mission_enemy
+    for mage in (True, False):
+        c, g = _mission(4, players=3, seed=860)
+        set_mission_enemy(g, "LABJH", hp=40)
+        jid = [x for x in g.cards if g.cards[x].is_jester][0]
+        set_hand(g, [jid, "4D"], player=0)
+        g.play([jid])
+        g.choose_next(1)
+        set_hand(g, ["5M" if mage else "5C", "3H"], player=1)
+        set_tavern_top(g, ["3S", "2C", "4H", "6H", "7H"])
+        g.enemy.hp = 7 if mage else 10
+        g.play(["5M" if mage else "5C"])
+        if mage:
+            g.decide({"type": "mage_pick", "player": 1, "card": "3S"})
+        while g.phase == PHASE_DECIDE:
+            d = g.decision
+            g.decide({"type": d["kind"], "player": d["player"], "cards": list(d.get("options") or [])})
+        assert g.enemies_defeated == 1
+        if mage:
+            assert jid in g.banished and "5M" in g.banished and "3S" in g.banished and jid not in g.discard
+        else:
+            assert jid in g.discard and jid not in g.banished
+        _ids_everywhere(g)
