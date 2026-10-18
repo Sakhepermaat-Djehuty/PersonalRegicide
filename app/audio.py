@@ -179,6 +179,31 @@ class Audio:
                 self._lengths[event] = 0.0
         return self._lengths[event]
 
+    def clip(self, events: Sequence[str]) -> object:
+        """Play the first of ``events`` that has a file (an info card's clip, or the short
+        sound it falls back on). Returns what ``stop`` takes (None: nothing plays)."""
+        if self.sound is None or not self.on("sound_effects"):
+            return None
+        for event in events:
+            if event in SILENT:
+                continue
+            path = self.effect_path(event)
+            if os.path.exists(path):
+                try:
+                    return self.sound.play_effect(path, 0.8)
+                except Exception:
+                    return None
+        return None
+
+    def stop(self, handle: object) -> None:
+        """Stop a clip ``clip`` started (the card it belongs to was moved on from)."""
+        if handle is None or self.sound is None:
+            return
+        try:
+            self.sound.stop_effect(handle)
+        except Exception:
+            pass
+
     def game_events(self, events: Sequence[dict]) -> None:
         for delay, name in spaced(sounds_for(events), self.length):
             self.effect(name, delay)

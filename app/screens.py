@@ -225,8 +225,9 @@ class App(ui.View):
         self.in_campaign = False
 
     def show(self, screen: Screen) -> None:
+        from .info_view import InfoQueue
         for v in list(self.subviews):
-            if isinstance(v, CardPopup):      # a pop-up belongs to the screen being left
+            if isinstance(v, (CardPopup, InfoQueue)):      # a pop-up belongs to the screen being left
                 self.remove_subview(v)
         if self.current is not None:
             self.remove_subview(self.current)
@@ -244,10 +245,42 @@ class App(ui.View):
             T.apply_safe_area(self)
             cur.frame = (0, 0, self.width, self.height)
             cur.layout()
+            from .info_view import InfoQueue
             for v in list(self.subviews):
-                if isinstance(v, CardPopup):
+                if isinstance(v, (CardPopup, InfoQueue)):
                     v.frame = (0, 0, self.width, self.height)
                     v.layout()
+
+    def show_info(self, cards: list) -> None:
+        """Show info pop-ups over everything (a queue already showing takes them on)."""
+        if not cards:
+            return
+        from .info_view import InfoQueue
+        for v in self.subviews:
+            if isinstance(v, InfoQueue) and not v.closed:
+                v.extend(cards)
+                return
+        q = InfoQueue(cards, self.settings, play=self.audio.clip, stop=self.audio.stop,
+                      effect=self.audio.effect, frame=(0, 0, self.width, self.height))
+        self.add_subview(q)
+        q.layout()
+
+    def info_queue(self):
+        """The info pop-ups showing, if any."""
+        from .info_view import InfoQueue
+        for v in self.subviews:
+            if isinstance(v, InfoQueue) and not v.closed:
+                return v
+        return None
+
+    def _mission_start(self, screen: "GameScreen") -> None:
+        """A fresh game: its Battle start card (after the rules card) carries the
+        mission-start jingle; without that card the jingle plays now."""
+        from . import info
+        if info.row_on(self.settings, "battle_start"):
+            screen.info_start = True
+        else:
+            self.audio.effect("mission_start")
 
     # ------------------------------------------------------------- game flow
     def start_game(self, config: GameConfig, seed: Optional[int] = None) -> None:
@@ -255,8 +288,9 @@ class App(ui.View):
         self.game = Game.new(config, seed=seed)
         self.undo_stack = []
         self.autosave()
-        self.show(GameScreen(self))
-        self.audio.effect("mission_start")
+        screen = GameScreen(self)
+        self._mission_start(screen)
+        self.show(screen)
 
     def resume_game(self) -> bool:
         g = store.load_game()
@@ -305,8 +339,8 @@ class App(ui.View):
         self.autosave()
         screen = GameScreen(self)
         screen.rules_pending = self.rules_card_due()
+        self._mission_start(screen)
         self.show(screen)
-        self.audio.effect("mission_start")
 
     def rules_card_due(self) -> bool:
         """The rules card pops up the first time a mission loads, until it is dismissed
@@ -325,8 +359,9 @@ class App(ui.View):
         self.undo_stack = []
         self.save_campaign()
         self.autosave()
-        self.show(GameScreen(self))
-        self.audio.effect("mission_start")
+        screen = GameScreen(self)
+        self._mission_start(screen)
+        self.show(screen)
 
     def resume_attempt(self) -> bool:
         if self.campaign is None:
@@ -680,6 +715,7 @@ class GameScreen(Screen):
         # the choice box that was up (its picks intact), or the bare table (its selection intact)
         self.return_overlay: Optional[ui.View] = None
         self.rules_pending = False   # show the mission's rules card before play starts
+        self.info_start = False      # a fresh game: its Battle start pop-ups once the rules card is closed
         self.status = make_label("", (0, 0, 10, 10), 13, False, T.MUTED)
         # the piles on the table, each a stack of cards with its count; a tap opens it
         self.pile_views: Dict[str, PileView] = {}
@@ -819,6 +855,10 @@ class GameScreen(Screen):
         if self.rules_pending:
             self._show_overlay(RulesOverlay(self))
             return
+        if self.info_start:
+            self.info_start = False
+            from . import info
+            self.app.show_info(info.build(g, g.last_events, self.app.settings, start=True))
         kind = (g.decision or {}).get("kind") if g.phase == PHASE_DECIDE else None
         if kind == "team_discard":
             self._refresh_team_damage()
@@ -1230,7 +1270,25 @@ class GameScreen(Screen):
             self.app.audio.effect("error")
             self.show_toast(str(e))
             return
-        self.app.audio.game_events(g.last_events)
+        from . import info
+        before = self.app.undo_stack[-1] if self.app.undo_stack else None
+        try:
+            cards = info.build(g, g.last_events, self.app.settings, before=before)
+        except Exception:
+            # on the phone a failing pop-up is never in the way of the game (errors.log
+            # keeps it); off the phone it fails the tests
+            if not store._is_pythonista():
+                raise
+            import traceback
+            try:
+                store.log_error("Info pop-ups\n" + traceback.format_exc())
+            except Exception:
+                pass
+            cards = []
+        if cards:
+            self.app.show_info(cards)    # each card's clip speaks for its step
+        else:
+            self.app.audio.game_events(g.last_events)
         if g.is_over:
             if self.app.in_campaign:
                 self.campaign_result = self.app.finish_attempt()
