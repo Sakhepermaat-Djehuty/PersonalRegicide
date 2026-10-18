@@ -4693,12 +4693,77 @@ class SettingsScreen(Screen):
         yy += 28
         for key, label, default in self.SOUND_ROWS:
             yy = switch_row(key, label, default, yy)
+        yy = self._info_rows(sv, yy, w, m, step)
         yy += 10
         sv.add_subview(make_label("Saves live in %s" % store.save_dir(), (m, yy, w - 2 * m, 60), 12, False, T.MUTED, lines=3))
         yy += 64
         sv.content_size = (w, yy)
         sv.content_offset = (0, max(0.0, min(keep_y, yy - sv.height)))
         self.add_subview(sv)
+
+    def _info_rows(self, sv: ui.ScrollView, yy: float, w: float, m: float, step: float) -> float:
+        """Info Pop Ups [✓] ›: the master box (✗: no pop-ups, the short step sounds come
+        back) and, behind ›, every pop-up's own row in collapsible groups (collapsed at
+        first), each with its icon and its box. The master box keeps the rows' choices."""
+        from . import info
+        from .widgets import TickBox
+        settings = self.app.settings
+        master = info.popups_on(settings)
+        is_open = getattr(self, "info_open", False)
+        groups_open = getattr(self, "info_groups_open", set())
+        sv.add_subview(make_label("Info pop-ups", (m, yy + 10, w - 2 * m, 24), 13, True, T.ACCENT))
+        yy += 38
+        sv.add_subview(make_label("Info Pop Ups", (m, yy, w - 2 * m - 110, 44), 15, False, T.TEXT))
+        sv.add_subview(TickBox(master, self._set_info_master, frame=(w - m - 100, yy + 4, 36, 36)))
+        sv.add_subview(make_button("\u2304" if is_open else "\u203a", self._toggle_info_list,
+                                   (w - m - 52, yy + 4, 52, 36), False, 18))
+        yy += step
+        if not is_open:
+            return yy
+        off = set(settings.get("info_popups_off") or ())
+        for group in info.GROUPS:
+            rows = [r for r in info.ROWS if r[1] == group]
+            shown = sum(1 for r in rows if r[0] not in off)
+            head = make_button("", (lambda gr: lambda s: self._toggle_info_group(gr))(group),
+                               (m, yy + 2, w - 2 * m, 40), False, 15)
+            sv.add_subview(head)
+            sv.add_subview(make_label(group, (m + 14, yy + 2, w - 2 * m - 120, 40), 15, True, T.TEXT))
+            sv.add_subview(make_label("%d of %d  %s" % (shown, len(rows), "\u2304" if group in groups_open else "\u203a"),
+                                      (w - m - 110, yy + 2, 96, 40), 13, False, T.MUTED, ui.ALIGN_RIGHT))
+            yy += 46
+            if group not in groups_open:
+                continue
+            for rid, _, label, _, _ in rows:
+                icon = info.icon_for(settings, rid)
+                glyph = SUIT_SYMBOL.get(icon, icon) if icon != info.TREE else "\u2663"
+                sv.add_subview(make_label(glyph, (m + 14, yy, 30, 40), 18, True,
+                                          T.SUIT_COLOR.get(icon, T.MUTED if not master else T.TEXT), ui.ALIGN_CENTER))
+                sv.add_subview(make_label(label, (m + 50, yy, w - 2 * m - 110, 40), 14, False,
+                                          T.TEXT if master else T.MUTED))
+                sv.add_subview(TickBox(rid not in off, (lambda r: lambda v: self._set_info_row(r, v))(rid),
+                                       enabled=master, frame=(w - m - 46, yy + 4, 32, 32)))
+                yy += 42
+        return yy
+
+    def _set_info_master(self, on: bool) -> None:
+        self._set("info_popups", bool(on))
+        self.layout()
+
+    def _set_info_row(self, row_id: str, on: bool) -> None:
+        from . import info
+        info.set_row(self.app.settings, row_id, on)
+        self.app.save_settings()
+        self.layout()
+
+    def _toggle_info_list(self, sender) -> None:
+        self.info_open = not getattr(self, "info_open", False)
+        self.layout()
+
+    def _toggle_info_group(self, group: str) -> None:
+        groups = set(getattr(self, "info_groups_open", set()))
+        groups.symmetric_difference_update([group])
+        self.info_groups_open = groups
+        self.layout()
 
     def _next_back(self, sender) -> None:
         from . import backs

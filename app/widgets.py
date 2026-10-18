@@ -711,6 +711,47 @@ class CountStepper(ui.View):
         self.set_needs_display()
 
 
+class TickBox(ui.View):
+    """A box ticked (✓) or crossed (✗): a tap turns it over and reports ``on_change(value)``.
+    One that cannot be pressed (``enabled`` False) is dimmed and silent."""
+
+    def __init__(self, value: bool, on_change: Optional[Callable[[bool], None]] = None, enabled: bool = True,
+                 **kw) -> None:
+        super().__init__(**kw)
+        self.value = bool(value)
+        self.on_change = on_change
+        self.enabled = enabled
+        self.background_color = None
+
+    def draw(self) -> None:
+        s = min(self.width, self.height) - 2
+        x, y = (self.width - s) / 2.0, (self.height - s) / 2.0
+        box = ui.Path.rounded_rect(x, y, s, s, 7)
+        ui.set_color(T.OK if self.value else T.PANEL_2)
+        if not self.enabled:
+            ui.set_color(T.BTN_DISABLED)
+        box.fill()
+        mark = "✓" if self.value else "✗"
+        size = s * 0.62
+        ink = T.BG if self.value and self.enabled else T.MUTED
+        ui.draw_string(mark, (x, y + (s - size * 1.25) / 2.0, s, size * 1.3), (T.FONT_BOLD, size), ink,
+                       ui.ALIGN_CENTER)
+
+    def touch_began(self, touch) -> None:
+        pass
+
+    def touch_ended(self, touch) -> None:
+        x, y = touch.location
+        if not self.enabled or not (0 <= x <= self.width and 0 <= y <= self.height):
+            return
+        if TAP_SOUND is not None:
+            TAP_SOUND()
+        self.value = not self.value
+        self.set_needs_display()
+        if self.on_change is not None:
+            self.on_change(self.value)
+
+
 class RelicCard(ui.View):
     """A relic as a small card: its symbol in its colour on a card face, "relic" below.
     A tap reports through ``on_tap`` (the deck list opens the relic's card)."""
