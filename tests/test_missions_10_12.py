@@ -624,3 +624,22 @@ def test_bots_play_out_missions_10_to_12(number, players):
                 if key in line:
                     seen.add(key)
     assert expected <= seen, seen
+
+
+def test_mission10_exact_kill_puts_the_zone_in_the_discard_pile_before_the_enemy():
+    """The card: "banish all cards in the mission zone and put the enemy in the discard pile;
+    on an exact kill, place the zone cards in the discard pile instead". The zone goes first,
+    so the defeated member lies on top of them (the top of the discard pile matters in
+    mission 10: a cleric member and the solo Scarlet Whistle read it)."""
+    c, g = _mission10(seed=1031)
+    _switch_enemy(g, "5C", hp=8)
+    _rig(g, "mission_zone", ["2D", "10D"])
+    _rig(g, "discard", ["2C"])
+    set_hand(g, ["9S", "AS"])
+    g.use_solo_jester({"suit": "S"})          # 8 damage, exact; the Jester is set aside: nothing played covers it
+    assert g.enemies_defeated == 1
+    assert g.discard[0] == "5C" and set(g.discard[1:3]) == {"2D", "10D"} and g.discard[3] == "2C"
+    zone_at = [i for i, ev in enumerate(g.last_events) if ev["t"] == "zone_cleared"]
+    defeat_at = [i for i, ev in enumerate(g.last_events) if ev["t"] == "defeat"]
+    assert zone_at and defeat_at
+    _ids_everywhere(g)

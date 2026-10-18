@@ -3960,9 +3960,9 @@ def describe_events(g: Game) -> str:
         elif t == "zone_move":
             parts.append("%s moves to the mission zone." % g.card(ev["card"]).label())
         elif t == "team_damage":
-            parts.append("Myla deals %d team damage." % int(ev["damage"]))
+            parts.append("%s deals %d team damage." % (ev.get("source", "Myla"), int(ev["damage"])))
         elif t == "team_damage_prevented":
-            parts.append("Guardian: Myla's %d team damage is prevented." % int(ev["damage"]))
+            parts.append("Guardian: %s's %d team damage is prevented." % (ev.get("source", "Myla"), int(ev["damage"])))
         elif t == "team_discard":
             parts.append("%s discards %s (%d of %d)." % (
                 g.players[int(ev["player"])].name, g.card(ev["card"]).label(), int(ev["paid"]), int(ev["damage"])))

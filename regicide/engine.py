@@ -1170,8 +1170,7 @@ class Game:
             return
         self.set_aside.extend(c.id for c in spent)
         self._event("defeat", enemy=enemy.card_id, exact=exact, plan=plan, mage_banished=mage_ids)
-        self._say("%s is defeated%s" % (enemy.name, (" with exact damage!" + (
-            " It joins the tavern deck." if plan.get("enemy_to") == "tavern_top" else "")) if exact else "."))
+        self._say("%s is defeated%s" % (enemy.name, " with exact damage!" if exact else "."))
         self.enemies_defeated += 1
         # Legacy p.19: step 1 moves the enemy (and the mission zone) first, step 2 then puts
         # the played cards on top of the discard pile. The base game keeps its old order
@@ -1267,9 +1266,15 @@ class Game:
         if plan.get("played_to", "discard") == "discard":
             to_discard = [c for c in played if c.id not in mage_ids]
             self._discard_cards(to_discard)
+            if to_discard:
+                cards = list(reversed(self.discard[:len(to_discard)]))
+                self._say("The cards played against it go on the discard pile: %s%s." % (
+                    ", ".join(self.cards[c].label() for c in cards),
+                    " (%s on top)" % self.cards[cards[-1]].label() if len(cards) > 1 else ""))
             banished = self.banish_cards(self.rules.order_for_banish(self, [c.id for c in played if c.id in mage_ids]))
-            if mage_ids:
-                self._say("The mage attack is banished: %s." % " + ".join(self.cards[c].label() for c in mage_ids))
+            if banished:
+                self._say("The attack with a mage is banished instead (even when the mage was blocked): %s." % (
+                    " + ".join(self.cards[c].label() for c in banished)))
             if len(to_discard) >= 2 and self.rules.discard_top_matters(self):
                 self._announce_cleanup("discard", list(reversed(self.discard[:len(to_discard)])))
             if len(banished) >= 2 and self.rules.banished_top_matters(self):
@@ -1299,14 +1304,22 @@ class Game:
             # the pile keeps its order: its bottom card is banished first, its top ends on top
             self.banish_cards(list(reversed(pile)))
             self._event("discard_banished", cards=pile)
-            self._say("The whole discard pile (%d card%s) is banished in its order." % (len(pile), "" if len(pile) == 1 else "s"))
+            self._say("The whole discard pile is banished in its order: %s (%s on top)." % (
+                ", ".join(self.cards[c].label() for c in reversed(pile)), self.cards[pile[0]].label()))
         if plan.get("shuffle_banished"):
-            # Evergreen's Forest and Hills: "then shuffle the banished pile"
+            # Legacy mission 5, Evergreen's Forest and Hills: "shuffle ... the banished pile"
             self.rng.shuffle(self.banished)
             self._event("banished_shuffled", count=len(self.banished))
+            self._say("The banished pile is shuffled.")
 
     def _move_defeated_enemy(self, card_id: str, plan: Dict[str, Any]) -> None:
         dest = plan.get("enemy_to", "discard")
+        deck = "reserve" if getattr(self.rules, "legacy", False) else "tavern"
+        where = {"tavern_top": "goes on top of the %s deck" % deck, "discard": "goes to the discard pile",
+                 "banish": "is banished", "banish_shuffle": "is shuffled into the banished pile",
+                 "castle_bottom": "goes face down to the bottom of the enemy deck"}.get(dest)
+        if where:
+            self._say("%s %s." % (enemy_name(self.cards[card_id], getattr(self.rules, "legacy", False)), where))
         if dest == "tavern_top":
             self.to_reserve(card_id)
         elif dest == "discard":
@@ -1330,6 +1343,9 @@ class Game:
             elif zone_to == "discard":
                 self._discard_cards([self.cards[c] for c in zone])
             self._event("zone_cleared", cards=zone, to=zone_to)
+            where = {"banish": "is banished", "banish_shuffle": "is shuffled into the banished pile",
+                     "discard": "goes to the discard pile"}.get(zone_to, "is cleared")
+            self._say("The mission zone (%s) %s." % (", ".join(self.cards[c].label() for c in zone), where))
 
     def _reveal_next_enemy(self) -> None:
         cid = self.castle.pop(0)

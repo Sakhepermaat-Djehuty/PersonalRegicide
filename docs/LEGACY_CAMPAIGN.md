@@ -640,7 +640,9 @@ reductions). If the table plays it as the printed strength only, say so.
 of every turn that is not a kill the top card of the banished pile (the last card
 banished) goes face up into the mission zone, whose combined strength adds to the
 enemy's (a beast 0, a 2/5 2, a recycled enemy its printed strength). On a kill the enemy
-and the whole zone are inserted at random positions of the banished pile; on exact
+and the whole zone go into the banished pile, which is then shuffled whole ("shuffle them
+into the banished pile"), before the played cards are gathered (a mage attack is banished
+on top afterwards, in the order the player names); on exact
 damage the next enemy, once revealed, takes damage equal to the fallen enemy's strength
 as the tracker showed it (printed, plus the zone, less paladin reductions, never below
 0), and if that brings it to 0 or less it falls too (exactly only at 0) and the chain
@@ -1008,7 +1010,8 @@ strength, an exact kill being judged after the reduction (`damage_reduction`); c
 at the end of the turn the top discard goes into the zone; bard, the current player must
 put a hand card into the zone (`zone_feed`, no pass while the hand has an unlocked card).
 Both end-of-turn powers are skipped on a kill (p.19). Enemy defeated: the zone is
-banished and the enemy discarded; on exact damage the zone is discarded. A defeated
+banished and the enemy discarded; on exact damage the zone is discarded. Either way the
+zone goes first, as the card reads, so the enemy lies on top of it. A defeated
 member drawn later plays as the corrupted card it is (its banish, its classes).
 
 ## Mission 11, Descent Into Darkness (confirmed, transcribed from the owner's photos)
@@ -1144,10 +1147,12 @@ complete when the High Arcana (25/120) falls, and the game menu then offers Ever
 mode. Start of turn: the top banished card goes into the zone (skipped after an exact
 kill, `extra["skip_zone"]`); the zone adds its combined strength and grants immunity to
 its classes. Enemy defeated: the zone is banished in the order the player chooses
-(`banish_order`, a template the player fills with the permutation; the last card ends on
-top and feeds the zone next turn; the bots put the weakest or a classless card last),
-then the enemy, then the whole discard pile in its order (its top ends on top), and only
-then the played cards go on the new discard pile. A reaver's revealed cards are banished
+(`banish_order`, a template the player fills with the permutation), then the enemy, then
+the whole discard pile in its order (its top ends on top), and only then the played cards
+go on the new discard pile (a mage attack is banished on top). So the card that comes back
+into the zone next turn is the old discard pile's top card (or the mage attack's last card,
+or, with an empty discard pile, the defeated royal); the zone's own cards come back only
+once those are used up (the bots put a weak or classless card last). A reaver's revealed cards are banished
 in the order the player names as well ("What order?"), and so are a mage attack's cards
 at clean-up. The restored relic is implemented once
 in the engine: every banish goes through `Game.banish_cards`, and `banish_redirect`
@@ -1555,7 +1560,9 @@ location first, then banes and boons by number (end of turn: the location, bane 
 bane 8's Arcana at the bottom). On a kill, the exact-kill boons 32 and 33 resolve
 before bane 15 and the location's steps (boon 32 names the zone, which the location then
 empties), bane 14 keeps the killing attack (its last play, a mage attack included) in
-the zone after the location's steps, and bane 13's team damage comes once the piles are
+the zone after the location's steps, and bane 13's team damage is the last of the
+enemy-defeated steps (mission 6 style, rulebook p.19), paid with the enemy still on the
+table, before the played cards are gathered; it no longer comes once the piles are
 final. Bane 21 and boon 30 judge the attack as formed in step 1, before the relics let
 others add to it; a beast counts as its partner. Bane 2 moves the 30 cards before the
 hands are drawn, the reserve's top card ending on top of the discard pile. Boon 31

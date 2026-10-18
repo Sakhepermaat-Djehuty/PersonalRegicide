@@ -525,8 +525,10 @@ class EvergreenRules(LegacyRules):
     # 15 (its card says "before carrying out the Location rules"), the location's own
     # steps (with the Forest's and Hills' optional discard and the Lake's reserve banish
     # and zone order), then the engine moves the enemy and the zone as the plan says, bane
-    # 14 keeps the killing attack in the zone (its card says "after"), and bane 13's team
-    # damage comes once the piles are final.
+    # 14 keeps the killing attack in the zone (its card says "after"). Bane 13's team
+    # damage is an enemy-defeated step like mission 6's (rulebook p.19: the mission's steps
+    # come before the played cards are gathered): paid last of them, the enemy still on the
+    # table; if it cannot be paid the mission is lost there.
     def before_defeat(self, game, exact: bool) -> Optional[Dict[str, Any]]:
         tasks: List[str] = []
         if exact and self.has_boon(game, 32):
@@ -541,12 +543,14 @@ class EvergreenRules(LegacyRules):
         if loc == "E":
             tasks.append("lake_banish")
             tasks.append("lake_order")
+        if self.has_bane(game, 13):
+            tasks.append("bane13")
         game.extra["defeat_queue"] = tasks
         return self._defeat_next(game, exact)
 
     def _defeat_next(self, game, exact: bool) -> Optional[Dict[str, Any]]:
         queue = game.extra.get("defeat_queue") or []
-        while queue:
+        while queue and not game.is_over:
             task = queue.pop(0)
             d = self._defeat_task(game, task, exact)
             if d is not None:
@@ -589,6 +593,13 @@ class EvergreenRules(LegacyRules):
                 game._say("The Lake: %d card%s from the top of the reserve deck %s banished, one per mission zone card." % (
                     n, "" if n == 1 else "s", "is" if n == 1 else "are"))
             return None
+        if task == "bane13":
+            # Explosive Spores: team damage equal to the defeated enemy's base strength
+            d = {"player": game.active}
+            if self._start_team_damage(game, d, game.enemy.attack if game.enemy is not None else 0,
+                                       "Explosive Spores"):
+                return d
+            return None
         if task == "lake_order":
             if len(game.mission_zone) >= 2:
                 game._say("The Lake: %s chooses the order in which the mission zone goes to the discard pile." % who)
@@ -597,6 +608,8 @@ class EvergreenRules(LegacyRules):
         return None
 
     def _defeat_step_done(self, game, d: Dict[str, Any]) -> None:
+        if game.is_over:
+            return
         if str(d.get("resume")) == "defeat_tail":
             game.resume_defeat()
             return
@@ -627,14 +640,6 @@ class EvergreenRules(LegacyRules):
         if self.has_bane(game, 14):
             plan["last_play_to"] = "zone"     # Absorbtion
         return plan
-
-    def after_cleanup(self, game, exact: bool, plan: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        if self.has_bane(game, 13):
-            # Explosive Spores: team damage equal to the defeated enemy's base strength
-            d: Dict[str, Any] = {"player": game.active}
-            if self._start_team_damage(game, d, int(plan.get("base_strength", 0)), "Explosive Spores"):
-                return d
-        return None
 
     # --- the decisions of the enemy-defeated chain --------------------------------------------
     def _actions_precision_strike(self, game, d: Dict[str, Any]) -> List[Dict[str, Any]]:
