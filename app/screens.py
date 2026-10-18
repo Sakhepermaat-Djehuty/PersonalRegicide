@@ -1780,11 +1780,14 @@ def attack_summary(g: Game, play_index) -> str:
     return text
 
 
-def pile_top_why(g: Game, pile: str) -> str:
+def pile_top_why(g: Game, pile: str, exact: bool = False) -> str:
     """Why the top card of the discard or the banished pile matters in this game (the order
-    questions explain themselves with it)."""
+    questions explain themselves with it); ``exact``: the enemy just fell to exact damage."""
     number = getattr(g.rules, "mission", 0)
     if pile == "banished":
+        if number == 12 and exact:
+            return ("Exact kill: nothing enters the mission zone next turn; the top banished card enters "
+                    "the turn after.")
         return {5: "The top banished card goes into the mission zone at the end of the turn.",
                 11: "The enemy gains the top banished card's strength and classes.",
                 12: "The top banished card goes into the mission zone at the start of the next turn."}.get(
@@ -2160,9 +2163,11 @@ class OrderOverlay(CardGridOverlay):
     def heading(self, g: Game, d: dict) -> tuple:
         kind = str(d.get("kind"))
         if kind == "banish_order":
-            return ("Enemy defeated", "The mission zone is banished first, then the enemy, then the whole discard "
-                                      "pile. Tap the zone cards in the order they are banished: the last one ends "
-                                      "on top and comes back into the zone next turn.")
+            return ("Enemy defeated", "The mission zone is banished in the order you tap, then the enemy, then the "
+                                      "whole discard pile in its order; the cards played against this enemy then "
+                                      "start the new discard pile (an attack with a mage is banished instead). The "
+                                      "zone's cards end under the enemy and the old discard pile, so next turn the "
+                                      "zone takes the old discard pile's top card, not these.")
         if kind == "discard_order":
             return ("What order?", "Mage: the revealed cards you did not choose go to the discard pile in any order. "
                                    "Tap them in order: the first tapped goes first, the last ends on top. "
@@ -2175,11 +2180,13 @@ class OrderOverlay(CardGridOverlay):
                                    "Tap them in order (the first tapped goes first, the last ends on top) or keep "
                                    "the order they were played. " + pile_top_why(g, "discard"))
         if kind == "played_banish_order":
-            return ("What order?", "Enemy defeated: the mage attack's cards are banished in any order. Tap them in "
-                                   "order (the first tapped goes first, the last ends on top) or keep the order "
-                                   "they were played. " + pile_top_why(g, "banished"))
+            return ("What order?", "Enemy defeated: the attack with a mage is banished instead of discarded (even "
+                                   "when the mage was blocked), its cards in any order. Tap them in order (the first "
+                                   "tapped goes first, the last ends on top) or keep the order they were played. "
+                                   + pile_top_why(g, "banished", bool(d.get("exact"))))
         return ("Enemy defeated", "The Lake: the mission zone goes to the discard pile in any order. Tap the cards "
-                                  "in order: the last one ends on top of the discard pile.")
+                                  "in order: the last one lies on top of the zone's cards; the enemy (on an exact "
+                                  "kill) and the played cards then go on top of them.")
 
     def card_ids(self, g: Game, d: dict) -> List[str]:
         acts = [a for a in g.legal_actions() if "needs" in a]

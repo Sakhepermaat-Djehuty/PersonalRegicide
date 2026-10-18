@@ -2163,7 +2163,10 @@ class Mission5Rules(LegacyRules):
             game.cards[cid].label(), self.zone_strength(game)))
 
     def defeat_plan(self, game, exact: bool) -> Dict[str, Any]:
-        plan = {"enemy_to": "banish_shuffle", "played_to": "discard", "zone_to": "banish_shuffle"}
+        # "take the enemy and all cards in the mission zone and shuffle them into the
+        # banished pile": in with them, then the whole pile is shuffled (step 1, before the
+        # played cards are gathered, so a mage attack still lands on top in its order)
+        plan = {"enemy_to": "banish", "played_to": "discard", "zone_to": "banish", "shuffle_banished": True}
         if exact:
             plan["carry_damage"] = game.enemy_attack
         return plan
@@ -2763,7 +2766,10 @@ class Mission10Rules(LegacyRules):
         self._decision_done(game, d)
 
     def defeat_plan(self, game, exact: bool) -> Dict[str, Any]:
-        return {"enemy_to": "discard", "played_to": "discard", "zone_to": "discard" if exact else "banish"}
+        # "banish all cards in the mission zone and put the enemy in the discard pile; on an
+        # exact kill, place the zone cards in the discard pile instead": the zone first
+        return {"enemy_to": "discard", "played_to": "discard", "zone_to": "discard" if exact else "banish",
+                "zone_first": True}
 
 
 @register_rules
@@ -2987,8 +2993,8 @@ class Mission12Rules(LegacyRules):
             raise IllegalAction("Name every mission zone card exactly once.")
         game.mission_zone = ids
         game._event("banish_order", player=int(d["player"]), cards=ids)
-        game._say("%s banishes the mission zone in the order %s (%s on top)." % (
-            game.players[int(d["player"])].name, ", ".join(game.cards[c].label() for c in ids), game.cards[ids[-1]].label()))
+        game._say("%s banishes the mission zone in the order %s (the enemy and the discard pile then go on top)." % (
+            game.players[int(d["player"])].name, ", ".join(game.cards[c].label() for c in ids)))
         self._decision_done(game, d)
 
     def after_cleanup(self, game, exact: bool, plan: Dict[str, Any]) -> Optional[Dict[str, Any]]:

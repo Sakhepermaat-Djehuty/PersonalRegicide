@@ -1667,7 +1667,8 @@ def test_mission11_beast_hand_pick_and_mission12_banish_order_overlay(app):
     assert gs.overlay.picked == ["4H", "6D"]
     _tap_button(app, "Confirm the order (2 of 2)")
     assert g.decision is None and g.banished[:3] == ["4H", "6D", "THQH"] and g.enemies_defeated == 1
-    assert "Solo banishes the mission zone in the order 4♥, 6♦ (6♦ on top)." in _logged(g) and gs.overlay is None
+    assert ("Solo banishes the mission zone in the order 4♥, 6♦ (the enemy and the discard pile then go on top)."
+            in _logged(g) and gs.overlay is None)
 
 
 def test_evergreen_mother_solo_pick_overlay_and_two_player_hand_banish(app):

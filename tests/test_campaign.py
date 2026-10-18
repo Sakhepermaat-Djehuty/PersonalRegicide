@@ -2291,6 +2291,29 @@ def test_mission5_myla_starts_banished_and_the_banished_pile_feeds_the_zone():
     assert g.plays[-1].value == 7 and g.plays[-1].suits == () and g.enemy.hp == 40 - 9 - 16 - 7
 
 
+def test_mission5_shuffles_the_whole_banished_pile_not_just_the_newcomers():
+    """The card: "take the enemy and all cards in the mission zone and shuffle them into the
+    banished pile". The pile is shuffled whole, so the card on top before the kill (which
+    would enter the zone at the end of the turn) stays on top only by chance, 1 in 8 here."""
+    from helpers import _pull, set_mission_enemy
+    on_top = 0
+    runs = 400
+    for seed in range(runs):
+        c, g = _mission5(seed=5000 + seed)
+        set_mission_enemy(g, "GRJH", hp=5)
+        set_hand(g, ["9S", "8S"])
+        for cid in ("2C", "3C", "4C", "5C", "6H"):     # 6♥ on top
+            _pull(g, cid)
+            g.banished.append(cid)
+        _pull(g, "MYLA7")
+        g.mission_zone = ["MYLA7"]
+        g.play(["9S"])
+        while g.phase == PHASE_DECIDE:
+            g.decide(greedy_policy(g))
+        on_top += g.banished[-1] == "6H"
+    assert on_top / runs < 0.25, on_top                # random insertion kept it on top ~60% of the time
+
+
 def test_mission5_defeat_shuffles_enemy_and_zone_into_the_banished_pile_and_exact_kills_carry_over():
     from helpers import keep_played_order, set_mission_enemy
     c, g = _mission5(seed=471)
@@ -2309,7 +2332,9 @@ def test_mission5_defeat_shuffles_enemy_and_zone_into_the_banished_pile_and_exac
     assert g.enemies_defeated == 1 and g.decision is None and g.discard[0] == "5D"
     assert set(g.banished) == {"MYLA7", "2C", "3C", "GRJH"} and len(g.banished) == 4   # shuffled in, without looking
     assert g.mission_zone == [] and set(g.discard[:2]) == {"AC", "5D"}
-    assert any(ev["t"] == "zone_cleared" and ev["to"] == "banish_shuffle" for ev in g.last_events)
+    kinds = [ev["t"] for ev in g.last_events]
+    assert any(ev["t"] == "zone_cleared" and ev["to"] == "banish" for ev in g.last_events)
+    assert "banished_shuffled" in kinds                # then the whole banished pile is shuffled
     # carry-over: the defeated enemy's strength as it fell (10 + 7 zone, no shield)
     carry = [ev for ev in g.last_events if ev["t"] == "carry_damage"]
     assert carry and carry[0]["amount"] == 17 and g.enemy.hp == g.enemy.max_hp - 17

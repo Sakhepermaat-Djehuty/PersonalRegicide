@@ -493,18 +493,23 @@ def test_bane_12_duplicitous_bards_take_a_hand_card_into_the_zone():
     assert g.decision is None and g.active == 0        # a cleric: no bard effect
 
 
-def test_bane_13_explosive_spores_deal_team_damage_equal_to_the_base_strength_after_the_kill():
+def test_bane_13_explosive_spores_deal_team_damage_equal_to_the_base_strength_in_the_defeat_steps():
     c, g = _evergreen("A", banes=[13], players=2)
     _switch_enemy(g, "LABQH", hp=9)
     set_hand(g, ["9S", "AS", "8C"], player=0)
     set_hand(g, ["5D", "6D", "7D"], player=1)
     g.play(["9S"])
-    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "team_discard" and g.decision["resume"] == "defeat_tail"
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "team_discard" and g.decision["resume"] == "defeat"
     assert g.decision["damage"] == 15 and g.decision["source"] == "Explosive Spores"
-    assert g.enemies_defeated == 1 and g.discard[0] == "9S" and g.enemy is None   # the piles are final
+    # step 1 of p.19: the enemy and the attack are still on the table
+    assert g.enemy is not None and g.enemy.card_id == "LABQH" and "9S" not in g.discard
     g.decide({"type": "team_discard", "player": 1, "card": "7D"})
     g.decide({"type": "team_discard", "player": 0, "card": "8C"})
-    assert g.decision is None and g.enemy is not None and g.phase == PHASE_PLAY and g.active == 0
+    assert g.decision is None and g.enemies_defeated == 1 and g.phase == PHASE_PLAY and g.active == 0
+    # step 1: the team damage, then the enemy (an exact kill at the Shrine: discarded); step 2:
+    # the played card on top
+    assert g.discard[:4] == ["9S", "LABQH", "8C", "7D"]
+    assert g.enemy is not None and g.enemy.card_id != "LABQH"
     _ids_everywhere(g)
     # unpayable: lost
     _switch_enemy(g, "LABQD", hp=9)
@@ -858,3 +863,31 @@ def test_bots_play_out_random_evergreen_setups(players):
         assert res["evergreen"] and c.evergreen["played"] == 1
         seen.add(ids["location"])
     assert len(seen) >= 2
+
+
+def test_bane13_team_damage_is_an_enemy_defeated_step_before_the_played_cards_are_gathered():
+    """Explosive Spores is paid in step 1 (rulebook p.19: the mission's enemy-defeated steps,
+    then the played cards on top of the discard pile), as mission 6's team damage is: the
+    hand cards paid lie under the killing attack, which sets bane 17's bonus."""
+    from helpers import set_hand
+    c, g = _evergreen("A", banes=(13, 17), players=2, seed=5000)
+    for _ in range(5):
+        if g.phase == PHASE_DECIDE:
+            g.decide(g.legal_actions()[0])
+    _switch_enemy(g, g.enemy.card_id, hp=5)
+    a = g.active
+    set_hand(g, ["10S", "9S", "AS"], player=a)
+    set_hand(g, ["2H", "6D", "10D", "10H"], player=1 - a)
+    strength = g.enemy.attack
+    g.play(["10S"])
+    paid = []
+    while g.phase == PHASE_DECIDE and g.decision.get("kind") == "team_discard":
+        assert g.enemy is not None and "10S" not in g.discard      # still step 1: the attack is on the table
+        pick = [x for x in g.legal_actions() if x["card"] in ("10H", "6D", "10D") and x["card"] not in paid][0]
+        paid.append(pick["card"])
+        g.decide(pick)
+    while g.phase == PHASE_DECIDE:
+        g.decide(g.legal_actions()[0])
+    assert g.enemies_defeated == 1 and sum(g.cards[x].value for x in paid) >= strength
+    assert g.discard[0] == "10S"                    # the killing attack on top of the cards paid
+    assert all(x in g.discard[1:] for x in paid)

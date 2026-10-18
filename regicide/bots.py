@@ -398,8 +398,9 @@ def _mission_decision(g: Game, kind: Optional[str], acts: List[dict]) -> Optiona
             return acts[0]
         pool = list(t[0]["pick_from"])
         if kind == "banish_order":
-            # the last card ends on top and feeds the next mission zone: a classless or weak
-            # card there, the strong class cards underneath
+            # the enemy and the discard pile go on top of the zone's cards; only once the
+            # start-of-turn feeds have used those up does the last zone card come back: a
+            # classless or weak card there, the strong class cards underneath
             pool.sort(key=lambda c: (1 if g.cards[c].suits else 0, g.cards[c].value), reverse=True)
         return {"type": kind, "player": t[0]["player"], "cards": pool}
     # --- Evergreen --------------------------------------------------------------------------
