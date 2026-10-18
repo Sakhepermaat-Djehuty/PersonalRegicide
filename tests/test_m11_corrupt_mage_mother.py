@@ -62,7 +62,7 @@ def _owner_turn10(reserve_top=()):
     assert not g.cards["AM"].has("corrupted") and g.cards["9T"].suits == ("T",)
     assert g.enemy_attack == 22 and g.rules.attack_bonus(g) == 9 + 3
     assert g.rules.immune_suits(g) == ("S", "M")
-    assert not g.can_yield() and g.can_use_solo_jester()
+    assert g.can_yield() and g.can_use_solo_jester()           # solo may yield (the owner's ruling)
     _ids_everywhere(g)
     return c, g
 
@@ -166,7 +166,7 @@ def test_m11_owner_turn_ace_mage_corrupted_8_mother_banishes_the_discard_top():
     assert (len(g.discard), len(g.banished), len(g.tavern)) == (10, 17, 24)
     assert g.players[0].hand == ["2S", "9T"] and g.extra["flute"] == ["3D"]
     assert [p.card_ids for p in g.plays] == [["10D"], ["AM", "8C"]]
-    assert not g.can_yield() and g.can_use_solo_jester()
+    assert g.can_yield() and g.can_use_solo_jester()
     _ids_everywhere(g)
 
 

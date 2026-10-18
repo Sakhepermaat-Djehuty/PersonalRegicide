@@ -1142,7 +1142,16 @@ class Game:
         # Legacy p.23: an attack that contains a mage (the mage, the cards played with it
         # and everything it added) is banished at clean-up, other attacks against the
         # same enemy are not.
-        mage_ids = [c for p in self.plays if p.mage for c in p.card_ids]
+        # A claimed Jester's attack is "added to the Jester" (p.20): when it contains a mage
+        # the Jester is part of that mage attack and is banished with it (the owner's ruling).
+        mage_plays = set(i for i, p in enumerate(self.plays) if p.mage)
+        jester_at = None
+        for i, p in enumerate(self.plays):
+            if not p.jester and any(self.cards[c].is_jester for c in p.card_ids):
+                jester_at = i
+            elif p.jester and p.mage and jester_at is not None:
+                mage_plays.add(jester_at)
+        mage_ids = [c for i, p in enumerate(self.plays) if i in mage_plays for c in p.card_ids]
         spent: List[Card] = []
         if self.n_players == 1 and self.rules.solo_jester_mode(self) == "attack":
             # Official solo rule (Legacy p.26): the Jester is never cleaned up to any pile;
