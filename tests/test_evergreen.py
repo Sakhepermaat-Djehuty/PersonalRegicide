@@ -891,3 +891,22 @@ def test_bane13_team_damage_is_an_enemy_defeated_step_before_the_played_cards_ar
     assert g.enemies_defeated == 1 and sum(g.cards[x].value for x in paid) >= strength
     assert g.discard[0] == "10S"                    # the killing attack on top of the cards paid
     assert all(x in g.discard[1:] for x in paid)
+
+
+def test_bane13_lost_after_a_defeat_box_ends_the_game_without_an_error():
+    """Found by fuzzing the lab's pop-ups: at the Hills an exact kill first offers the zone
+    discard; Explosive Spores' team damage, paid after that box, can lose the game. The
+    defeat steps then stop: the answer to the box must not raise ("No defeat is pending")
+    nor go on with the defeat of a game already lost."""
+    from helpers import set_hand
+    c, g = _evergreen("D", banes=[13], players=1)
+    while g.phase == PHASE_DECIDE:
+        g.decide(g.legal_actions()[0])
+    _switch_enemy(g, "LABQH", hp=9)
+    g.mission_zone = [g.tavern.pop(0)]
+    set_hand(g, ["9S", "AS"])
+    g.play(["9S"])
+    assert g.phase == PHASE_DECIDE and g.decision["kind"] == "zone_discard"
+    g.decide({"type": "zone_discard_skip", "player": 0, "skip": True})
+    assert g.phase == PHASE_LOST and g.is_over and "Explosive Spores" in g.loss_reason
+    assert g.decision is None and g.enemies_defeated == 0

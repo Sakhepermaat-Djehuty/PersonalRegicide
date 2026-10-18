@@ -614,6 +614,8 @@ class EvergreenRules(LegacyRules):
             game.resume_defeat()
             return
         nd = self._defeat_next(game, bool(d.get("exact")))
+        if game.is_over:
+            return          # a step after the box lost the game (bane 13's team damage)
         if nd is None:
             game.resume_defeat()
             return
