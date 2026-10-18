@@ -24,12 +24,15 @@ TEMPLATE = os.path.join(HERE, "picker_template.html")
 # music suites as the page names them, and the order of a suite's tracks
 SUITES = {"music_tavern": "Tavern Band", "music_court": "Royal Court", "music_saga": "Castle Saga"}
 STAGE_ORDER = ["menu", "jack", "queen", "king"]
+# families modelled on the owner's reference sounds: shown first, with a badge naming the reference
+MODELLED = {"modelled_select": "CardPlace1", "modelled_deselect": "CardPlace4", "modelled_draw": "CardShuffle",
+            "modelled_shuffle": "CardFan1", "modelled_discard": "CardTakeOutPackage2", "modelled_button": "switch21"}
 
 
 def _order(r: dict) -> tuple:
     tags = r.get("tags", [])
     stage = next((STAGE_ORDER.index(t) for t in tags if t in STAGE_ORDER), len(STAGE_ORDER))
-    return (r.get("family", ""), stage if r["event"] == "music" else 0, r["id"])
+    return (r.get("family", "") not in MODELLED, r.get("family", ""), stage if r["event"] == "music" else 0, r["id"])
 
 
 def main(argv=None) -> int:
@@ -49,8 +52,10 @@ def main(argv=None) -> int:
             os.makedirs(os.path.join(dest, "a", ev.id), exist_ok=True)
             shutil.copyfile(src, os.path.join(dest, rel))
             paths.append(rel)
+            ref = MODELLED.get(r.get("family", ""))
             items.append({"id": r["id"], "name": r["name"], "note": r["note"], "tags": r.get("tags", []),
-                          "secs": r["stats"]["seconds"], "src": rel, "suite": SUITES.get(r.get("family", ""), "")})
+                          "secs": r["stats"]["seconds"], "src": rel, "suite": SUITES.get(r.get("family", ""), ""),
+                          "badge": "New \u00b7 modelled on your %s" % ref if ref else ""})
         events.append({"id": ev.id, "group": ev.group, "title": ev.title, "when": ev.when, "kind": ev.kind,
                        "items": items})
     data = json.dumps({"events": events}, ensure_ascii=False, separators=(",", ":"))
