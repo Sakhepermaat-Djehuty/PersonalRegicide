@@ -1,0 +1,29 @@
+{
+ "effects": {
+  "button": "card_tap",
+  "card_deselect": "slip_back",
+  "card_select": "corner_flick",
+  "coin": "counting",
+  "defeat_enemy": "hunting_horns",
+  "discard": "crate_drop",
+  "draw": "thumb_peel",
+  "error": "muted_lute",
+  "exact_kill": "gilded_card",
+  "hit": "war_drum",
+  "jester": "bassoon_prank",
+  "loss": "fallen_banner",
+  "mission_start": "ready_go",
+  "new_enemy": "doom_drum",
+  "play": "felt_slap",
+  "popup": "fairy_reveal",
+  "power_blocked": "dull_knock",
+  "power_double": "war_horn",
+  "power_heal": "healer_tune",
+  "power_shield": "ward_hum",
+  "shuffle": "riffle_bridge",
+  "suffer": "armor_dent",
+  "victory": "string_triumph",
+  "yield": "viol_sigh"
+ },
+ "music": {}
+}
