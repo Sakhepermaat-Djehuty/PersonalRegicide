@@ -35,7 +35,12 @@ game menu too. In a game, a tap on the status line ("Reserve 54 · Discard 17"),
 "Discard and reserve piles" in the in-game Menu, shows the piles: the discard pile and the
 banished pile in order (the top card first) and the reserve deck sorted like the deck list
 (what is left, never its order). Every choice box has "Hold to view game": while it is held the box fades
-away and the table shows; letting go brings the box back. Settings: "Classic card faces"
+away and the table shows; letting go brings the box back. A choice of a card on the table
+(a mission zone card to rescue, banish or discard, a played card to move, the top discard)
+shows where the cards lie as a grid, the ones that may not be chosen dimmed: tap one, then
+the button that names it (a single card comes picked). The Kinfolk Flute's box is the hand
+as a grid, the cards already on the flute above it. The Chanter's and the Reaver's numbers
+are chosen with − and + (hold a key to run on), a line under the number saying what it does. Settings: "Classic card faces"
 lays numbered cards out like playing cards (a 7 shows seven class icons, the number and
 icon in two corners, the lower half turned; royals show a big letter); cards above 10,
 beasts, 2/5s, Wild Animals, Jesters and the deck list's small cards keep the simple face.

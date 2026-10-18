@@ -411,3 +411,70 @@ def test_the_attack_cards_rows_show_a_question_mark_for_an_amount_that_hangs_on_
     assert pv["powers"]["D"].get("uncertain")
     rows = dict(forecast_rows(g, pv))
     assert rows["Draw"] == "?", rows
+
+
+def test_the_flute_box_is_the_hand_as_a_grid_and_a_two_five_gets_a_button_per_value(app):
+    """The Kinfolk Flute's box: the hand as cards, those that may go on the flute bright; the
+    flute's cards in a row above; a tap picks one and Store acts; a 2/5 on an empty flute
+    may go on as a 2 or as a 5."""
+    from app.screens import SpecialOverlay
+    from app.widgets import CardStrip
+    from regicide.cards import make_card
+    gs, g = _flute_mission(app)
+    g.cards["M25H"] = make_card("2", "H", id="M25H", name="2/5", flags=("twofive",))
+    set_hand(g, ["M25H", "3D", "9D", "7C"])
+    gs.refresh(after_action=False)
+    gs._special(gs.special_btn)
+    ov = gs.overlay
+    assert isinstance(ov, SpecialOverlay) and list(ov.card_views) == ["M25H", "3D", "9D", "7C"]
+    assert [c for c, v in ov.card_views.items() if v.dimmed] == ["9D", "7C"]
+    assert not ui.find(ov, lambda v: isinstance(v, CardStrip))           # nothing on the flute yet
+    choose = ui.find(ov, lambda v: isinstance(v, ui.Button) and v.title == "Choose a card to store")
+    assert choose and not choose[0].enabled
+    ui.tap(app, *ui.root_point(app, ov.card_views["M25H"]))
+    stores = [b.title for b in ui.find(ov, lambda v: isinstance(v, ui.Button) and v.title.startswith("Store"))]
+    assert stores == ["Store 2/5♥ on the Kinfolk Flute as a 2", "Store 2/5♥ on the Kinfolk Flute as a 5"]
+    ui.tap(app, *ui.root_point(app, ov.card_views["3D"]))               # the pick moves
+    stores = [b.title for b in ui.find(ov, lambda v: isinstance(v, ui.Button) and v.title.startswith("Store"))]
+    assert stores == ["Store 3♦ on the Kinfolk Flute"]
+    ui.tap(app, *ui.root_point(app, ui.button(app, stores[0])))
+    assert g.extra["flute"] == ["3D"] and gs.overlay is None
+    # next turn the flute's cards show above the grid and only 3s may join them
+    g.extra["flute_turn"] = None
+    set_hand(g, ["M25H", "3H", "4D"])
+    gs.refresh(after_action=False)
+    gs._special(gs.special_btn)
+    ov = gs.overlay
+    strips = ui.find(ov, lambda v: isinstance(v, CardStrip))
+    assert strips and [c.id for c in strips[0].cards] == ["3D"]
+    assert [c for c, v in ov.card_views.items() if not v.dimmed] == ["3H"]
+    assert any("another 3" in t for t in [v.text for v in ui.find(ov, lambda v: isinstance(v, ui.Label))])
+    assert ui.render(app).size[0] > 0
+
+
+def test_a_zone_card_box_shows_the_whole_zone_and_picks_before_it_acts(app):
+    """A mission zone choice as a card grid: the zone whole, cards that may not be chosen
+    dimmed, nothing picked while there is a choice (the button says so), a tap picks and
+    names the action, another tap moves the pick, the skip stays a button of its own."""
+    from app.screens import CardPickOverlay
+    from regicide.engine import PHASE_DECIDE
+    gs, g = _flute_mission(app, 7)
+    g.mission_zone = ["4H", "3S", "2D"]
+    for c in g.mission_zone:
+        _pull(g, c)
+    g.phase = PHASE_DECIDE
+    g.decision = {"kind": "zone_banish", "player": 0, "options": ["4H", "2D"], "resume": "defeat", "exact": True}
+    gs.refresh(after_action=False)
+    ov = gs.overlay
+    assert isinstance(ov, CardPickOverlay) and list(ov.card_views) == ["4H", "3S", "2D"]
+    assert [c for c, v in ov.card_views.items() if v.dimmed] == ["3S"] and ov.picked == []
+    none = ui.find(ov, lambda v: isinstance(v, ui.Button) and v.title == "Choose a card")
+    assert none and not none[0].enabled and ui.button(app, "Banish nothing")
+    ui.tap(app, *ui.root_point(app, ov.card_views["3S"]))                # dimmed: nothing
+    assert ov.picked == []
+    ui.tap(app, *ui.root_point(app, ov.card_views["4H"]))
+    assert ov.picked == ["4H"] and ui.button(app, "Banish 4♥")
+    ui.tap(app, *ui.root_point(app, ov.card_views["2D"]))
+    assert ov.picked == ["2D"] and ui.button(app, "Banish 2♦")
+    assert not ui.find(ov, lambda v: isinstance(v, ui.Button) and v.title == "Banish 4♥")
+    assert ui.render(app).size[0] > 0

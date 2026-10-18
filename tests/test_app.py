@@ -281,8 +281,16 @@ def test_campaign_flow_win_then_mission2(app):
     assert gs.left_btn.title == "Yield" and gs.left_btn.enabled
     assert not gs.special_btn.hidden and gs.special_btn.title == "Flute"
     _tap_button(app, "Flute")
+    # the Flute's box: the hand as a grid, the cards that may be stored bright; tap one, then Store
+    from app.screens import SpecialOverlay
+    ov = gs.overlay
+    assert isinstance(ov, SpecialOverlay) and set(ov.card_views) == set(g.players[0].hand)
+    bright = [c for c, v in ov.card_views.items() if not v.dimmed]
+    assert bright and all(2 <= g.card(c).value <= 5 for c in bright)
+    assert not ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Store"))
+    ui.tap(app, *ui.root_point(app, ov.card_views[bright[0]]))
     labels = [b.title for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Store"))]
-    assert labels
+    assert labels and g.card(bright[0]).label() in labels[0]
     ui.tap(app, *ui.root_point(app, ui.button(app, labels[0])))
     assert len(app.game.extra["flute"]) == 1
     assert any(v.badge == "flute" for v in gs.hand.views.values())
@@ -656,7 +664,7 @@ def test_swap_button_only_when_a_same_cost_alternative_exists(app):
 
 
 def test_mission3_zone_strip_and_exact_kill_pick_overlay(app):
-    from app.screens import PickOverlay
+    from app.screens import CardPickOverlay
     from regicide.campaign import missions as M
     from regicide.campaign import party as P
     from regicide.engine import PHASE_DECIDE
@@ -691,8 +699,9 @@ def test_mission3_zone_strip_and_exact_kill_pick_overlay(app):
     gs.refresh(after_action=False)
     gs.hand.set_selection(["5C"])
     _tap_button(app, "Play")
-    assert g.phase == PHASE_DECIDE and isinstance(gs.overlay, PickOverlay)
+    assert g.phase == PHASE_DECIDE and isinstance(gs.overlay, CardPickOverlay)
     assert ui.render(app).size[0] > 0
+    assert list(gs.overlay.card_views) == ["4H"] and gs.overlay.card_views["4H"].selected   # the only card: picked
     btns = [b for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Rescue"))]
     assert [b.title for b in btns] == ["Rescue 4♥ to the discard pile"]
     ui.tap(app, *ui.root_point(app, btns[0]))
@@ -990,7 +999,7 @@ def test_reaver_count_stepper_then_pick_overlay(app):
 
 
 def test_scarlet_whistle_solo_pick_overlay_and_the_beast_choice(app):
-    from app.screens import CampaignScreen, OrderOverlay, PickOverlay
+    from app.screens import CampaignScreen, CardPickOverlay, OrderOverlay
     from helpers import set_discard
     app.new_campaign(1, ["Solo"])
     camp = app.campaign
@@ -1019,7 +1028,7 @@ def test_scarlet_whistle_solo_pick_overlay_and_the_beast_choice(app):
     assert _pv(gs)["decision_kind"] == "whistle_take" and _pv(gs)["damage"] == 0
     _tap_button(app, "Play")
     assert g.phase == PHASE_DECIDE and g.decision["kind"] == "whistle_take"
-    assert isinstance(gs.overlay, PickOverlay)
+    assert isinstance(gs.overlay, CardPickOverlay)
     texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
     assert "Scarlet Whistle" in texts
     assert ui.button(app, "Add 6♦ from the discard pile") and ui.button(app, "Skip")
@@ -1067,7 +1076,7 @@ def test_scarlet_whistle_two_players_hand_decision_overlay(app):
 
 def test_mission6_team_damage_seat_picker_flow(app):
     from app import store
-    from app.screens import HandoverOverlay, PickOverlay, TeamDamageOverlay
+    from app.screens import CardPickOverlay, HandoverOverlay, TeamDamageOverlay
     from helpers import set_mission_enemy
     gs, g = _mission_attempt(app, 6, names=("Ana", "Ben"))
     # Myla in the zone's row: her team damage is 7
@@ -1080,15 +1089,18 @@ def test_mission6_team_damage_seat_picker_flow(app):
     gs.hand.set_selection(["9S"])
     _tap_button(app, "Play")
     # the kill: move a card in play to the zone
-    assert g.decision["kind"] == "zone_move" and isinstance(gs.overlay, PickOverlay)
+    assert g.decision["kind"] == "zone_move" and isinstance(gs.overlay, CardPickOverlay)
     texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
     assert "Enemy defeated" in texts
     _tap_button(app, "Move 9♠ to the mission zone")
     # exact: rescue one zone card except Myla
-    assert g.decision["kind"] == "zone_rescue" and isinstance(gs.overlay, PickOverlay)
+    assert g.decision["kind"] == "zone_rescue" and isinstance(gs.overlay, CardPickOverlay)
     texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
     assert any("except Myla" in t for t in texts)
     assert not ui.find(app, lambda v: isinstance(v, ui.Button) and "Myla" in v.title)
+    # the whole zone shows, Myla dimmed; the one card that may be rescued comes picked
+    assert list(gs.overlay.card_views) == ["MYLA7", "9S"] and gs.overlay.card_views["MYLA7"].dimmed
+    assert gs.overlay.card_views["9S"].selected
     _tap_button(app, "Rescue 9♠ to the discard pile")
     # team damage: a seat picker, then the chosen player's hand
     assert g.decision["kind"] == "team_discard" and isinstance(gs.overlay, TeamDamageOverlay)
@@ -1390,7 +1402,7 @@ def test_chanter_declare_stepper_then_the_other_players_discard_down(app):
 
 
 def test_mission7_zone_title_and_pilgrim_banish_pick_overlay(app):
-    from app.screens import PickOverlay
+    from app.screens import CardPickOverlay
     from helpers import set_mission_enemy
     gs, g = _mission_attempt(app, 7)
     set_mission_enemy(g, "WLJH", hp=100)
@@ -1408,7 +1420,7 @@ def test_mission7_zone_title_and_pilgrim_banish_pick_overlay(app):
     gs.hand.set_selection(["3H"])
     assert _pv(gs)["decision_kind"] == "pilgrim_banish"   # a pilgrim of the same strength may be banished first
     _tap_button(app, "Play")
-    assert g.decision["kind"] == "pilgrim_banish" and isinstance(gs.overlay, PickOverlay)
+    assert g.decision["kind"] == "pilgrim_banish" and isinstance(gs.overlay, CardPickOverlay)
     texts = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
     assert "A pilgrim matches" in texts
     assert ui.button(app, "Banish Pilgrim 3") and ui.button(app, "Keep the pilgrims")
@@ -2024,7 +2036,7 @@ def test_finding_26_button_titles_fit_their_buttons(app):
     for title in ("Bottom: 10♥", "Top: 10♥", "Banish: 10♥", "Hand: 10♥"):
         assert ui.measure_string(title, 0, bold(13))[0] <= (300 - 8) / 2.0, title
     # Choose Your Poison: the action bar's skip button shrinks its title to fit (115pt wide)
-    from app.screens import PickOverlay, RestoredArrowsOverlay
+    from app.screens import CardPickOverlay, RestoredArrowsOverlay
     from helpers import _pull
     app.new_campaign(1, ["Solo"])
     camp = app.campaign
@@ -2053,7 +2065,10 @@ def test_finding_26_button_titles_fit_their_buttons(app):
     _titles_fit(app)
     g.decision = {"kind": "precision_strike", "player": 0, "resume": "defeat", "exact": True}
     gs.refresh(after_action=False)
-    assert isinstance(gs.overlay, PickOverlay) and ui.button(app, "Take top of discard (10♥)")
+    assert isinstance(gs.overlay, CardPickOverlay) and gs.overlay.card_views["10H"].badge == "discard"
+    if len(gs.overlay.card_views) > 1:
+        ui.tap(app, *ui.root_point(app, gs.overlay.card_views["10H"]))
+    assert ui.button(app, "Take top of discard (10♥)")
     _titles_fit(app)
 
 

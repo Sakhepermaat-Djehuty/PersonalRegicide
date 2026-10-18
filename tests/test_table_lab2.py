@@ -76,6 +76,13 @@ def _declare(app, gs, n):
     ui.tap(app, *ui.root_point(app, gs.overlay.go_btn))
 
 
+def _pick(app, gs, cid, title):
+    """In a card grid box: pick the card (unless it came picked), then the button naming it."""
+    if not gs.overlay.card_views[cid].selected:
+        ui.tap(app, *ui.root_point(app, gs.overlay.card_views[cid]))
+    _tap_button(app, title)
+
+
 def _tap_card(app, gs, card_id):
     ui.tap(app, *ui.root_point(app, gs.hand.views[card_id]))
 
@@ -1052,8 +1059,8 @@ def _team_damage_with_a_shield(app):
     assert g.phase == PHASE_PLAY and g.shield == 4 and "shield 4" in _attack_side(gs)
     gs.hand.set_selection(["5S"])                         # exact: the Guardian Statue falls
     _tap_button(app, "Play")
-    _tap_button(app, "Move 5♠ to the mission zone")
-    _tap_button(app, "Rescue 5♠ to the discard pile")
+    _pick(app, gs, "5S", "Move 5♠ to the mission zone")      # the 4♠ and the 5♠ were played
+    _pick(app, gs, "5S", "Rescue 5♠ to the discard pile")     # the only one: it comes picked
     assert g.decision["kind"] == "team_discard" and gs.overlay is None
     return gs, g
 

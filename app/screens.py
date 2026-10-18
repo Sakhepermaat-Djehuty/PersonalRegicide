@@ -850,7 +850,7 @@ class GameScreen(Screen):
                 return
             self.shown_player = seat
             self._table_under_box(seat)
-            self._show_overlay(PICK_OVERLAYS.get(kind, PickOverlay)(self))
+            self._show_overlay(pick_overlay_class(g, kind)(self))
             return
         # The seat whose hand is shown: the attacker, or whoever must decide (Kinfolk
         # Flute, Azure Emblem).
@@ -1984,11 +1984,16 @@ class CardGridOverlay(Overlay):
 
     columns = 6
     single = False
+    menu_button = True       # "Game menu" under the buttons (a decision cannot be dismissed)
 
     def __init__(self, screen: GameScreen, **kw) -> None:
         super().__init__(screen, **kw)
         self.picked: List[str] = []
         self.card_views: Dict[str, CardView] = {}
+
+    def extra_head(self, g: Game, d: dict) -> List[ui.View]:
+        """Views between the heading and the grid (a row of cards for context)."""
+        return []
 
     def heading(self, g: Game, d: dict) -> tuple:
         return ("Your choice", "")
@@ -2026,8 +2031,10 @@ class CardGridOverlay(Overlay):
         head: List[ui.View] = [make_label(title, (0, 0, 10, 36), size, True, T.ACCENT, ui.ALIGN_CENTER)]
         if text:
             head.append(self.text(text, 13))
+        head += list(self.extra_head(g, d))
         tail: List[ui.View] = list(self.buttons(g, d))
-        tail.append(make_button("Game menu", lambda s: self.screen._menu(s), (0, 0, 10, 36), False, 13))
+        if self.menu_button:
+            tail.append(make_button("Game menu", lambda s: self.screen._menu(s), (0, 0, 10, 36), False, 13))
         ids = self.card_ids(g, d)
         pw = self.text_width()
         cols = self.columns
@@ -2407,6 +2414,99 @@ class EmblemKeepOverlay(PickGridOverlay):
         picked = g.card(str(d.get("picked", ""))).label() if d.get("picked") in g.cards else "the chosen card"
         return ("Azure Emblem", "%s joined the attack. You may put one of the other revealed cards on top of the "
                                 "reserve deck before the rest goes to the discard pile." % picked)
+
+
+# decisions about one mission zone card: the whole zone is shown, what may not be chosen dimmed
+ZONE_PICKS = ("zone_rescue", "pilgrim_banish", "zone_banish", "zone_discard", "zone_sibling", "zone_match")
+
+
+class CardPickOverlay(PickGridOverlay):
+    """One card to choose among cards on the table (which mission zone card is rescued,
+    banished or discarded, which played card moves to the zone, the Scarlet Whistle's top
+    discard, Precision Strike's take) as a card grid: where the cards lie is shown whole (the
+    mission zone, the played cards), the cards that may not be chosen dimmed; a tap picks one
+    and the button under the grid says what happens to it. A skip is a button of its own.
+    When only one card may be chosen it comes picked."""
+
+    TEXTS = PickOverlay.TEXTS
+    none_title = "Choose a card"
+
+    def __init__(self, screen: GameScreen, **kw) -> None:
+        super().__init__(screen, **kw)
+        self.preselected = False
+
+    def heading(self, g: Game, d: dict) -> tuple:
+        return PickOverlay.heading(self, g, d)
+
+    def picks(self, g: Game) -> List[dict]:
+        return [a for a in g.legal_actions() if a.get("card") and not a.get("skip")]
+
+    def card_ids(self, g: Game, d: dict) -> List[str]:
+        kind = str(d.get("kind"))
+        if kind in ZONE_PICKS:
+            out = list(g.mission_zone)
+        elif kind == "precision_strike":
+            out = list(g.mission_zone) + list(g.discard[:1])
+        elif kind in ("zone_move", "zone_build"):
+            out = [c for p in g.plays for c in p.card_ids]
+        else:
+            out = []
+        out = [c for c in out if c in g.cards]
+        for a in self.picks(g):
+            if str(a["card"]) not in out and str(a["card"]) in g.cards:
+                out.append(str(a["card"]))
+        return out
+
+    def badges(self, g: Game, d: dict) -> Dict[str, str]:
+        if str(d.get("kind")) == "precision_strike" and g.discard:
+            return {g.discard[0]: "discard"}
+        return {}
+
+    def build(self) -> List[ui.View]:
+        g = self.screen.game
+        d = g.decision or {}
+        can = []
+        for a in self.picks(g):
+            if str(a["card"]) not in can:
+                can.append(str(a["card"]))
+        self.picked = [c for c in self.picked if c in can]
+        if not self.preselected:
+            self.preselected = True
+            if len(can) == 1:
+                self.picked = list(can)
+        n = len(self.card_ids(g, d))
+        self.columns = 4 if n <= 4 else (5 if n <= 10 else 6)
+        return super().build()
+
+    def buttons(self, g: Game, d: dict) -> List[ui.View]:
+        acts = g.legal_actions()
+        picks = self.picks(g)
+        out: List[ui.View] = []
+        chosen = [a for a in picks if self.picked and str(a["card"]) == self.picked[0]]
+        for a in chosen:
+            out.append(make_button(a.get("label", a["type"]), (lambda act: lambda s: self.screen.decide(act))(a),
+                                   (0, 0, 10, 46)))
+        if picks and not chosen:
+            b = make_button(self.none_title, lambda s: None, (0, 0, 10, 46))
+            set_enabled(b, False)
+            out.append(b)
+        for a in acts:
+            if a not in picks:
+                out.append(make_button(a.get("label", a["type"]), (lambda act: lambda s: self.screen.decide(act))(a),
+                                       (0, 0, 10, 44), not picks))
+        return out
+
+
+def pick_overlay_class(g: Game, kind: str) -> type:
+    """The box for a decision of the deciding player's own: its own box when it has one; a
+    card grid when every option is a card on the table (or a skip); else a list of buttons."""
+    if kind in PICK_OVERLAYS:
+        return PICK_OVERLAYS[kind]
+    acts = g.legal_actions()
+    cards = [a for a in acts if a.get("card")]
+    if cards and all(a.get("card") or a.get("skip") for a in acts) and all(str(a["card"]) in g.cards for a in cards):
+        return CardPickOverlay
+    return PickOverlay
 
 
 class RestoredArrowsOverlay(CardGridOverlay):
@@ -3291,18 +3391,67 @@ class ClassChoiceOverlay(Overlay):
         return items
 
 
-class SpecialOverlay(Overlay):
-    """Relic and mission actions offered by the rules."""
+class SpecialOverlay(CardGridOverlay):
+    """Relic actions the rules offer outside a decision: the solo Kinfolk Flute. The hand as
+    a grid, the cards that may go on the flute bright and the rest dimmed, the cards already
+    on it in a row above; a tap picks a card and the button under the grid stores it (a 2/5
+    gets a button for each value the flute takes). Back closes it. An action that is not
+    about a card of the hand is a button of its own."""
 
     peekable = False   # not a choice: it closes with its own button
+    single = True
+    menu_button = False
+    columns = 5
 
-    def build(self) -> List[ui.View]:
-        g = self.screen.game
-        items: List[ui.View] = [make_label("Actions", (0, 0, 10, 32), 20, True, T.TEXT, ui.ALIGN_CENTER)]
-        for a in g.rules.special_actions(g):
-            items.append(make_button(a.get("label", a.get("name", "?")), (lambda act: lambda b: self.screen._act(lambda: g.special(act)))(a), (0, 0, 10, 46)))
-        items.append(make_button("Back", lambda b: self.screen.refresh(after_action=False), (0, 0, 10, 44), False))
-        return items
+    def specials(self, g: Game) -> List[dict]:
+        return g.rules.special_actions(g)
+
+    def flute_only(self, g: Game) -> bool:
+        sp = self.specials(g)
+        return bool(sp) and all(a.get("name") == "flute_store" for a in sp)
+
+    def heading(self, g: Game, d: dict) -> tuple:
+        if not self.flute_only(g):
+            return ("Actions", "")
+        flute = [c for c in g.extra.get("flute", []) if c in g.cards]
+        if flute:
+            what = "another %d from your hand here (it holds one strength)" % g.rules.card_strength(g, g.card(flute[0]))
+        else:
+            what = "a 2, 3, 4 or 5 from your hand here"
+        return ("Kinfolk Flute", "Once a turn, store %s. A kinfolk attack may use its cards as though they were "
+                                 "in your hand." % what)
+
+    def extra_head(self, g: Game, d: dict) -> List[ui.View]:
+        flute = [g.card(c) for c in g.extra.get("flute", []) if c in g.cards]
+        if not flute:
+            return []
+        strip = CardStrip(frame=(0, 0, 10, 84))
+        strip.set_cards(flute, "On the flute")
+        return [strip]
+
+    def card_ids(self, g: Game, d: dict) -> List[str]:
+        return list(g.active_player.hand)
+
+    def dimmed_ids(self, g: Game, d: dict) -> List[str]:
+        can = set(str(a["card"]) for a in self.specials(g) if a.get("card"))
+        return [c for c in self.card_ids(g, d) if c not in can]
+
+    def buttons(self, g: Game, d: dict) -> List[ui.View]:
+        sp = self.specials(g)
+        card_acts = [a for a in sp if a.get("card")]
+        chosen = [a for a in card_acts if self.picked and str(a["card"]) == self.picked[0]]
+        out: List[ui.View] = []
+        for a in chosen:
+            out.append(make_button(a.get("label", a.get("name", "?")), (lambda act: lambda b: self.screen._act(lambda: g.special(act)))(a), (0, 0, 10, 46)))
+        if card_acts and not chosen:
+            b = make_button("Choose a card to store" if self.flute_only(g) else "Choose a card", lambda s: None, (0, 0, 10, 46))
+            set_enabled(b, False)
+            out.append(b)
+        for a in sp:
+            if not a.get("card"):
+                out.append(make_button(a.get("label", a.get("name", "?")), (lambda act: lambda b: self.screen._act(lambda: g.special(act)))(a), (0, 0, 10, 46)))
+        out.append(make_button("Back", lambda b: self.screen.refresh(after_action=False), (0, 0, 10, 44), False))
+        return out
 
 
 class CampaignResultOverlay(Overlay):
