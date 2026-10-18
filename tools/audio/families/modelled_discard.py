@@ -10,18 +10,25 @@ code; no part of the reference recording is used, read or copied (it was only me
 offline, to set the paper's band, smoothness and level below).
 
 What one card laid on the pile is made of, and what models each part here:
-  slide    the card's face brushing the top of the pile as the hand brings it in and
-           eases it into place: the reference's paper (``_paper``: smooth noise, even per
-           third of an octave, no needles), louder and brighter the faster it moves,
-           with the card stock's faint tooth, a few fibres catching and, as in the
-           reference, the moving card's own faint ring between 1 and 2 kHz (``_slide``)
-  land     the hand lets go and the card comes down flat: its edge meets the pile (a
-           short contact ringing the card's bending modes, and the pile's dull knock),
-           then its face lands, pushing the air out from under it (a soft "pff") and
-           setting the pile, the cloth and the tabletop going: a low, heavily damped
-           thump (``_land``). The taller the pile (``depth``), the more card there is
-           under it to soak the knock up and the less far the face falls: each landing
-           comes a little duller and its two touches a little closer together
+  slide    a short flick (about 50 ms): the card's face brushing the top of the pile as
+           the hand brings it in and eases it into place: the reference's paper
+           (``_paper``: smooth noise, even per third of an octave, no needles), louder and
+           brighter the faster it moves, with the card stock's faint tooth, a few fibres
+           catching and, as in the reference, the moving card's own faint ring between 1
+           and 2 kHz (``_slide``). It sits about 10 to 13 dB under the landing (5 ms
+           blocks): the paper is there, but the cards being put down are the event, not
+           a scrape (in the owner's card-place references the slide is 12 to 34 dB under)
+  land     the hand lets go just as the card's edge touches down (so the brush runs
+           into the contact, with no gap): the edge meets the pile (a short contact
+           ringing the card's bending modes, and the pile's short, dull knock: a stack
+           of card on cloth is soft, so it gives a tick near 1 to 3 kHz rather than a
+           box's hollow "tok"), then its face lands, pushing the air out from under it
+           (a soft "pff") and setting the pile, the cloth and the tabletop going: a low,
+           heavily damped thump (``_land``). As in the owner's card-place references,
+           the weight sits below 400 Hz and the crispness at 1 to 6 kHz, with little
+           between. The taller the pile (``depth``), the more card there is under it to
+           soak the knock up and the less far the face falls: each landing comes a
+           little duller and its two touches a little closer together
   settle   the card skids a few millimetres on the pile and lies still (``_settle``)
   square   the stack pushed together by the fingers (its edges rubbing, ``_slide``
            with a dull band) and knocked square on the cloth: every card's edge landing
@@ -33,10 +40,14 @@ What one card laid on the pile is made of, and what models each part here:
 Each card is a little different (its slide's length, speed and brightness, how hard it
 comes down, the pitch of its ring); everything is driven by seeded noise, so each
 candidate is rebuilt identically. Layers are mixed by their share of the energy
-(``_en``), except the landings and taps, mixed by their peak (how hard they come down).
+(``_en``), except the landings and taps, mixed by their peak (how hard they come down);
+a duller landing on a taller pile carries more body for its peak, so the later cards
+come down a little lighter to sound about as loud as the first (within 1 to 2 dB,
+A-weighted).
 Where the reference sits almost entirely above 400 Hz with its centroid near 6.5 kHz,
-these keep its paper in the slides but put a soft body under each landing (most of it
-between 100 Hz and 2.5 kHz), so a sound heard many times a game stays gentle.
+these keep its paper in the slides but put a soft body under each landing (a low thump
+below 400 Hz, as in the owner's card-place references), so a sound heard many times a
+game stays gentle.
 """
 from __future__ import annotations
 
@@ -253,16 +264,18 @@ def _slide(dur: float, seed: int, speed: Sequence[Tuple[float, float]], bright: 
     return y
 
 
-def _land(seed: int, depth: float = 0.0, soft: float = 0.0, thump: float = 0.3, snap: float = 0.4,
-          knock: float = 0.7, spit: float = 0.2, clap: float = 0.5, pff: float = 0.45, drop: float = 0.012,
+def _land(seed: int, depth: float = 0.0, soft: float = 0.0, thump: float = 0.4, snap: float = 0.4,
+          knock: float = 0.5, spit: float = 0.2, clap: float = 0.5, pff: float = 0.3, drop: float = 0.012,
           round_db: float = 5.0, dur: float = 0.09) -> np.ndarray:
     """The card coming down flat on the pile, its first contact ``LEAD`` seconds into the
     buffer. Its edge meets the pile: a contact pulse (wider is softer) rings the card's
-    bending modes for a millisecond or two (``snap``), the pile under it gives a dull
-    knock (noise struck once, ``knock``) and a few fibres crush (``spit``). ``drop``
+    bending modes for a millisecond or two (``snap``), the pile under it gives a short,
+    dull knock (noise struck once, 0.8 to 3.2 kHz: a stack of card on cloth is too soft
+    and too damped to knock lower, like a box; ``knock``) and a few fibres crush
+    (``spit``). ``drop``
     seconds later the face lands: the sheet unbends onto the pile (a quick run of tiny
     clicks) and claps flat (``clap``), and the air pushed out from under it (a small push,
-    then a quicker opposite swing; ``pff`` adds its breath of noise) sets the pile, the
+    then a quicker opposite swing; ``pff`` adds its low breath of noise) sets the pile, the
     cloth and the tabletop going, a low, heavily damped thump (``thump``). ``depth``
     (0..1) is how tall the pile has grown: more card under it, a duller knock and clap, a
     lower, more damped thump and a shorter fall (edge and face come closer together);
@@ -282,10 +295,10 @@ def _land(seed: int, depth: float = 0.0, soft: float = 0.0, thump: float = 0.3, 
     rt = 0.0014 * (1.0 - 0.3 * d)
     body = _modes(exc, [(f1, 1.0, rt), (f1 * rng.uniform(1.4, 1.6), 0.5, rt * 0.8),
                         (f1 * rng.uniform(2.5, 2.8), 0.22, rt * 0.5), (f1 * rng.uniform(0.3, 0.36), 0.45, rt * 1.6)])
-    # the pile's dull knock
+    # the pile's short, dull knock
     kn = np.zeros(n)
     kn[c:] = A.bandpass(rng.standard_normal(m) * _decay(m, 0.003 * (1.0 + 0.3 * d), 0.0003),
-                        420.0 * (1.0 - 0.15 * d), 2700.0 * (1.0 - 0.35 * d - 0.3 * s), 2)
+                        800.0 * (1.0 - 0.15 * d), 3200.0 * (1.0 - 0.35 * d - 0.3 * s), 2)
     # crushed fibres
     env = np.zeros(n)
     env[c:] = _decay(m, 0.0012, 0.0002)
@@ -312,7 +325,7 @@ def _land(seed: int, depth: float = 0.0, soft: float = 0.0, thump: float = 0.3, 
                                   (450.0 * (1.0 - 0.1 * d) * rng.uniform(0.95, 1.05), 0.35, 0.0035 * damp)])
     i0 = _n(max(0.0, tc - aw))
     br = np.zeros(n)
-    br[i0:] = A.bandpass(rng.standard_normal(n - i0), 150.0, 900.0 * (1.0 - 0.2 * d), 2) * _decay(n - i0, 0.005, 0.0015)
+    br[i0:] = A.bandpass(rng.standard_normal(n - i0), 120.0, 600.0 * (1.0 - 0.2 * d), 2) * _decay(n - i0, 0.005, 0.0015)
     y = (snap * (1.0 - 0.35 * d - 0.5 * s) * _en(body) + knock * _en(kn) + spit * (1.0 - 0.5 * d - 0.6 * s) * sp_
          + clap * (1.0 - 0.3 * d - 0.4 * s) * face + thump * (0.4 * _en(p) + 0.9 * _en(low)) + pff * _en(br))
     return _tail(_round_top(A.highpass(y, 40.0, 2), round_db), 0.35)
@@ -352,20 +365,24 @@ def _tap(seed: int, edges: int = 9, spread: float = 0.0025, soft: float = 0.0, t
     return _tail(_round_top(A.highpass(y, 40.0, 2), 4.0), 0.4)
 
 
-def _card(seed: int, slide: float = 0.08, depth: float = 0.0, swish: float = 0.85, land: float = 1.0,
+FLICK = [(0.0, 0.0), (0.3, 1.0), (0.65, 0.6), (1.0, 0.2)]   # a card's slide: quick to start, eased down
+
+
+def _card(seed: int, slide: float = 0.055, depth: float = 0.0, swish: float = 0.3, land: float = 1.0,
           settle: float = 0.15, speed=None, slide_kw=None, land_kw=None) -> Tuple[np.ndarray, float]:
-    """One card laid on the pile: the slide (about ``slide`` seconds, ``swish`` its share),
-    the landing at ``depth`` (mixed by its peak: ``land`` is how hard it comes down) and
-    the settle, each card a little different. Returns the sound and when, in it, the card
-    lands (its first contact)."""
+    """One card laid on the pile: the short slide (about ``slide`` seconds, ``swish`` its
+    share; a flick, well under the landing, as the owner asked for cards put on a stack
+    and not a scrape), the landing at ``depth`` (mixed by its peak: ``land`` is how hard
+    it comes down) and the settle, each card a little different. Returns the sound and
+    when, in it, the card lands (its first contact)."""
     rng = np.random.default_rng(seed)
     sl = slide * rng.uniform(0.88, 1.12)
     skw = dict(bright=rng.uniform(0.72, 0.9), ring_f=rng.uniform(1200.0, 1900.0))
     skw.update(slide_kw or {})
-    sp = speed or [(0.0, 0.0), (0.35, 1.0), (0.7, 0.75), (1.0, 0.25)]
+    sp = speed or FLICK
     lg = land * 10 ** (rng.uniform(-0.8, 0.8) / 20.0)
     sg = swish * 10 ** (rng.uniform(-1.2, 1.2) / 20.0)
-    t_land = sl + 0.002
+    t_land = sl - 0.001     # the edge touches down as the brush fades: no silent gap before it
     parts = [(_en(_slide(sl, seed + 1, sp, **skw)), 0.0, sg),
              (_norm(_land(seed + 2, depth, **(land_kw or {}))), t_land - LEAD, lg),
              (_en(_settle(seed + 3, rng.uniform(0.04, 0.06), depth)), t_land + 0.004, settle * lg)]
@@ -379,25 +396,28 @@ def _lay(cards, lands: Sequence[float], dur: float) -> np.ndarray:
 
 # ----------------------------------------------------------------------------- the candidates
 def disc_ref_three():
-    # three cards laid one on another: each brushed in over the pile and let go flat, the
-    # second and third a little quicker, duller and closer than the one before; then the
-    # fingers give the stack one light tap square
-    cards = [_card(4100, 0.085, depth=0.0, land=1.0), _card(4120, 0.075, depth=0.45, land=0.85),
-             _card(4140, 0.07, depth=0.85, land=0.78)]
-    x = _lay(cards, (0.09, 0.265, 0.42), 0.7)
-    x = _place([(x, 0.0, 1.0), (_norm(_tap(4160, soft=0.4, thump=0.4)), 0.56 - LEAD, 0.32)], 0.7)
+    # three cards laid one on another: each a short papery flick over the pile and a soft
+    # flat landing, the second and third a little quicker, duller and closer than the one
+    # before; then the fingers give the stack one light tap square
+    lkw = dict(soft=0.3, round_db=8.0)
+    cards = [_card(4100, 0.055, depth=0.0, swish=0.32, land=1.0, land_kw=lkw),
+             _card(4120, 0.05, depth=0.45, swish=0.32, land=0.7, land_kw=lkw),
+             _card(4140, 0.048, depth=0.85, swish=0.32, land=0.6, land_kw=lkw)]
+    x = _lay(cards, (0.062, 0.232, 0.39), 0.7)
+    x = _place([(x, 0.0, 1.0), (_norm(_tap(4160, soft=0.4, thump=0.4)), 0.53 - LEAD, 0.3)], 0.7)
     return _finish(_room(x), 19.5)
 
 
 def disc_ref_two_soft():
-    # two cards set down gently: slower, darker brushes and soft pats onto the pile
-    soft_slide = dict(lo=750.0, hi=7000.0, dull=3000.0, crisp=0.1, tooth=0.2)
+    # two cards set down gently: slower, darker brushes (still well under the pats) and
+    # soft pats onto the pile
+    soft_slide = dict(lo=750.0, hi=9000.0, dull=3000.0, crisp=0.1, tooth=0.2)
     soft_land = dict(soft=1.0, snap=0.3, spit=0.1, thump=0.2, round_db=8.0, drop=0.014)
     sp = [(0.0, 0.0), (0.35, 0.85), (0.7, 0.7), (1.0, 0.25)]
-    cards = [_card(5100, 0.1, depth=0.1, swish=0.45, land=0.7, speed=sp, slide_kw=soft_slide, land_kw=soft_land),
-             _card(5120, 0.095, depth=0.6, swish=0.45, land=0.6, speed=sp, slide_kw=soft_slide, land_kw=soft_land)]
-    x = _lay(cards, (0.105, 0.31), 0.48)
-    return _finish(_room(x, 0.14), 18.5, lp=8000)
+    cards = [_card(5100, 0.075, depth=0.1, swish=0.38, land=0.7, speed=sp, slide_kw=soft_slide, land_kw=soft_land),
+             _card(5120, 0.07, depth=0.6, swish=0.32, land=0.72, speed=sp, slide_kw=soft_slide, land_kw=soft_land)]
+    x = _lay(cards, (0.085, 0.285), 0.48)
+    return _finish(_room(x, 0.14), 18.5, lp=10000)
 
 
 def disc_ref_handful():
@@ -406,16 +426,16 @@ def disc_ref_handful():
     # weight down with it) and skid; then the fingers push them together, edges rubbing,
     # and knock the stack square twice
     slip = _en(_slide(0.03, 6100, [(0.0, 0.0), (0.5, 1.0), (1.0, 0.2)], bright=0.6, crisp=0.2))
-    parts = [(slip, 0.0, 0.4)]
-    ripple = ((0.0, 0.0, 1.0), (0.011, 0.35, 0.55), (0.024, 0.6, 0.42), (0.04, 0.85, 0.3))
+    parts = [(slip, 0.0, 0.3)]
+    ripple = ((0.0, 0.0, 0.75), (0.011, 0.35, 0.55), (0.024, 0.6, 0.42), (0.04, 0.85, 0.3))
     t0 = 0.075
     for i, (dt, d, g) in enumerate(ripple):
         th = 0.45 if i == 0 else 0.2
-        parts.append((_norm(_land(6110 + i, d, thump=th, drop=0.008)), t0 + dt - LEAD, g))
+        parts.append((_norm(_land(6110 + i, d, soft=0.3, thump=th, drop=0.008, round_db=6.0)), t0 + dt - LEAD, g))
         parts.append((_en(_settle(6120 + i, 0.05, d)), t0 + dt + 0.004, 0.25 * g))
     push = _en(_slide(0.075, 6130, [(0.0, 0.0), (0.4, 1.0), (0.8, 0.7), (1.0, 0.1)], bright=0.35, dull=3000.0,
                       crisp=0.35, ring=0.2, tooth=0.35))
-    parts += [(push, 0.24, 0.6), (_norm(_tap(6140, thump=0.45)), 0.325 - LEAD, 0.72),
+    parts += [(push, 0.24, 0.5), (_norm(_tap(6140, thump=0.45)), 0.325 - LEAD, 0.72),
               (_norm(_tap(6150, soft=0.5, thump=0.4)), 0.44 - LEAD, 0.45)]
     return _finish(_room(_place(parts, 0.66)), 19.5)
 
@@ -424,7 +444,7 @@ def disc_ref_handful():
 C = Candidate
 CANDIDATES = [
     C("discard", "ref_three", "Three on the pile",
-      "Three cards laid one on another: a papery brush and a soft flat pat each, then a light tap square.",
+      "Three cards laid one on another: a short papery flick and a soft flat pat each, then a light tap square.",
       disc_ref_three, ["acoustic", "modelled"]),
     C("discard", "ref_two_soft", "Two soft cards",
       "Two cards set down gently on the pile: a darker brush and a soft pat each.",

@@ -10,25 +10,34 @@ measured, offline, to set the timings, levels and bands below).
 What one drawn card is made of, and what models each part here:
   push     the thumb pressing on the top card and setting it moving: a slow, soft
            pressure bump that the deck and the hand answer with a low "whump", and a faint
-           tick of skin on card (``_push``)
+           tick of skin on card (``_push``); some cards are pushed off firmly, some barely
   slide    the card's face sliding off the deck over the next card's back, speeding up:
            friction noise that grows louder and brighter with speed (most of it above
            2.5 kHz, as in the reference), roughened by the grain of the card stock, by the
-           fibres it catches (tiny clicks) and by the hand's unevenness (``_slide``)
+           fibres it catches (tiny clicks) and by the hand's unevenness; under it, while
+           the thumb still presses the card onto the deck, the deck and the hand flexing
+           (a low drag rumble that fades as the card gets going); and when the card's
+           edge touches down it does not stop dead but skids on over the hand for a few
+           milliseconds, pressed harder for an instant (``_slide``)
   land     the card arriving on the cards already in the hand: its edge's contact snap
            ringing the card's bending modes for a millisecond or two, the stack's dull
-           knock, a spit of crushed fibres, and, as the face comes down flat 2.5 ms
-           later, the air pushed out from under it setting the hand's and the table's
-           low, heavily damped modes going: the soft thump (``_land``)
+           knock (most of it between 120 and 500 Hz), a spit of crushed fibres, and, as
+           the face comes down flat a few milliseconds later, the air pushed out from
+           under it setting the hand's and the table's low modes going: a small thump,
+           damped within a cycle or two (``_land``)
   settle   the card's last faint flutter as it lies down (``_settle``)
   room     the faint early reflections of the room around the table, with no long tail
            to fill the silence between cards (``_room``)
 
-Where the reference deals one card every 0.43 s, these draw them one after another, two
-to four in under a second, each card a little different (its speed, its brightness, how
-it lands), and with no riffle. Everything is driven by seeded noise, so each candidate is
-rebuilt identically. Layers are mixed by their share of the energy (``_en``), except each
-landing, mixed by its peak (how hard the card comes down).
+Measured against the reference, a deal's swish keeps about a tenth of its energy below
+150 Hz (the drag) and its landing about two fifths (the thump) with nearly as much again
+above 2.5 kHz (the snap and the skid): the landing is a snap with a little weight under it, not
+a thud. Where the reference deals one card every 0.43 s, these draw them one after
+another, two to four in under a second, each card a little different (its speed, its
+brightness, how firmly it is pushed and how it lands), and with no riffle. Everything is
+driven by seeded noise, so each candidate is rebuilt identically. Layers are mixed by
+their share of the energy (``_en``), except each landing, mixed by its peak (how hard
+the card comes down).
 
 The reference's firmest landings stand 25 to 31 dB above its loudness; mastered to the
 draw's loudness, a sound may peak only 20 dB above it. So the landings here sit a little
@@ -120,6 +129,15 @@ def _modes(exc: np.ndarray, modes) -> np.ndarray:
     return y
 
 
+def _bands(n: int, seed: int, shares) -> np.ndarray:
+    """Noise with its energy split between bands: [(lo, hi, share), ...], unit RMS."""
+    rng = np.random.default_rng(seed)
+    y = np.zeros(n)
+    for lo, hi, s in shares:
+        y += math.sqrt(s) * _rms1(A.bandpass(rng.standard_normal(n), lo, hi, 2))
+    return _rms1(y)
+
+
 def _crackle(n: int, rate: np.ndarray, amp: np.ndarray, seed: int, lo: float, hi: float, k: int = 6,
              q: float = 3.0, alpha: float = 2.0, cap: float = 5.0) -> np.ndarray:
     """Paper fibres: sparse clicks at ``rate`` per second (per sample array), each with a
@@ -187,63 +205,87 @@ def _room(x: np.ndarray, wet: float = 0.15, seed: int = 7, lo: float = 300.0, hi
     return out
 
 
-def _finish(x: np.ndarray, crest_db: float, hp: float = 35.0, lp: float = 0.0, fade: float = 0.2) -> np.ndarray:
-    """Take out the sub-bass and DC (and, with ``lp``, the very top), keep the sound inside
-    the event's length, let the end fade smoothly and keep the snaps' peaks gentle."""
+def _finish(x: np.ndarray, crest_db: float, hp: float = 32.0, lp: float = 0.0, fade: float = 0.2) -> np.ndarray:
+    """Take out the sub-bass and DC (and, with ``lp``, roll the very top off gently), keep
+    the sound inside the event's length, let the end fade smoothly and keep the snaps'
+    peaks gentle."""
     y = A.highpass(x, hp, 2)
     if lp:
-        y = A.lowpass(y, lp, 2)
+        y = A.lowpass(y, lp, 1)
     y = y[:_n(EVENT.max_seconds - 0.03)]
     return _gentle(_tail(y, fade), crest_db)
 
 
 # ----------------------------------------------------------------------------- the physical parts
-def _push(seed: int, width: float = 0.016, low=(58.0, 120.0), tick: float = 0.25, dur: float = 0.06) -> np.ndarray:
+def _push(seed: int, width: float = 0.016, low=(55.0, 120.0), tick: float = 0.25, dur: float = 0.06) -> np.ndarray:
     """The thumb pressing the top card and starting it off the deck: a slow pressure bump
     ``width`` long (a press, then a smaller release) that the deck and hand answer with
     their low, heavily damped modes (``low``), and a faint tick of skin on card stock."""
     n = _n(dur)
     rng = np.random.default_rng(seed)
     t = _t(n)
-    w = width * rng.uniform(0.9, 1.1)
+    w = width * rng.uniform(0.85, 1.15)
     p = _lobe(t, 0.6 * w, w) - 0.45 * _lobe(t, 1.35 * w, 0.9 * w)
-    ring = _modes(np.gradient(p), [(low[0] * rng.uniform(0.95, 1.05), 1.0, 0.007),
-                                    (low[1] * rng.uniform(0.95, 1.05), 0.5, 0.005)])
+    ring = _modes(np.gradient(p), [(low[0] * rng.uniform(0.9, 1.1), 1.0, 0.006),
+                                    (low[1] * rng.uniform(0.9, 1.1), 0.5, 0.004)])
     m = _n(0.01)
     tk = A.bandpass(rng.standard_normal(m), 1500.0, 6000.0, 2) * _decay(m, 0.0012, 0.0004)
     y = 0.7 * _en(p) + 0.5 * _en(ring)
     return _tail(_place([(y, 0.0, 1.0), (_en(tk), 0.2 * w, tick)], dur), 0.4)
 
 
+# the drag's energy per band, from the reference's swishes (below 150 Hz, 150-400, 400 Hz-1 kHz)
+DRAG_BANDS = ((40.0, 150.0, 0.62), (150.0, 400.0, 0.28), (400.0, 1000.0, 0.10))
+
+
 def _slide(dur: float, seed: int, curve: float = 1.3, start: float = 0.05, lo: float = 1100.0,
            mid: float = 3800.0, hi: float = 17000.0, bright: float = 0.85, grain: float = 0.55,
-           crisp: float = 0.25, wob: float = 0.3) -> np.ndarray:
+           crisp: float = 0.25, wob: float = 0.3, drag: float = 0.08, skid: float = 0.006,
+           press: float = 2.0) -> np.ndarray:
     """The card's face sliding off the deck over the next card, speeding up over ``dur``
     seconds (from ``start`` of full speed, rising as a power ``curve``). Friction noise
     louder and brighter the faster it goes: a duller rub (``lo``..``mid``) giving way to a
     bright hiss (``mid``..``hi``; ``bright`` how far), grainy with the card stock's tooth
     (``grain``), with fibre clicks (``crisp`` their share) and the hand's unevenness
-    (``wob``). The slide stops dead where the card lands (the end of the buffer). Its stray
-    peaks are rounded off, so only the landing snaps."""
+    (``wob``). Under it, ``drag`` (its share of the energy): the deck and the hand flexing
+    while the thumb still presses the card down, a low uneven rumble that swells with the
+    push and fades as the card gets going. Where the card touches down (``dur``) the
+    friction does not stop dead: the card skids on over the hand, pressed ``press`` times
+    harder for an instant, and stops within a few ``skid`` time constants. Stray peaks are
+    rounded off, so only the landing snaps."""
     n = _n(dur)
+    m = _n(6 * skid)
     rng = np.random.default_rng(seed)
     u = np.linspace(0.0, 1.0, n)
     sp = start + (1.0 - start) * u ** curve
-    dull = _rms1(A.bandpass(rng.standard_normal(n), lo, mid, 2))
-    hiss = _rms1(A.bandpass(rng.standard_normal(n), mid, hi, 2))
-    b = np.clip(bright * (0.35 + 0.65 * sp), 0.0, 1.0)
+    # after the touch-down: the speed falls away as the card skids to a stop
+    ts = _t(m)
+    sk = np.exp(-ts / skid)
+    sp_all = np.concatenate([sp, sk])
+    b = np.clip(bright * (0.35 + 0.65 * sp_all), 0.0, 1.0)
+    dull = _rms1(A.bandpass(rng.standard_normal(n + m), lo, mid, 2))
+    hiss = _rms1(A.bandpass(rng.standard_normal(n + m), mid, hi, 2))
     bed = np.sqrt(1.0 - b) * dull + np.sqrt(b) * hiss
-    tooth = _norm(np.abs(A.lowpass(rng.standard_normal(n), 420.0, 1)))
+    tooth = _norm(np.abs(A.lowpass(rng.standard_normal(n + m), 420.0, 1)))
     bed *= (1.0 - grain) + grain * tooth
-    hand = np.clip(1.0 + wob * _wobble(n, 45.0, seed + 1), 0.25, None)
-    env = sp ** 1.3 * hand
-    cr = _crackle(n, 3500.0 * sp, env, seed + 2, max(lo, 1800.0), min(hi, 11000.0), q=2.6, alpha=2.6, cap=3.0)
-    y = (1.0 - crisp) * _rms1(bed * env) + crisp * _rms1(cr) if np.any(cr) else _rms1(bed * env)
-    y = np.tanh(_rms1(y) / 4.0) * 4.0     # friction has no needles: round off stray peaks
-    k = max(2, int(0.25 * n))           # it starts from nothing: the thumb only just moves it
-    y[:k] *= 0.5 - 0.5 * np.cos(np.pi * np.arange(k) / k)
-    stop = _n(0.004)
-    y[-stop:] *= np.linspace(1.0, 0.0, stop) ** 2
+    hand = np.clip(1.0 + wob * _wobble(n + m, 45.0, seed + 1), 0.25, None)
+    k = min(m, max(2, _n(0.0008)))
+    bump = np.ones(m)
+    bump[:k] = 1.0 + (press - 1.0) * np.sin(0.5 * np.pi * np.arange(k) / k)
+    bump[k:] = press
+    env = np.concatenate([sp ** 1.3, sk * bump]) * hand
+    cr = _crackle(n + m, 3500.0 * sp_all, env, seed + 2, max(lo, 1800.0), min(hi, 11000.0), q=2.6, alpha=2.6,
+                  cap=3.0)
+    fr = (1.0 - crisp) * _rms1(bed * env) + crisp * _rms1(cr) if np.any(cr) else _rms1(bed * env)
+    fr = np.tanh(_rms1(fr) / 4.0) * 4.0     # friction has no needles: round off stray peaks
+    k = max(2, int(0.25 * n))             # it starts from nothing: the thumb only just moves it
+    fr[:k] *= 0.5 - 0.5 * np.cos(np.pi * np.arange(k) / k)
+    # the drag: the deck and the hand under the thumb, strongest early in the push
+    pr = np.concatenate([(1.0 - np.exp(-u / 0.12)) * (1.0 - 0.75 * u ** 1.5), np.zeros(m)])
+    stick = np.clip(1.0 + 0.5 * _wobble(n + m, 60.0, seed + 3), 0.2, None)
+    rumble = _bands(n + m, seed + 4, DRAG_BANDS) * pr * stick
+    y = math.sqrt(1.0 - drag) * _en(fr) + math.sqrt(drag) * _en(rumble)
+    y[-_n(0.002):] *= np.linspace(1.0, 0.0, _n(0.002))
     return y
 
 
@@ -251,20 +293,22 @@ LAND_LEAD = 0.006   # a _land piece's contact falls this many seconds into its b
 LAND_PEAK = 0.85    # a landing's peak, against its card's other parts at unit energy
 
 
-def _land(seed: int, ring: float = 2000.0, ring_tau: float = 0.0016, width: float = 0.0002, snap: float = 0.45,
-          knock: float = 0.6, knock_lo: float = 500.0, knock_hi: float = 2600.0, knock_tau: float = 0.003,
-          spit: float = 0.28, spit_lo: float = 3000.0, spit_hi: float = 12000.0, aw: float = 0.0034,
-          modes=((80.0, 1.0, 0.012), (170.0, 0.6, 0.006), (380.0, 0.3, 0.003)), thump: float = 0.6,
-          pre: float = 0.4, face: float = 0.0025, round_db: float = 5.5, dur: float = 0.07) -> np.ndarray:
+def _land(seed: int, flat: float = 0.5, ring: float = 2000.0, ring_tau: float = 0.0016, width: float = 0.0002,
+          snap: float = 0.5, knock: float = 0.42, knock_lo: float = 120.0, knock_hi: float = 480.0,
+          knock_tau: float = 0.004, spit: float = 0.5, spit_lo: float = 2500.0, spit_hi: float = 13000.0,
+          aw: float = 0.0034, low: float = 62.0, low_tau: float = 0.0055, thump: float = 0.55, pre: float = 0.4,
+          face: float = 0.003, round_db: float = 5.5, dur: float = 0.07) -> np.ndarray:
     """The card arriving on the cards in the hand, its contact ``LAND_LEAD`` seconds into
     the buffer: the edge's contact pulse ``width`` long (shorter is harder) rings the
     card's bending modes near ``ring`` (``snap`` their share); the stack it lands on gives
     a dull knock (noise struck once, ``knock_lo``..``knock_hi``); a spit of crushed fibres
     and hiss (``spit``); and ``face`` seconds after the edge, as the face comes down flat,
     the air squeezed out from under it (a small push, then a quicker opposite swing ``aw``
-    wide, ``pre`` the push's size) sets the hand's and the table's low, heavily damped
-    ``modes`` going: the soft thump (``thump`` its share). The contact's needle is rounded
-    off by ``round_db``."""
+    wide, ``pre`` the push's size) sets the hand's and the table's low modes going, the
+    lowest near ``low`` Hz, all damped within a cycle or two (``low_tau``): the small thump
+    (``thump`` its share). ``flat`` (0..1) is how flat the card comes down: edge first
+    (0) it snaps and spits and barely thumps; flat (1) it thumps and its edge hardly
+    snaps. The contact's needle is rounded off by ``round_db``."""
     n = _n(dur)
     rng = np.random.default_rng(seed)
     t = _t(n)
@@ -277,25 +321,29 @@ def _land(seed: int, ring: float = 2000.0, ring_tau: float = 0.0016, width: floa
     exc[c:] += 0.25 * rng.standard_normal(m) * _decay(m, width * 2.0, 0.00005)
     f1 = ring * rng.uniform(0.95, 1.05)
     body = _modes(exc, [(f1, 1.0, ring_tau), (f1 * rng.uniform(1.4, 1.6), 0.5, ring_tau * 0.8),
-                        (f1 * rng.uniform(2.5, 2.8), 0.25, ring_tau * 0.5),
-                        (f1 * rng.uniform(0.3, 0.36), 0.45, ring_tau * 1.6)])
+                        (f1 * rng.uniform(2.5, 2.8), 0.3, ring_tau * 0.5),
+                        (f1 * rng.uniform(0.3, 0.36), 0.2, ring_tau * 1.6)])
     # the stack's dull knock
     kn = np.zeros(n)
     kn[c:] = A.bandpass(rng.standard_normal(m) * _decay(m, knock_tau, 0.0003), knock_lo, knock_hi, 2)
     # the spit of crushed fibres
     env = np.zeros(n)
-    env[c:] = _decay(m, 0.0013, 0.0002)
+    env[c:] = _decay(m, 0.0016, 0.0002)
     cr = _crackle(n, 9000.0 * env, env, seed + 3, spit_lo, spit_hi, q=3.0, cap=3.0)
     hs = np.zeros(n)
-    hs[c:] = A.bandpass(rng.standard_normal(m), spit_lo, spit_hi, 2) * _decay(m, 0.0012, 0.0002)
-    # the air and the low thump
+    hs[c:] = A.bandpass(rng.standard_normal(m), spit_lo, spit_hi, 2) * _decay(m, 0.0016, 0.0002)
+    # the air and the small, quickly damped thump
     aw_ = aw * rng.uniform(0.92, 1.08)
     tc = LAND_LEAD + face
     p = pre * _lobe(t, tc - 0.95 * aw_, 1.6 * aw_) - _lobe(t, tc, aw_) + 0.08 * _lobe(t, tc + 1.4 * aw_, 2.0 * aw_)
     p *= 1.0 + 0.15 * _norm(A.lowpass(rng.standard_normal(n), 800.0, 1))
-    low = _modes(np.gradient(p), [(f * rng.uniform(0.96, 1.04), g, tau) for f, g, tau in modes])
-    y = (snap * _en(body) + knock * _en(kn) + spit * (0.6 * _en(cr) + 0.6 * _en(hs))
-         + thump * (0.45 * _en(p) + 0.9 * _en(low)))
+    f0 = low * rng.uniform(0.85, 1.15)
+    lowm = _modes(np.gradient(p), [(f0, 1.0, low_tau), (f0 * rng.uniform(2.1, 2.5), 0.4, low_tau * 0.7),
+                                   (f0 * rng.uniform(4.6, 5.4), 0.3, low_tau * 0.4)])
+    edge = 1.6 - 1.2 * flat           # 1.6 edge first .. 0.4 flat
+    face_ = 0.3 + 1.4 * flat          # 0.3 edge first .. 1.7 flat
+    y = (edge * (snap * _en(body) + spit * (0.6 * _en(cr) + 0.6 * _en(hs))) + knock * _en(kn)
+         + face_ * thump * (0.45 * _en(p) + 0.9 * _en(lowm)))
     return _tail(_round_top(A.highpass(y, 40.0, 2), round_db), 0.35)
 
 
@@ -311,23 +359,26 @@ def _settle(seed: int, dur: float = 0.07, lo: float = 2200.0, hi: float = 11000.
     return _tail(_en(cr) + hush * _en(hs), 0.3)
 
 
-def _card(seed: int, slide: float = 0.12, swish: float = 0.7, land: float = 1.0, push: float = 0.12,
-          settle: float = 0.16, slide_kw=None, land_kw=None) -> Tuple[np.ndarray, float]:
+def _card(seed: int, slide: float = 0.12, swish: float = 0.7, land: float = 1.0, flat: float = 0.5,
+          push: float = 0.1, settle: float = 0.16, slide_kw=None, land_kw=None) -> Tuple[np.ndarray, float]:
     """One card drawn: the thumb's push, the slide (about ``slide`` seconds) and the landing,
-    each card a little different (its speed, its brightness, how hard it lands, the pitch
-    of its ring). The landing is mixed by its peak (``land`` sets how hard the card comes
-    down), the other parts by their energy. Returns the sound and when, in it, the card
-    lands."""
+    each card a little different (its speed, its brightness, how firmly the thumb pushes
+    it, how hard and how flat it lands, the pitch of its ring and of its thump). The
+    landing is mixed by its peak (``land`` sets how hard the card comes down, ``flat`` how
+    flat: see ``_land``), the other parts by their energy. Returns the sound and when, in
+    it, the card lands."""
     rng = np.random.default_rng(seed)
     sl = slide * rng.uniform(0.88, 1.12)
-    skw = dict(curve=rng.uniform(1.1, 1.6), bright=rng.uniform(0.8, 0.95))
+    skw = dict(curve=rng.uniform(1.1, 1.6), bright=rng.uniform(0.8, 0.95), drag=rng.uniform(0.05, 0.11))
     skw.update(slide_kw or {})
     lkw = dict(land_kw or {})
     lkw["ring"] = lkw.get("ring", 2000.0) * rng.uniform(0.92, 1.08)
     lkw["aw"] = lkw.get("aw", 0.0034) * rng.uniform(0.9, 1.12)
+    lkw["flat"] = float(np.clip(flat + rng.uniform(-0.1, 0.1), 0.0, 1.0))
     lg = land * 10 ** (rng.uniform(-0.6, 0.6) / 20.0)
     sg = swish * 10 ** (rng.uniform(-1.0, 1.0) / 20.0)
-    parts = [(_en(_push(seed + 1)), 0.0, push),
+    pg = push * rng.uniform(0.3, 1.4)
+    parts = [(_en(_push(seed + 1)), 0.0, pg),
              (_en(_slide(sl, seed + 2, **skw)), 0.002, sg),
              (_norm(_land(seed + 3, **lkw)), 0.002 + sl - LAND_LEAD, LAND_PEAK * lg),
              (_en(_settle(seed + 4)), 0.002 + sl + 0.003, settle)]
@@ -341,32 +392,37 @@ def _hand(cards, lands: Sequence[float], dur: float) -> np.ndarray:
 
 # ----------------------------------------------------------------------------- the candidates
 def draw_ref_three():
-    # the reference's swish and landing, three cards drawn one after another (the first a
-    # touch firmer, as in the reference), a little over a quarter of a second apart instead
-    # of 0.43 s
-    cards = [_card(1100, 0.12, swish=0.8, land=0.95), _card(1120, 0.11, swish=0.8, land=0.76),
-             _card(1140, 0.115, swish=0.8, land=0.8)]
-    x = _hand(cards, (0.13, 0.405, 0.675), 0.8)
+    # the reference's swish and landing, three cards drawn one after another, about a
+    # quarter of a second apart instead of 0.43 s, and not evenly (0.285 s, then 0.25: a
+    # hand finding its rhythm, not a metronome): the first a touch firmer and landing edge
+    # first (a crisp snap, as the reference's first deals), the second coming down flatter
+    # (more thump), the third in between
+    cards = [_card(1100, 0.12, swish=0.8, land=0.95, flat=0.15), _card(1120, 0.11, swish=0.8, land=0.76, flat=0.7),
+             _card(1140, 0.115, swish=0.8, land=0.8, flat=0.4)]
+    x = _hand(cards, (0.13, 0.415, 0.665), 0.8)
     return _finish(_room(x), 19.8)
 
 
 def draw_ref_two_soft():
-    # two cards drawn gently: slower, darker slides and soft pats onto the hand (a wider
-    # contact ringing the card lower, little spit, a rounder thump)
-    soft_slide = dict(lo=900.0, mid=2800.0, hi=9000.0, crisp=0.25, grain=0.45)
-    soft_land = dict(ring=1500.0, ring_tau=0.0011, width=0.0004, snap=0.35, spit=0.15, spit_hi=6000.0,
-                     aw=0.0042, modes=((95.0, 0.7, 0.006), (200.0, 1.0, 0.005), (380.0, 0.5, 0.003)), round_db=9.0)
-    cards = [_card(2100, 0.12, swish=0.6, land=0.6, slide_kw=soft_slide, land_kw=soft_land),
-             _card(2120, 0.11, swish=0.6, land=0.54, slide_kw=soft_slide, land_kw=soft_land)]
-    x = _hand(cards, (0.125, 0.43), 0.55)
-    return _finish(_room(x, 0.18), 18.5, lp=9000)
+    # two cards drawn gently: slower, less bright slides and soft pats onto the hand (a
+    # wider contact ringing the card lower, little spit, a lighter thump and knock), the
+    # very top rolled off a little
+    soft_slide = dict(lo=1000.0, mid=3400.0, hi=14000.0, crisp=0.2, grain=0.45, bright=0.75, press=1.3)
+    soft_land = dict(ring=1500.0, ring_tau=0.0012, width=0.0004, snap=0.4, spit=0.3, spit_hi=10000.0,
+                     aw=0.0042, low=70.0, low_tau=0.005, thump=0.4, knock=0.3, knock_hi=400.0, round_db=8.0)
+    cards = [_card(2100, 0.13, swish=0.6, land=0.6, flat=0.4, slide_kw=soft_slide, land_kw=soft_land),
+             _card(2120, 0.12, swish=0.6, land=0.54, flat=0.5, slide_kw=soft_slide, land_kw=soft_land)]
+    x = _hand(cards, (0.135, 0.45), 0.57)
+    return _finish(_room(x, 0.18), 18.5, lp=13000)
 
 
 def draw_ref_refill():
-    # a hand refilled: four quick cards about a fifth of a second apart, each slide shorter
-    # and each landing a little lighter than a single draw's
-    cards = [_card(3100 + 20 * k, 0.085, land=g) for k, g in enumerate((0.9, 0.8, 0.85, 0.8))]
-    x = _hand(cards, (0.09, 0.295, 0.49, 0.70), 0.82)
+    # a hand refilled: four quick cards about a fifth of a second apart, a little uneven
+    # as a hand is, each slide shorter and each landing a little lighter than a single
+    # draw's
+    cards = [_card(3100 + 20 * k, 0.085, land=g, flat=f)
+             for k, (g, f) in enumerate(((0.9, 0.25), (0.8, 0.6), (0.85, 0.2), (0.8, 0.5)))]
+    x = _hand(cards, (0.09, 0.295, 0.48, 0.70), 0.82)
     return _finish(_room(x), 19.8)
 
 
@@ -377,7 +433,7 @@ CANDIDATES = [
       "Three cards drawn one by one: a quick rising swish off the deck and a soft snap as each lands.",
       draw_ref_three, ["acoustic", "modelled"]),
     C("draw", "ref_two_soft", "Two soft cards",
-      "Two cards drawn gently: a darker slide and a soft pat onto the hand.",
+      "Two cards drawn gently: a slower, softer slide and a light pat onto the hand.",
       draw_ref_two_soft, ["acoustic", "modelled", "soft"]),
     C("draw", "ref_refill", "Hand refill",
       "Four quick cards drawn into the hand, each with its own little swish and tap.",

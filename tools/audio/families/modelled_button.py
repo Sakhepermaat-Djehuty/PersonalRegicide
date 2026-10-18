@@ -84,18 +84,33 @@ def _tail(x: np.ndarray, frac: float = 0.3) -> np.ndarray:
     return y
 
 
-def _gentle(x: np.ndarray, crest_db: float) -> np.ndarray:
-    """A guard: keep the peak at most ``crest_db`` above the build's loudness measure by
+def _gentle(x: np.ndarray, crest_db: float, max_shave_db: float = 3.0) -> np.ndarray:
+    """A guard: keep the peak near ``crest_db`` above the build's loudness measure by
     shaving only the first fraction of a millisecond of the sharpest contact (a fast
-    look-ahead limiter). The candidates below are shaped to stay under it on their own,
-    since shaving a low knock's peak would smear its spectrum."""
-    for _ in range(3):
-        ceil = A._rms_db(x) + crest_db
-        if 20 * math.log10(float(np.max(np.abs(x))) + 1e-12) <= ceil + 0.05:
-            break
-        g = 10 ** (ceil / 20.0)
-        x = A.limit(x / g, 0.0, lookahead=0.0006, release=0.01) * g
-    return x
+    look-ahead limiter), never by more than ``max_shave_db``. On a click this short the
+    contact is most of the loudness measure, so shaving it lowers the target too: the
+    highest threshold that meets it is found once, by bisection, rather than by limiting
+    again and again (which can run away). The candidates below are shaped to stay under
+    it on their own, since shaving a low knock's peak would smear its spectrum."""
+    def crest(y):
+        return 20 * math.log10(float(np.max(np.abs(y))) + 1e-12) - A._rms_db(y)
+
+    def shave(th_db):
+        g = 10 ** (th_db / 20.0)
+        return A.limit(x / g, 0.0, lookahead=0.0006, release=0.01) * g
+
+    if crest(x) <= crest_db + 0.05:
+        return x
+    pk = 20 * math.log10(float(np.max(np.abs(x))))
+    lo, hi, best = pk - max_shave_db, pk, None
+    for _ in range(12):
+        mid = 0.5 * (lo + hi)
+        y = shave(mid)
+        if crest(y) <= crest_db:
+            best, lo = y, mid
+        else:
+            hi = mid
+    return best if best is not None else shave(pk - max_shave_db)
 
 
 def _finish(x: np.ndarray, crest_db: float, hp: float, lp: float, fade: float = 0.3) -> np.ndarray:

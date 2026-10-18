@@ -22,7 +22,7 @@ What the reference is made of, and what models each part here:
            table's low, heavily damped modes for a cycle or two: the thump, never a
            pitched tone (``_air``)
   rock     the card rocking to rest on the cloth: a few tiny, dying pats (``_rock``)
-The reference is a slide, the far edge dropping (a first tap) and, 18 ms later, the
+The reference is a slide, the far edge dropping (a first tap) and, 16 ms later, the
 face landing flat (the loudest moment, ``_land``), then the rocking. Each candidate is
 one fixed file, so its naturalness lives inside it: every grain, click and pat is drawn
 from its own seed (the two taps are never alike) and every render is identical. The
@@ -347,13 +347,17 @@ def des_ref_slide_tap():
     # (the loudest moment: a broad slap and the table's thump, the air pushed out just
     # ahead of it, the wood's low rumble dying under it), the card's last few millimetres
     # of slide, then the card rocking to rest in a few faint, dying pats
-    slide = _en(_slide(0.087, [(0.0, 0.75), (0.008, 0.3), (0.012, 0.7), (0.02, 0.4), (0.026, 0.5), (0.032, 0.75),
+    slide = _en(_slide(0.087, [(0.0, 1.0), (0.003, 1.0), (0.008, 0.3), (0.012, 0.7), (0.02, 0.4), (0.026, 0.5), (0.032, 0.75),
                                (0.036, 0.28), (0.04, 0.5), (0.048, 0.35), (0.052, 0.5), (0.058, 0.45), (0.062, 0.6),
                                (0.07, 0.8), (0.076, 0.85), (0.08, 1.0), (0.084, 0.6), (0.087, 0.0)], 11,
                        centre=1600, spread=0.15, top=13000, crisp=0.2, sheen=0.35, rumble=0.9))
     after = _en(_slide(0.025, [(0.0, 0.0), (0.003, 0.5), (0.012, 0.6), (0.02, 0.3), (0.025, 0.0)], 16,
                        centre=1500, spread=0.15, top=12000, crisp=0.3, sheen=0.35, rumble=0.6))
-    catch = _en(_edge(12, ring=2200, ring_tau=0.0006, width=0.0004, spit=0.8, knock=0.5))
+    # the fingertip's catch is skin on card: a soft 0.6 ms contact, its peak about 13 dB
+    # under the landing's (as in the reference), so the file never opens on a hard click;
+    # the start is carried by the slide's first 3 ms scuff instead, a burst of noise as in
+    # the reference
+    catch = _en(_edge(12, ring=2200, ring_tau=0.0006, width=0.0006, spit=0.8, knock=0.5))
     w1, w2 = 0.0026, 0.0038
     tap = _en(_land(13, ring=2000, edge=0.6, slap=0.55, air=0.4, lo=900, hi=5000, slap_tau=0.0022,
                     attack=0.0015, width=w1, modes=_table(0.35, 1.0, 0.25, 0.8),
@@ -362,7 +366,7 @@ def des_ref_slide_tap():
                      width=w2, modes=_table(0.4, 1.0, 0.12),
                      body=1.2, pff=0.15, settle=0.5, settle_tau=0.025, card=(900.0, 6000.0), pre=0.7))
     rock = _en(_rock(15, [0.024, 0.036, 0.046, 0.051, 0.060], lo=1000, hi=13000))
-    x = _place([(slide, 0.0, 0.36), (catch, 0.0, 0.2), (tap, 0.065 - _lead(w1), 0.52),
+    x = _place([(slide, 0.0, 0.36), (catch, 0.0, 0.12), (tap, 0.065 - _lead(w1), 0.52),
                 (land, 0.082 - _lead(w2), 1.0), (after, 0.085, 0.18), (rock, 0.082, 0.08)], 0.22)
     return _finish(x, 22.0, lp=16000)
 
@@ -393,13 +397,13 @@ def des_ref_low_tap():
     # (near 1 kHz), and the face lands nearer the middle of the board with a wider push of
     # air, so the table's lowest mode answers most (a deeper thump), and its slap has no
     # bright top
-    slide = _en(_slide(0.083, [(0.0, 0.7), (0.008, 0.35), (0.014, 0.65), (0.024, 0.45), (0.032, 0.7), (0.04, 0.35),
+    slide = _en(_slide(0.083, [(0.0, 1.0), (0.002, 1.0), (0.008, 0.35), (0.014, 0.65), (0.024, 0.45), (0.032, 0.7), (0.04, 0.35),
                                (0.05, 0.5), (0.058, 0.45), (0.066, 0.7), (0.074, 0.85), (0.078, 0.9), (0.081, 0.5),
                                (0.083, 0.0)], 31, centre=1250, spread=0.15, top=8000, crisp=0.15, sheen=0.25,
                        rumble=0.8))
     after = _en(_slide(0.022, [(0.0, 0.0), (0.002, 0.6), (0.01, 0.4), (0.022, 0.0)], 36, centre=1200, spread=0.15,
                        top=7500, crisp=0.25, sheen=0.25, rumble=0.6))
-    catch = _en(_edge(32, ring=1500, ring_tau=0.0006, width=0.0005, spit=0.6, knock=0.5))
+    catch = _en(_edge(32, ring=1500, ring_tau=0.0006, width=0.0008, spit=0.5, knock=0.5))   # a soft fingertip
     w1, w2 = 0.0028, 0.004
     tap = _en(_land(33, ring=1000, edge=0.6, slap=0.5, air=0.45, lo=650, hi=3500, slap_tau=0.0024,
                     attack=0.0015, width=w1, contact=0.0005, spit=0.2, spread=0.0015))
@@ -408,7 +412,7 @@ def des_ref_low_tap():
                      pff=0.2, settle=0.35, settle_tau=0.025, card=(700.0, 3500.0), contact=0.0003, spit=0.2,
                      spread=0.002))
     rock = _en(_rock(35, [0.026, 0.040, 0.050, 0.061], lo=700, hi=5500))
-    x = _place([(slide, 0.0, 0.34), (catch, 0.0, 0.14), (tap, 0.062 - _lead(w1), 0.28),
+    x = _place([(slide, 0.0, 0.34), (catch, 0.0, 0.084), (tap, 0.062 - _lead(w1), 0.28),
                 (land, 0.08 - _lead(w2), 1.0), (after, 0.083, 0.13), (rock, 0.08, 0.075)], 0.22)
     return _finish(x, 21.0, lp=8500)
 

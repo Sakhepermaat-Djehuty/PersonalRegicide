@@ -132,17 +132,33 @@ def _crackle(n: int, rate: np.ndarray, amp: np.ndarray, seed: int, lo: float, hi
     return y
 
 
-def _gentle(x: np.ndarray, crest_db: float) -> np.ndarray:
-    """Keep the peak at most ``crest_db`` above the build's loudness measure by shaving
-    only the first fraction of a millisecond of the sharpest click (a fast look-ahead
-    limiter), so mastering leaves the body's level alone and the tap stays soft."""
-    for _ in range(3):
-        ceil = A._rms_db(x) + crest_db
-        if 20 * math.log10(float(np.max(np.abs(x))) + 1e-12) <= ceil + 0.05:
-            break
-        g = 10 ** (ceil / 20.0)
-        x = A.limit(x / g, 0.0, lookahead=0.0008, release=0.012) * g
-    return x
+def _gentle(x: np.ndarray, crest_db: float, max_shave_db: float = 3.0) -> np.ndarray:
+    """Keep the peak near ``crest_db`` above the build's loudness measure by shaving only
+    the first fraction of a millisecond of the sharpest click (a fast look-ahead limiter
+    with a 5 ms release, so the body after it keeps its level), and never by more than
+    ``max_shave_db``. On a sound this short the click is most of the loudness measure, so
+    shaving it also lowers the target; the highest threshold that meets the target is
+    therefore found once, by bisection, instead of limiting again and again (which ran
+    away, squashing the clicks by up to 8 dB). Softness comes from the design."""
+    def crest(y):
+        return 20 * math.log10(float(np.max(np.abs(y))) + 1e-12) - A._rms_db(y)
+
+    def shave(th_db):
+        g = 10 ** (th_db / 20.0)
+        return A.limit(x / g, 0.0, lookahead=0.0008, release=0.005) * g
+
+    if crest(x) <= crest_db:
+        return x
+    pk = 20 * math.log10(float(np.max(np.abs(x))))
+    lo, hi, best = pk - max_shave_db, pk, None
+    for _ in range(12):
+        mid = 0.5 * (lo + hi)
+        y = shave(mid)
+        if crest(y) <= crest_db:
+            best, lo = y, mid
+        else:
+            hi = mid
+    return best if best is not None else shave(pk - max_shave_db)
 
 
 def _room(x: np.ndarray, wet: float = 0.08, size: float = 0.12, tail: float = 0.08, lo: float = 300.0,
@@ -338,7 +354,7 @@ def sel_ref_felt():
     settle = _en(A.lowpass(_settle(205, 0.06, lo=1300, hi=4000, tau=0.014, hush=0.9), 4500, 2))
     x = _place([(brush, 0.0, 0.11), (edge, t_edge, 0.26), (flap, t_edge + gap, 0.32),
                 (air, land - AIR_LEAD * aw, 0.86), (settle, land + 0.001, 0.08)], land + 0.06)
-    return _finish(x, 17.0, hp=45.0, lp=6000)
+    return _finish(x, 18.5, hp=45.0, lp=6000)
 
 
 def sel_ref_wood():
@@ -350,7 +366,7 @@ def sel_ref_wood():
     land = t_edge + gap + flap_dur
     brush = _en(_brush(land, 301, ((0.0, 0.0), (0.009, 0.5), (0.0155, 1.0), (0.0165, 0.4), (0.024, 0.3),
                                    (land, 0.0)), lo=3000, hi=10000, grain=0.8, clicks=0.6))
-    edge = _en(_edge(302, ring=1650, ring_tau=0.0012, width=0.00007, spit=0.6, spit_lo=3000, spit_hi=10000,
+    edge = _en(_edge(302, ring=1650, ring_tau=0.0012, width=0.0001, spit=0.45, spit_lo=3000, spit_hi=10000,
                      knock=0.1))
     flap = _en(_flap(303, dur=flap_dur, rate=9000, lo=1800, hi=10000, slap=0.7, ring=1500, ring_tau=0.0014,
                      clap=1.0, clap_lo=1000, clap_hi=9000, spray=0.4))
@@ -360,7 +376,7 @@ def sel_ref_wood():
     settle = _en(_settle(306, 0.05, lo=2500, hi=9000, tau=0.01, hush=0.3))
     x = _place([(brush, 0.0, 0.10), (edge, t_edge, 0.47), (flap, t_edge + gap, 0.46),
                 (air, land - AIR_LEAD * aw, 0.72), (wood, land - 0.0004, 0.46), (settle, land, 0.06)], land + 0.05)
-    return _finish(_room(x, 0.045), 20.0, hp=40.0, lp=12000)
+    return _finish(_room(x, 0.045), 22.5, hp=40.0, lp=12000)
 
 
 # ============================================================================= the list
