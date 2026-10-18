@@ -362,8 +362,15 @@ def test_m10_zone_doubles_for_a_warrior_and_says_when_the_reserve_is_empty():
     in_order(cards, "turn", "m10_zone")
     c = card(cards, "m10_zone")
     assert c.lines[:2] == ["Start of turn: reserve empty,", "nothing joins the zone"]
-    assert c.lines[2].endswith(", then ×2 (warrior enemy)")
+    assert c.lines[2].endswith(", then ×2 (warrior)")
     fits(cards)
+    # a zone worth two digits still fits (the fuzz found 41 characters)
+    from app.info_missions import _m10_bonus
+    from info_helpers import ON
+    from app import info as core
+    ctx = core.Ctx(g, [], dict(ON))
+    g.mission_zone = [c for c in g.cards if g.cards[c].value == 10 and g.cards[c].is_number][:3]
+    assert len(_m10_bonus(ctx, g.mission_zone)) <= 40 and "×2" in _m10_bonus(ctx, g.mission_zone)
 
 
 def test_m10_cleric_enemy_comes_first_at_the_end_of_the_turn():

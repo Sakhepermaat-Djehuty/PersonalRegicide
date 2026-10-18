@@ -446,7 +446,7 @@ def _m9_answer(ctx: Ctx, ev: dict) -> None:
 # ---- 10 Pride to Fall
 def _m10_bonus(ctx: Ctx, zone: Sequence[str]) -> str:
     enemy = ctx.g.enemy
-    double = ", then ×2 (warrior enemy)" if enemy is not None and "C" in enemy.suits else ""
+    double = ", then ×2 (warrior)" if enemy is not None and "C" in enemy.suits else ""     # 36 at most
     return "Enemy attack +%d%s" % (total(ctx, zone), double)
 
 
