@@ -883,8 +883,16 @@ class InfoCardFace(ui.View):
             x += nw + 10
         if self.icon:
             size = 28.0
-            draw_symbol(self.icon, x + size * 0.6, top + row * 0.55, size, self.edge)
-            x += size * 1.3 + 6
+            # one class symbol (or the tree), several class symbols side by side, or a glyph
+            parts = list(self.icon) if len(self.icon) > 1 and all(ch in SUIT_SYMBOL for ch in self.icon) else [self.icon]
+            for part in parts:
+                if part == TREE_PIP or part in SUIT_SYMBOL:
+                    pw = size * 1.2
+                else:
+                    pw = max(size * 1.2, text_size(part, 0, size, True)[0] + 4)
+                draw_symbol(part, x + pw / 2.0, top + row * 0.55, size, self.edge)
+                x += pw
+            x += 8
         tsize = 22
         while tsize > 14 and text_size(self.title, 0, tsize, True)[0] > w - x - pad:
             tsize -= 1
@@ -897,20 +905,30 @@ class InfoCardFace(ui.View):
         y += 10
         body = "\n".join(self.lines)
         if self.middle:
-            msize = 60
-            mh = msize * 1.15
-            cap = 13 if self.middle_caption else 0
+            # top down: the number, its caption, the lines; the lines shrink first, then the
+            # number, so nothing overlaps on a small phone
+            cap = 12 if self.middle_caption else 0
             free = h - y - pad
-            size = self.body_size(w - 2 * pad, max(0.0, free - mh - cap * 1.3), 14) if body else 14
-            text_h = text_size(body, w - 2 * pad, size)[1] if body else 0.0
-            my = y + max(0.0, (free - text_h - mh - cap * 1.3) / 2)
-            ui.draw_string(self.middle, (pad, my, w - 2 * pad, mh), (T.FONT_BOLD, msize), ink, ui.ALIGN_CENTER)
+            msize, size = 60.0, 14.0
+            while True:
+                mh = msize * 1.12
+                room = free - mh - cap * 1.25 - (4 if body else 0)
+                size = self.body_size(w - 2 * pad, room, 14) if body else 14.0
+                text_h = len(self.lines) * size * 1.25 if body else 0.0
+                if text_h <= room or msize <= 30:
+                    break
+                msize -= 3
+            block = mh + cap * 1.25 + (4 + text_h if body else 0)
+            my = y + max(0.0, (free - block) / 2.0)
+            ui.draw_string(self.middle, (pad, my - msize * 0.08, w - 2 * pad, msize * 1.25), (T.FONT_BOLD, msize), ink,
+                           ui.ALIGN_CENTER)
+            yy = my + mh
             if cap:
-                ui.draw_string(self.middle_caption, (pad, my + mh - 4, w - 2 * pad, cap * 1.3), (T.FONT, cap),
+                ui.draw_string(self.middle_caption, (pad, yy, w - 2 * pad, cap * 1.3), (T.FONT, cap),
                                T.CARD_INK_MUTED, ui.ALIGN_CENTER)
+                yy += cap * 1.25
             if body:
-                ui.draw_string(body, (pad, h - pad - text_h, w - 2 * pad, text_h + 2), (T.FONT, size), ink,
-                               ui.ALIGN_CENTER)
+                ui.draw_string(body, (pad, yy + 4, w - 2 * pad, text_h + 2), (T.FONT, size), ink, ui.ALIGN_CENTER)
         elif body:
             size = self.body_size(w - 2 * pad, h - y - pad, 15)
             ui.draw_string(body, (pad, y, w - 2 * pad, h - y - pad), (T.FONT, size), ink, ui.ALIGN_LEFT)
