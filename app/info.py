@@ -325,11 +325,17 @@ class Ctx(object):
     def on(self, row_id: str) -> bool:
         return row_on(self.settings, row_id)
 
+    @property
+    def killed(self) -> bool:
+        """The action defeated an enemy."""
+        return self.has("defeat")
+
     def add(self, card: InfoCard) -> bool:
-        """Queue ``card`` if its row is on (with the lines waiting for the next card on top
-        of its own, as many as it holds). Returns whether it was queued: a row switched off
-        leaves nothing (no card, no sound, no line)."""
-        if not self.on(card.id):
+        """Queue ``card`` if its row is on (a stamped card's row is IMMUNITY's), with the
+        lines waiting for the next card on top of its own, as many as it holds. Returns
+        whether it was queued: a row switched off leaves nothing (no card, no sound, no
+        line)."""
+        if not self.on("immunity" if card.immune else card.id):
             return False
         if self.pending:
             room = max(0, card.max_lines() - len(card.lines))
@@ -383,15 +389,20 @@ def _carried_lines(ctx: Ctx) -> None:
         ctx.pending.extend(lines)
 
 
-# the card builders register themselves on import (each module imports this one)
+# the card builders register themselves on import (each module imports this one); one
+# that fails to load leaves the others working (LOAD_ERRORS says why: a test checks it)
+BUILDERS = ("info_turn", "info_classes", "info_defeat", "info_missions", "info_evergreen")
+LOAD_ERRORS: Dict[str, str] = {}
+
+
 def _load_builders() -> None:
     import importlib
-    for name in ("info_turn", "info_classes", "info_defeat", "info_missions", "info_evergreen"):
+    import traceback
+    for name in BUILDERS:
         try:
             importlib.import_module("." + name, __package__)
-        except ImportError as e:
-            if name not in str(e):
-                raise
+        except Exception:
+            LOAD_ERRORS[name] = traceback.format_exc()
 
 
 _load_builders()

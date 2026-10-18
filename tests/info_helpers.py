@@ -32,3 +32,16 @@ def card(cards, row_id: str) -> info.InfoCard:
 def text(c: info.InfoCard) -> str:
     """Everything a card says, for searching."""
     return "\n".join([c.title, c.number, c.middle, c.caption] + list(c.lines))
+
+
+LINE_CHARS = 40
+
+
+def fits(cards) -> None:
+    """Every card keeps to the catalogue's limits: a title, at most 3 lines under a middle
+    number and 6 otherwise, each line 40 characters at most."""
+    for c in cards:
+        assert c.title, c
+        assert len(c.lines) <= c.max_lines(), (c, c.lines)
+        for line in c.lines:
+            assert len(line) <= LINE_CHARS, (c, line)
