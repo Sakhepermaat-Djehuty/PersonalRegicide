@@ -82,6 +82,21 @@ too (a solo player may yield, though not twice running). The cards played agains
 enemy sit under the hand, above the buttons (Settings: "Played cards under the hand" puts them back above it). On a short
 screen they share a row with the mission zone.
 
+## Info pop-ups
+
+Every phase of the game is told on a landscape info card that shows over the table after
+the action that caused it: the strength top left, the phase's icon and title, a short
+breakdown and, for a blow, a big number in the middle. A class power the enemy is immune
+to shows its card greyed with a red IMMUNITY stamp. A tap anywhere moves on to the next
+card, a long press skips the rest; a choice box, a handover or the result waits underneath
+until the last card is gone. A fresh mission opens on its Battle start card (after the
+rules card). Settings, "Info Pop Ups": the box switches them all off (the short step sounds
+come back) and › lists every pop-up in groups, each with its own box; a pop-up switched off
+is gone completely. Mage, Druid, Chanter and Reaver show one card before their box (what was
+chosen is a line on the next card); a killing blow shows no Paladin or Guardian card. The
+cards never name a card that goes into a hidden hand or the reserve. See
+docs/INFO_POPUPS.md for every card.
+
 ## Sound
 
 Sound effects for the table (card taps, plays, the class powers, hits, defeats, the

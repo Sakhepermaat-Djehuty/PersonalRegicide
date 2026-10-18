@@ -1175,12 +1175,22 @@ PRODUCTION.
 - Size: 71 × about 2.2 s comes to about 14 MB as 44.1 kHz WAV, about 7 MB at 22.05 kHz, or 1 to 2 MB as m4a.
 
 
-## Questions for you
+## The owner's answers (these override the catalogue above)
 
-1. On a killing blow, Paladin and Guardian still show ('Not needed: {enemy} fell'), so a Gøran or Evergreen play always gives its four class cards. Confirm?
-2. Mage, Druid, Chanter and Reaver: a card before their box plus a result card after it (the default here), or one card each?
-3. When a single row is switched off, should that step's old short sound come back, or should it stay silent? (The master ✗ brings all of them back.)
-4. A Gøran attack that kills is about 7 taps (four classes, Defeated, New enemy, Turn). Should a long press skip the rest of a queue?
-5. Does 'each pop up at least 2 s' also cover the pop-ups you open yourself? The default here: relic and Evergreen cards reuse their row's clip; the rules card, attack header, reward choices and mercenaries keep the short card flip.
-6. Clip files: 22 kHz WAV (about 7 MB) or m4a (1 to 2 MB)?
-7. The new icons (zone ▦, location ⛰, bane ☠, boon ✦, turn ↻, yield ⚐, exact ◎, defeat ⚔...) need picking on your phone, like the class glyphs. Use a symbol picker?
+1. A killing blow shows no Paladin and no Guardian card.
+2. Mage, Druid, Chanter and Reaver show one card each, before their box; there are no
+   result cards (Mage's pick, Druid's sorting, Chanter's draw, Reaver's pick): what was
+   chosen is an outcome line on the next card shown.
+3. A pop-up switched off in the settings is removed from the experience completely: no
+   card, no sound and no line in its place. A card that replaces another falls back to it
+   (Warrior to Damage, Guardian to No damage, Exact kill! and Hydra regrows to Defeated,
+   Battle start to New enemy); with the IMMUNITY row off, stamped cards are not shown.
+4. A long press skips the rest of a queue.
+5. Cards the player opens (the rules card, relics) keep the short card-flip sound.
+6. Clips are WAV.
+7. Icons are chosen on a picker page, where every slot may also have no icon.
+
+Built in the lab: app/info.py (the card spec, the rows, the builder context), the builders
+app/info_turn.py, info_classes.py, info_defeat.py, info_missions.py and info_evergreen.py,
+and the queue on screen, app/info_view.py. The Druid's and the Chanter's strength is drawn
+muted and struck through (it does nothing).
