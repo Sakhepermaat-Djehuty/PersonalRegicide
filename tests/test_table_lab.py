@@ -1,6 +1,6 @@
 """The table's lab layout: the enemy large in the header with its attack and health beside
 it, cards greyed when they cannot join the selection, a red edge where a class power
-clashes with the enemy's immunity, the solo Kinfolk Flute in the Yield button's place,
+clashes with the enemy's immunity, the solo Kinfolk Flute on a button of its own,
 the mission zone above the hand and the played cards under it (a full row behind a card
 back), and the attack's card on a tap (the enemy's card opens nothing)."""
 import os
@@ -181,15 +181,16 @@ def test_the_attack_opens_its_card_on_a_tap_and_the_enemy_does_nothing(app):
     assert gs.pile_views["castle"].count == len(g.castle) == 11
 
 
-def test_the_solo_flute_takes_the_yield_buttons_place_and_its_cards_wait_for_a_set(app):
+def test_the_solo_flute_has_its_own_button_beside_yield_and_its_cards_wait_for_a_set(app):
     from app.screens import SpecialOverlay
     gs, g = _flute_mission(app)
     set_hand(g, ["5S", "3D", "3H", "7C", "9D", "2H"])
     g.extra["flute"] = ["3C"]
     _pull(g, "3C")
     gs.refresh(after_action=False)
-    assert g.phase == PHASE_PLAY and not g.can_yield()
-    assert gs.left_btn.title == "Flute" and gs.left_btn.enabled and gs.special_btn.hidden
+    assert g.phase == PHASE_PLAY and g.can_yield()
+    assert gs.left_btn.title == "Yield" and gs.left_btn.enabled
+    assert not gs.special_btn.hidden and gs.special_btn.title == "Flute" and gs.special_btn.enabled
     # the flute's 3 is greyed until a 3 from the hand starts a kinfolk set
     assert gs.hand.views["3C"].shaded
     gs.hand._tapped(gs.hand.views["3C"])
@@ -197,8 +198,18 @@ def test_the_solo_flute_takes_the_yield_buttons_place_and_its_cards_wait_for_a_s
     gs.hand.set_selection(["3D"])
     assert not gs.hand.views["3C"].shaded
     gs.hand.set_selection([])
-    gs._left(gs.left_btn)
+    gs._special(gs.special_btn)
     assert isinstance(gs.overlay, SpecialOverlay)
+    gs._hide_overlay()
+    # a yield leaves the Flute where it was, while suffering and after; only Yield greys
+    # (a solo player may not yield twice running)
+    gs._left(gs.left_btn)
+    assert g.phase == PHASE_SUFFER and gs.special_btn.title == "Flute" and not gs.special_btn.hidden
+    gs._left(gs.left_btn)                                   # Suggest a discard
+    gs._right(gs.right_btn)
+    assert g.phase == PHASE_PLAY and not g.can_yield()
+    assert gs.left_btn.title == "Yield" and not gs.left_btn.enabled
+    assert not gs.special_btn.hidden and gs.special_btn.title == "Flute"
 
 
 def test_suffering_shows_the_tally_and_greys_the_rest_once_one_at_a_time_is_covered(app):

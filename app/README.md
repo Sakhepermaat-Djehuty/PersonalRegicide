@@ -72,9 +72,9 @@ does the enemy. While suffering, the Discard button shows the tally ("Discard 8/
 where cards go one at a time the rest grey out once the damage is covered, and a hand too
 short to pay lights the Jester power up.
 
-Solo, the Flute takes the Yield button's place (a solo player never yields), or the
-Jester's while suffering. The cards played against the enemy sit under the hand, above
-the buttons (Settings: "Played cards under the hand" puts them back above it). On a short
+The Kinfolk Flute has a button of its own at the end of the played cards' row, solo
+too (a solo player may yield, though not twice running). The cards played against the
+enemy sit under the hand, above the buttons (Settings: "Played cards under the hand" puts them back above it). On a short
 screen they share a row with the mission zone.
 
 ## Sound

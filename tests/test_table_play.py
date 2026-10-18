@@ -92,7 +92,8 @@ def test_selecting_cards_never_resets_the_flute_button(app, monkeypatch):
     gs, g = _mission(app, 5, relics=("flute",))
     set_hand(g, ["5S", "5C", "3D", "3H", "7C", "AS", "9D", "2H"])
     gs.refresh(after_action=False)
-    assert g.phase == PHASE_PLAY and gs.left_btn.title == "Flute" and gs.left_btn.enabled
+    assert g.phase == PHASE_PLAY and gs.special_btn.title == "Flute" and gs.special_btn.enabled
+    assert gs.left_btn.title == "Yield" and not gs.special_btn.hidden
     touched = []
     real_setattr = type(gs.left_btn).__setattr__
     buttons = (gs.left_btn, gs.mid_btn, gs.right_btn, gs.special_btn)
@@ -104,19 +105,18 @@ def test_selecting_cards_never_resets_the_flute_button(app, monkeypatch):
     monkeypatch.setattr(type(gs.left_btn), "__setattr__", spy)
     for sel in (["5C"], ["5C", "5S"], ["5C"], [], ["9D"], []):
         gs.hand.set_selection(sel)
-    # the Flute button (0) and the Jester button (1) look the same throughout: never touched;
-    # only Play (2) turns on and off with the selection
+    # Yield (0), the Jester button (1) and the Flute's button (3) look the same throughout:
+    # never touched; only Play (2) turns on and off with the selection
     assert not [t for t in touched if t[0] in (0, 1, 3)], touched
     assert ("enabled" in [n for i, n, _ in touched if i == 2])
-    assert gs.left_btn.title == "Flute" and gs.left_btn.enabled
-    assert gs.flute_slot is gs.left_btn                      # the real button, not a stand-in
+    assert gs.special_btn.title == "Flute" and gs.special_btn.enabled and not gs.special_btn.hidden
     # it still opens the Flute
     from app.screens import SpecialOverlay
-    gs._left(gs.left_btn)
+    gs._special(gs.special_btn)
     assert isinstance(gs.overlay, SpecialOverlay)
 
 
-def test_the_flute_takes_the_jester_slot_while_suffering_without_blinking(app, monkeypatch):
+def test_the_flute_keeps_its_button_while_suffering_without_blinking(app, monkeypatch):
     gs, g = _mission(app, 5, relics=("flute",))
     set_hand(g, ["3S", "AS", "9C", "10C", "8S", "2H", "4D"])
     set_mission_enemy(g, [c for c in [g.enemy.card_id] + list(g.castle) if "C" in g.cards[c].suits][0])
@@ -126,15 +126,15 @@ def test_the_flute_takes_the_jester_slot_while_suffering_without_blinking(app, m
     while g.decision is not None:
         g.decide(g.legal_actions()[0])
         gs.refresh(after_action=False)
-    assert g.phase == PHASE_SUFFER and gs.mid_btn.title == "Flute" and gs.flute_slot is gs.mid_btn
+    assert g.phase == PHASE_SUFFER and gs.special_btn.title == "Flute" and not gs.special_btn.hidden
     touched = []
-    real_setattr = type(gs.mid_btn).__setattr__
+    real_setattr = type(gs.special_btn).__setattr__
 
     def spy(obj, name, value):
-        if obj is gs.mid_btn and name in ("title", "enabled", "hidden"):
+        if obj is gs.special_btn and name in ("title", "enabled", "hidden"):
             touched.append((name, value))
         real_setattr(obj, name, value)
-    monkeypatch.setattr(type(gs.mid_btn), "__setattr__", spy)
+    monkeypatch.setattr(type(gs.special_btn), "__setattr__", spy)
     gs.hand.set_selection(["2H"])
     gs.hand.set_selection(["2H", "AS"])
     assert touched == []

@@ -277,8 +277,9 @@ def test_campaign_flow_win_then_mission2(app):
                 g.players[0].hand[0] = cid
                 break
         gs.refresh(after_action=False)
-    # solo: the Flute takes the Yield button's place (a solo player never yields)
-    assert gs.left_btn.title == "Flute" and gs.left_btn.enabled and gs.special_btn.hidden
+    # solo: the Flute has its own button beside the played cards (a solo player may yield)
+    assert gs.left_btn.title == "Yield" and gs.left_btn.enabled
+    assert not gs.special_btn.hidden and gs.special_btn.title == "Flute"
     _tap_button(app, "Flute")
     labels = [b.title for b in ui.find(app, lambda v: isinstance(v, ui.Button) and v.title.startswith("Store"))]
     assert labels

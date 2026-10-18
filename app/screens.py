@@ -651,9 +651,6 @@ class ButtonDraft(object):
         else:
             setattr(self._real, name, value)
 
-    def real_button(self):
-        return self._real
-
     def commit(self, fonts: dict) -> None:
         """Set what changed. A font reads back on iOS under the system's internal name, so
         it is compared with the one set last (``fonts``, by button)."""
@@ -694,7 +691,6 @@ class GameScreen(Screen):
         # the enemy large in the middle, its attack on the left and its health on the right
         self.enemy = TableHeader()
         self.enemy.on_attack = self._show_attack
-        self.flute_slot: Optional[ui.Button] = None   # the action bar button standing in for the Flute
         self.button_fonts: Dict[int, tuple] = {}     # the font each action-bar button was given last
         # the cards played against the enemy (under the hand) and the mission zone (above
         # it): rows of cards under their names; a full row starts with a card back holding
@@ -918,7 +914,6 @@ class GameScreen(Screen):
             # a tally ("Discard 7/10") is what the player who held the phone picked: gone
             b.title = re.sub(r" \d+/\d+$", "", b.title or "")
         self.special_btn.hidden = True
-        self.flute_slot = None
         self.hand.warned = set()
         self.enemy.projection, self.enemy.warn, self.enemy.paying = None, False, None
         self.enemy.refresh()
@@ -975,7 +970,7 @@ class GameScreen(Screen):
         """Bring the action bar, the hand's greying and the header up to date with the game
         and the selection. The buttons' final looks are worked out on stand-ins first and
         set once, where they changed: a system button fades on every change of its title or
-        state, and resetting the Flute to "Yield" and back on each tap made it blink."""
+        state, and resetting a button's title and back on each tap made it blink."""
         real = (self.left_btn, self.mid_btn, self.right_btn, self.special_btn)
         drafts = [ButtonDraft(b) for b in real]
         self.left_btn, self.mid_btn, self.right_btn, self.special_btn = drafts
@@ -985,13 +980,10 @@ class GameScreen(Screen):
             self.left_btn, self.mid_btn, self.right_btn, self.special_btn = real
             for d in drafts:
                 d.commit(self.button_fonts)
-            if isinstance(self.flute_slot, ButtonDraft):
-                self.flute_slot = self.flute_slot.real_button()
 
     def _work_out_controls(self) -> None:
         g = self.game
         sel = list(self.hand.selected)
-        self.flute_slot = None
         had_special = not self.special_btn.hidden
         self.special_btn.hidden = True
         self.hand.warned = set()
@@ -1040,12 +1032,9 @@ class GameScreen(Screen):
             else:
                 set_enabled(self.right_btn, False)
             specials = g.rules.special_actions(g)
-            if specials and not g.can_yield():
-                # the solo Kinfolk Flute takes Yield's place (a solo player never yields)
-                self.flute_slot = self.left_btn
-                self.left_btn.title = special_title(specials)
-                set_enabled(self.left_btn, True, False)
-            elif specials:
+            if specials:
+                # the Kinfolk Flute has a button of its own beside the played cards, solo too
+                # (a solo player may yield, so it no longer stands in Yield's place)
                 self.special_btn.hidden = False
                 self.special_btn.title = special_title(specials)
             self.hand.refresh_dim()
@@ -1079,13 +1068,7 @@ class GameScreen(Screen):
             set_enabled(self.right_btn, (total >= need and need > 0 and in_order) or (feign and whole))
             paying = (total, need)
             specials = g.rules.special_actions(g)
-            if specials and self.mid_btn.hidden:
-                # the solo Kinfolk Flute in the Jester's place (the Jester has no power here)
-                self.flute_slot = self.mid_btn
-                self.mid_btn.hidden = False
-                self.mid_btn.title = special_title(specials)
-                set_enabled(self.mid_btn, True, False)
-            elif specials:
+            if specials:
                 self.special_btn.hidden = False
                 self.special_btn.title = special_title(specials)
             self.hand.refresh_dim()
@@ -1260,9 +1243,7 @@ class GameScreen(Screen):
 
     def _left(self, sender) -> None:
         g = self.game
-        if self.flute_slot is self.left_btn:
-            self._special(sender)
-        elif g.phase == PHASE_PLAY:
+        if g.phase == PHASE_PLAY:
             self._act(g.yield_turn)
         elif g.phase == PHASE_SUFFER:
             if g.feign_death_available():
@@ -1302,9 +1283,7 @@ class GameScreen(Screen):
 
     def _mid(self, sender) -> None:
         g = self.game
-        if self.flute_slot is self.mid_btn:
-            self._special(sender)
-        elif g.n_players == 1 and g.rules.solo_jester_mode(g) == "attack":
+        if g.n_players == 1 and g.rules.solo_jester_mode(g) == "attack":
             self._table_under_box(g.active)
             self._show_overlay(ClassChoiceOverlay(self))
         elif g.n_players == 1 or g.phase == PHASE_SUFFER:
