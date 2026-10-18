@@ -104,6 +104,10 @@ INFO_EVENTS: List[Event] = [
     _info("m10_cleric", "10 · Cleric enemy", "Mission 10, end of turn: the corrupted Cleric heals the zone."),
     _info("m10_bard", "10 · Bard enemy", "Mission 10, end of turn: the corrupted Bard wants a card, before its box."),
     _info("m11_beast", "11 · Beast", "Mission 11, start of turn: a beast is revealed and acts."),
+    _info("m11_beast_H", "11 · Beast: Cleric", "Mission 11: a Cleric beast is revealed (its own clip)."),
+    _info("m11_beast_D", "11 · Beast: Bard", "Mission 11: a Bard beast is revealed (its own clip)."),
+    _info("m11_beast_C", "11 · Beast: Warrior", "Mission 11: a Warrior beast is revealed (its own clip)."),
+    _info("m11_beast_S", "11 · Beast: Paladin", "Mission 11: a Paladin beast is revealed (its own clip)."),
     _info("m12_zone", "12 · Zone grows", "Mission 12, start of turn: the zone makes the enemy stronger and immune."),
     # Evergreen: locations
     _info("shrine", "Shrine", "Evergreen, end of turn at the Shrine: a reserve card joins the zone."),

@@ -218,8 +218,9 @@ INSTR.update({
 
 # The bank each instrument sounds best from (the jingles' and the Whistle jig's choices);
 # the rest come from Fluid (faster: the MuseScore bank takes ~1.2 s to load per render).
+# The Fluid choir measures 15-30 cents flat (D3 -30, A3 -27, D4 -24); MuseScore's is in tune.
 BANK_FOR: Dict[int, str] = {GM[k]: "musescore" for k in (
-    "harp", "nylon_guitar", "recorder", "french_horn", "violin", "viola", "cello", "tinkle_bell")}
+    "harp", "nylon_guitar", "recorder", "french_horn", "violin", "viola", "cello", "tinkle_bell", "choir")}
 
 # Programs that hold a note (blown, bowed, sung): a held cadence note on one of them
 # fades under the bow or breath (an expression swell) instead of just stopping.

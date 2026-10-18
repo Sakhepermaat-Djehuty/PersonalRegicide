@@ -475,6 +475,7 @@ def test_m11_warrior_and_paladin_beasts_change_the_enemy():
     in_order(cards, "damage_paid", "turn", "m11_beast")
     c = card(cards, "m11_beast")
     assert c.title == "Beast: Warrior" and c.icon == "C" and c.face_args({})["edge"] == T.SUIT_COLOR["C"]
+    assert c.sounds[:2] == ["info_m11_beast_C", "info_m11_beast"]          # the Warrior beast's own clip
     # the 10 moves from the discard top to the banished top: the same attack, a new immunity
     assert c.lines == ["Top discard 10♠ is banished", "Justicar: attack 20 · immune ♠"]
     fits(cards)

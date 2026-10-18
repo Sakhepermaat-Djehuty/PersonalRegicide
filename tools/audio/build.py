@@ -44,6 +44,16 @@ def family_modules(names):
         yield name, importlib.import_module(name)
 
 
+PHONE_HZ = 350.0     # roughly where a phone speaker stops
+PHONE_REF = -1.5     # the info clips' usual loudness through it, against full band (dB)
+PHONE_K = 0.6        # how much of a clip's difference from that is made up
+
+
+def phone_offset(x: np.ndarray) -> float:
+    """How much quieter ``x`` is through a phone-speaker high-pass than full band (dB)."""
+    return A._rms_db(A.highpass(x, PHONE_HZ)) - A._rms_db(x)
+
+
 def check(c: Candidate, x: np.ndarray) -> list:
     ev = EVENT_BY_ID[c.event]
     st = A.stats(x)
@@ -85,6 +95,12 @@ def build(c: Candidate) -> dict:
         x = A.master(raw, ev.loudness_db, -1.0, fade_out=0.0)
     else:
         x = A.master(A.trim(raw, -70.0, 0.01), ev.loudness_db, -1.0, fade_out=0.008)
+        if ev.group == "Info pop-ups":
+            # a phone speaker hardly plays below ~350 Hz, so a clip low in register sounds
+            # up to 5 dB quieter there than a bright one at the same loudness: lift or ease
+            # each clip part of the way toward the family's usual balance
+            shift = PHONE_K * (PHONE_REF - phone_offset(x))
+            x = A.master(A.trim(raw, -70.0, 0.01), ev.loudness_db + shift, -1.0, fade_out=0.008)
     d = os.path.join(OUT, c.event)
     base = os.path.join(d, c.id)
     if ev.kind == "music":

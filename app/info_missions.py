@@ -589,8 +589,10 @@ def _m11_beast(ctx: Ctx, ev: dict) -> None:
     if reshuffle:
         lines.append("All four out: the beasts reshuffle")
     name = ctx.class_title(suit) if suit else ""
+    # the revealed beast's own clip (one per class), else the row's
+    sounds = (["info_m11_beast_" + suit] if suit else []) + ["info_m11_beast"]
     ctx.add(InfoCard("m11_beast", "Beast: %s" % name if name else "Beast", icon=suit or None, lines=lines,
-                     edge=T.SUIT_COLOR.get(suit, "")))
+                     edge=T.SUIT_COLOR.get(suit, ""), sounds=sounds))
 
 
 @on("beast_effect")

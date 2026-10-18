@@ -411,8 +411,8 @@ CANDIDATES = [
     info("m11_beast", "growl_lute", "Growl and lute",
          "A low horn growls over a pacing frame drum and a lute answers in D minor, waiting on A (the Bard beast).",
          _beast_bard, ["dark", "horn", "question"]),
-    # the other three beasts' renders (the plan's four renders, one row): the app plays one
-    # clip for every beast today, so these are picks until it plays one per class
+    # the other three beasts' renders (the plan's four renders, one row); the card plays the
+    # revealed beast's own clip, info_m11_beast_<class>, falling back on info_m11_beast
     info("m11_beast", "growl_harp", "Growl and harp",
          "A low horn growls over a pacing frame drum and a harp answers in D minor, waiting on A (the Cleric "
          "beast).",
@@ -424,6 +424,15 @@ CANDIDATES = [
     info("m11_beast", "growl_horn", "Growl and horn",
          "A low horn growls over a pacing frame drum and answers itself low in D minor, settling on D (the Paladin "
          "beast: no box).",
+         _beast_paladin, ["dark", "horn", "paladin"]),
+    # one per class: the clip the card plays for that beast
+    info("m11_beast_H", "growl_harp", "Growl and harp", "The Cleric beast: a harp answers the growl, waiting on A.",
+         _beast_cleric, ["dark", "horn", "question", "cleric"]),
+    info("m11_beast_D", "growl_lute", "Growl and lute", "The Bard beast: a lute answers the growl, waiting on A.",
+         _beast_bard, ["dark", "horn", "question"]),
+    info("m11_beast_C", "growl_fiddle", "Growl and fiddle", "The Warrior beast: a fiddle answers the growl, settling on D.",
+         _beast_warrior, ["dark", "horn", "warrior"]),
+    info("m11_beast_S", "growl_horn", "Growl and horn", "The Paladin beast: the horn answers itself low, settling on D.",
          _beast_paladin, ["dark", "horn", "paladin"]),
     info("m12_zone", "minor_to_major", "Minor to major",
          "The three cards on a wooden flute over a flowing harp in D minor, brightening to D major at the end.",
