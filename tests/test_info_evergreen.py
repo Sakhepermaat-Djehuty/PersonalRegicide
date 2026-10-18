@@ -25,6 +25,7 @@ from regicide.campaign import missions as M  # noqa: E402
 from regicide.campaign import party as P  # noqa: E402
 
 NAMES = ["Ana", "Ben", "Cy"]
+LONG = ["Bartholomew Quill", "Maximilian Ash", "Cy"]      # the longest names the other modules test
 RESTORED = ("2S", "3H", "4D", "5C", "7S", "8H", "9D", "ESME6E")
 HAND = ("10S", "10C", "10D", "9S", "9C")
 
@@ -50,9 +51,9 @@ def in_order(cards, *row_ids):
     assert [i for i in ids(cards) if i in seen] == seen, (ids(cards), row_ids)
 
 
-def ever(location="A", banes=(), boons=(), players=1, seed=5000):
+def ever(location="A", banes=(), boons=(), players=1, seed=5000, names=NAMES):
     """An Evergreen attempt after a finished campaign, with this location, banes and boons."""
-    c = CampaignState.new(players, NAMES[:players], seed=seed)
+    c = CampaignState.new(players, list(names[:players]), seed=seed)
     c.mission = 12
     c.completed = list(range(1, 13))
     c.finished = True
@@ -149,6 +150,20 @@ def test_cave_grows_then_collapses_before_turn():
     assert not {"cave", "cave_collapse"} & set(ids(cards)) and "collapse" not in everything(cards)
 
 
+def test_cave_collapse_spilling_a_restored_discard_is_not_tread_carefully():
+    # the restored Mother sends the restored 8♥ under the reserve: its redirect comes
+    # between the zone's banish and the discard pile's, which is still the Cave's
+    g = ever("B", banes=(15,), seed=5102)
+    rig(g, "mission_zone", ["9H"])
+    set_discard(g, ["8H", "3D"])
+    set_tavern_top(g, ["7D"])
+    g.enemy.attack = 15
+    cards = turn_end(g, hand=("10S", "10C", "10D"))
+    assert "banish_redirect" in [e["t"] for e in g.last_events]
+    in_order(cards, "cave", "cave_collapse", "mother_restored", "turn")
+    assert "bane15" not in ids(cards)
+
+
 def test_forest_feeds_the_enemy():
     g = ever("C", seed=5103)
     cards = turn_end(g)
@@ -197,6 +212,16 @@ def test_lake_comes_after_turn_and_at_the_start():
     fits(cards)
     g = ever("E", seed=5105)
     assert ids(start_cards(g, off("lake"))) == ["battle_start"]
+
+
+def test_lake_with_the_pilgrims_out_takes_the_reserve_top():
+    g = ever("E", seed=5105)
+    g.extra["pilgrim_deck"] = []
+    set_tavern_top(g, ["7D"])
+    cards = turn_end(g)
+    in_order(cards, "turn", "lake")
+    c = card(cards, "lake")
+    assert c.number == "7" and c.lines[0] == "Start of turn: reserve top 7♦ → zone"
 
 
 # ---------------------------------------------------------------------------- the banes
@@ -326,6 +351,19 @@ def test_banes_16_and_22_come_after_turn():
     assert not {"bane16", "bane22"} & set(ids(cards)) and "Start of turn: the" not in everything(cards)
 
 
+def test_bane16_does_not_name_a_restored_top_discard_going_under_the_reserve():
+    g = ever("A", banes=(16,), seed=5109)
+    g.enemy.attack = 1                     # shielded to 0: no damage, nothing discarded
+    set_discard(g, ["8H", "2D"])
+    set_hand(g, ["AS", "10S"])
+    cards = cards_for(g, lambda: g.play(["AS"]))
+    in_order(cards, "turn", "bane16", "mother_restored")
+    c = card(cards, "bane16")
+    assert c.lines == ["Start of turn: top discard is banished", "Restored: it goes under the reserve"]
+    assert "8♥" not in text(c)
+    fits(cards)
+
+
 def test_bane16_with_the_discard_pile_empty_follows_the_lake():
     g = ever("E", banes=(16, 22), seed=5109)
     g.enemy.attack = 1                     # shielded to 0: no damage, nothing discarded
@@ -365,6 +403,16 @@ def test_bane21_comes_before_its_box_and_boon30_after_it():
     fits(cards)
 
 
+def test_boon30_names_each_matching_strength():
+    g = ever("A", boons=(30,), seed=5112)
+    rig(g, "mission_zone", ["AD", "8H"])
+    set_hand(g, ["AH", "8C", "10S", "10C"])
+    cards = cards_for(g, lambda: g.play(["AH", "8C"]))
+    c = card(cards, "boon30")
+    assert c.number == "9" and c.lines[-2:] == ["Zone cards A♦ 8♥ match your attack (1/8)",
+                                                "Move one to the discard pile?"]
+
+
 def test_bane21_and_boon30_switched_off_leave_no_card_and_no_line():
     g = ever("A", banes=(21,), boons=(30,), seed=5112)
     rig(g, "mission_zone", ["8H"])
@@ -383,9 +431,29 @@ def test_bane21_names_the_player_with_two_players():
     assert cards[0].lines == ["Ana's attack has a card of 8+:", "Ana discards a card from hand"]
 
 
+def test_banes_keep_a_long_name_whole():
+    g = ever("A", banes=(12,), players=2, seed=5110, names=LONG)
+    set_hand(g, ["AS"] + list(HAND) + ["2C"])
+    g.play(["AS"])
+    g.enemy.suits = ("D",)
+    cards = cards_for(g, lambda: g.suffer(pay(g, list(HAND))))
+    assert card(cards, "bane12").lines == ["End of turn: the enemy is a bard,", "so Bartholomew Quill must put",
+                                           "a hand card in the zone"]
+    g = ever("A", banes=(21,), players=2, seed=5112, names=LONG)
+    set_hand(g, ["8C", "2C", "10S", "10C"])
+    cards += cards_for(g, lambda: g.play(["8C"]))
+    assert card(cards, "bane21").lines == ["Bartholomew Quill's attack has an 8+:",
+                                           "Bartholomew Quill discards a hand card"]
+    g = ever("A", banes=(23,), players=2, seed=5111, names=LONG)
+    cards += turn_end(g, hand=("10S", "10C", "10D", "2C"))
+    assert card(cards, "bane23").lines[0] == "Bartholomew Quill may discard a card,"
+    assert "…" not in everything(cards)
+    fits(cards)
+
+
 # ---------------------------------------------------------------------------- the boons
-def _close_call(boons=(31, 35), players=1):
-    g = ever("A", boons=boons, players=players, seed=5114)
+def _close_call(boons=(31, 35), players=1, names=NAMES):
+    g = ever("A", boons=boons, players=players, seed=5114, names=names)
     rig(g, "mission_zone", ["10H", "5H"])
     set_discard(g, ["2D", "3D"])
     g.enemy.attack = 11
@@ -428,6 +496,35 @@ def test_a_close_call_with_two_players_and_switched_off():
     answer(g, {"type": "zone_match", "player": 0, "card": "10H"}, settings)
     cards = answer(g, {"type": "close_call", "player": 0, "card": "3D"}, settings)
     assert "zone → discard" not in everything(cards) and "A discard went" not in everything(cards)
+
+
+def test_boons_keep_a_long_name_whole():
+    g = _close_call(players=2, names=LONG)
+    cards = cards_for(g, lambda: g.suffer(["10S"]))
+    assert card(cards, "boon35").lines[-2:] == ["Now Bartholomew Quill puts a discard", "on top of the reserve"]
+    assert card(cards, "boon31").lines == ["Bartholomew Quill discarded a 10;", "the zone holds a 10: move that card",
+                                           "to the discard pile?"]
+    g = ever("A", boons=(33,), players=2, seed=5116, names=LONG)
+    rig(g, "banished", ["6D"])
+    g.enemy.hp = 1
+    set_hand(g, ["AS", "9S"])
+    cards += cards_for(g, lambda: g.play(["AS"]))
+    assert card(cards, "boon33").lines == ["Exact kill: Bartholomew Quill may put", "a banished card under the reserve"]
+    assert "…" not in everything(cards)
+    fits(cards)
+
+
+def test_selfless_rescue_asked_again_shows_no_second_card():
+    g = ever("A", boons=(31,), seed=5114)
+    rig(g, "mission_zone", ["10H", "10D"])
+    g.enemy.attack = 20
+    set_hand(g, ["AS", "10S", "10C", "9C"])
+    g.play(["AS"])
+    cards = cards_for(g, lambda: g.suffer(["10S", "10C"]))
+    assert ids(cards)[-1] == "boon31"
+    assert answer(g, {"type": "zone_match", "player": 0, "card": "10H"}) == [] and g.decision["kind"] == "zone_match"
+    cards = answer(g, {"type": "zone_match_skip", "player": 0})
+    assert card(cards, "shrine").lines[:2] == ["10♥: zone → discard pile", "The zone card stays (Selfless Rescue)"]
 
 
 def test_selfless_rescue_names_the_player_with_two_players():

@@ -189,8 +189,9 @@ def _trim(ctx: Ctx, lines: Sequence[Any], limit: int, room: bool = True) -> List
 def _card(ctx: Ctx, suit: str, number: Any, lines: Sequence[Any], immune: bool = False, title: str = "",
           middle: Any = "", caption: str = "", room: bool = True) -> InfoCard:
     limit = MAX_LINES_MIDDLE if middle != "" else MAX_LINES
+    # the Druid's and the Chanter's strength does nothing: shown muted and struck through
     return InfoCard(ROW_OF[suit], title or ctx.class_title(suit), number, lines=_trim(ctx, lines, limit, room),
-                    immune=immune, middle=middle, caption=caption)
+                    immune=immune, middle=middle, caption=caption, number_muted=suit in ("U", "T"))
 
 
 def _first(name: str) -> str:
@@ -490,11 +491,11 @@ def _druid_deal(ctx: Ctx, ev: dict) -> None:
     total = sum(len(x) if isinstance(x, list) else _int(x) for x in dealt)
     ctx.carry["cls_druid"] = {}
     if ctx.solo:
-        lines = [(3, "Strength not used"), (0, "Discard pile (%d) shuffled, dealt to you" % total),
+        lines = [(0, "Discard pile (%d) shuffled, dealt to you" % total),
                  (1, "Sort up to 4: one banished, one to hand,"), (2, "one on top and one under the reserve")]
     else:
         player = ev.get("player", _attacker(ctx))
-        lines = [(4, "Strength not used"), (0, "Discard pile (%d) shuffled and dealt out" % total),
+        lines = [(0, "Discard pile (%d) shuffled and dealt out" % total),
                  (3, _fit("clockwise from %s" % ctx.name(player), "clockwise from %s" % _short(ctx, player),
                           "clockwise from the druid's player")),
                  (1, "Each sorts 4: one banished, one to hand,"), (2, "one on top and one under the reserve")]
@@ -523,7 +524,7 @@ def _druid_result(ctx: Ctx, ev: dict) -> None:
 
 def _druid_empty(ctx: Ctx, ev: dict, value: Any) -> None:
     if isinstance(ev.get("result"), dict):
-        ctx.add(_card(ctx, "U", value, ["Strength not used", "Discard pile empty: nothing to deal"]))
+        ctx.add(_card(ctx, "U", value, ["Discard pile empty: nothing to deal"]))
 
 
 # ---------------------------------------------------------------------------- Cleric, Bard
@@ -580,13 +581,12 @@ def _chanter_card(ctx: Ctx, ev: dict) -> None:
     ctx.carry["cls_chanter"] = {"count": 0, "drawn": {}, "discarded": {}}
     most, limit = ev.get("max", 0), ctx.g.config.max_hand
     if ctx.solo:
-        lines = [(3, "Strength not used"), (0, "Name 0 to %s (the reserve's size)" % most),
+        lines = [(0, "Name 0 to %s (the reserve's size)" % most),
                  (1, "Draw that many, even over the limit,"), (2, "then discard down to %s" % limit)]
     else:
         player = ev.get("player", 0)
         name = ctx.name(player)
-        lines = [(3, "Strength not used"),
-                 (0, _fit("%s names 0 to %s (the reserve)" % (name, most), "%s names 0 to %s" % (name, most),
+        lines = [(0, _fit("%s names 0 to %s (the reserve)" % (name, most), "%s names 0 to %s" % (name, most),
                           "%s names 0 to %s" % (_short(ctx, player), most), "The chanter names 0 to %s" % most)),
                  (1, "Everyone draws that many, even over"), (2, "the limit, then discards down to %s" % limit)]
     ctx.add(_card(ctx, "T", _strength(ctx), lines + [(4, _ignore_line(ctx, "T"))]))

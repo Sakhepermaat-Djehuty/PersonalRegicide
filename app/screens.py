@@ -1273,7 +1273,7 @@ class GameScreen(Screen):
         from . import info
         before = self.app.undo_stack[-1] if self.app.undo_stack else None
         try:
-            cards = info.build(g, g.last_events, self.app.settings, before=before)
+            cards = info.build(g, g.last_events, self.app.settings, before=before, app=self._info_app())
         except Exception:
             # on the phone a failing pop-up is never in the way of the game (errors.log
             # keeps it); off the phone it fails the tests
@@ -1298,6 +1298,16 @@ class GameScreen(Screen):
         else:
             self.app.autosave()
         self.refresh()
+
+    def _info_app(self) -> dict:
+        """What the info pop-ups need from the app: the coins losing this campaign mission
+        now would earn (one per loss of it so far, this one included)."""
+        camp = self.app.campaign
+        g = self.game
+        if (not self.app.in_campaign or camp is None or camp.finished
+                or str(getattr(g.config, "rules_id", "")) == "evergreen"):
+            return {}
+        return {"coins_on_loss": camp.losses_on(camp.mission) + 1}
 
     def _left(self, sender) -> None:
         g = self.game

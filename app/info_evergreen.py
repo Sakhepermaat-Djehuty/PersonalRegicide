@@ -18,9 +18,9 @@ from __future__ import annotations
 from typing import Any
 
 from .info import Ctx, InfoCard, on
-from .info_missions import (TURN_ENDERS, asked_before, classes, count, enemy_name, fit, icons, joins, num, once,
-                            outcome, previous, safe, start_of_turn, strength, total, until_turn, who, your, zone_card,
-                            zone_of)
+from .info_missions import (LINE, TURN_ENDERS, asked_before, classes, count, enemy_name, fit, icons, joins, num, once,
+                            outcome, previous, puts, safe, start_of_turn, strength, total, until_turn, who, your,
+                            zone_card, zone_of)
 
 
 def location(ctx: Ctx) -> str:
@@ -30,6 +30,21 @@ def location(ctx: Ctx) -> str:
 def bane(ctx: Ctx, n: int) -> bool:
     banes = (ctx.g.config.extra.get("evergreen") or {}).get("banes", [])
     return n in [num(b) for b in banes]
+
+
+def before_redirects(ctx: Ctx) -> int:
+    """The index of the event before the current one, past the restored Evergreen
+    Mother's redirects (they come between a banish and the event that tells of it)."""
+    k = ctx.i - 1
+    while k >= 0 and ctx.events[k].get("t") == "banish_redirect":
+        k -= 1
+    return k
+
+
+def redirected(ctx: Ctx, card_id: Any) -> bool:
+    """Did the restored Evergreen Mother just send this card under the reserve instead
+    of the banished pile (so it is not named)?"""
+    return any(str(e.get("card")) == str(card_id) for e in ctx.events[before_redirects(ctx) + 1:ctx.i])
 
 
 def play_value(ctx: Ctx, ev: dict) -> Any:
@@ -121,9 +136,11 @@ def _hills(ctx: Ctx, ev: dict) -> None:
 
 def _lake(ctx: Ctx, ev: dict) -> None:
     label = ctx.label(ev.get("card"))
-    what = label if ev.get("source") == "pilgrims" else "reserve top %s" % label
-    lines = [fit("Start of turn: %s joins the zone" % what, "%s joins the zone" % what),
-             "On defeat: 1 reserve card is banished", "per zone card (%d now)" % len(zone_of(ctx, ev))]
+    if ev.get("source") == "pilgrims":
+        first = fit("Start of turn: %s joins the zone" % label, "%s joins the zone" % label)
+    else:
+        first = joins("Start of turn", "reserve top", label)
+    lines = [first, "On defeat: 1 reserve card is banished", "per zone card (%d now)" % len(zone_of(ctx, ev))]
     zone_card(ctx, "lake", "Lake", ev, lines)
 
 
@@ -136,12 +153,8 @@ def _bane10(ctx: Ctx, ev: dict) -> None:
 
 
 def _bane12(ctx: Ctx, ev: dict) -> None:
-    if ctx.solo:
-        second = "so put a card from your hand in the zone"
-    else:
-        name = who(ctx, ev.get("player"))
-        second = fit("so %s puts a hand card in the zone" % name, "%s puts a hand card in the zone" % name)
-    ctx.add(InfoCard("bane12", "Duplicitous Bards", lines=["End of turn: the enemy is a bard,", second]))
+    rest = ["so put a card from your hand in the zone"] if ctx.solo else puts(ctx, ev.get("player"), "so ")
+    ctx.add(InfoCard("bane12", "Duplicitous Bards", lines=["End of turn: the enemy is a bard,"] + rest))
 
 
 @on("zone_feed")
@@ -167,7 +180,8 @@ def _bane14(ctx: Ctx, ev: dict) -> None:
 def _bane15(ctx: Ctx, ev: dict) -> None:
     """Tread Carefully: a non-exact kill banishes the whole discard pile (the Cave's spill
     follows its zone instead)."""
-    if not ctx.evergreen or not bane(ctx, 15) or previous(ctx) == "zone_cleared":
+    k = before_redirects(ctx)
+    if not ctx.evergreen or not bane(ctx, 15) or (k >= 0 and ctx.events[k].get("t") == "zone_cleared"):
         return
     n = len(ev.get("cards") or ())
     lines = ["Not exact: the whole discard pile (%d)" % n, "is banished before the location's steps"]
@@ -180,7 +194,10 @@ def _bane_start(ctx: Ctx, ev: dict) -> None:
     """Banes 16 and 22 at the start of a turn."""
     n = num(ev.get("n"))
     label = ctx.label(ev.get("card"))
-    if n == 16:
+    if n == 16 and redirected(ctx, ev.get("card")):
+        lines = ["Start of turn: top discard is banished", "Restored: it goes under the reserve"]
+        ctx.add(InfoCard("bane16", "Lingering Dread", lines=lines))
+    elif n == 16:
         lines = [fit("Start of turn: the top discard (%s)" % label, "Start of turn: the top discard"), "is banished"]
         ctx.add(InfoCard("bane16", "Lingering Dread", lines=lines))
     elif n == 22:
@@ -221,8 +238,8 @@ def _bane21(ctx: Ctx, ev: dict) -> None:
     else:
         name = who(ctx, player)
         lines = [fit("%s's attack holds a card of strength 8+:" % name, "%s's attack has a card of 8+:" % name,
-                     "The attack holds a card of strength 8+:"),
-                 fit("%s discards a card from hand" % name, "Discard a card from hand")]
+                     "%s's attack has an 8+:" % name),
+                 fit("%s discards a card from hand" % name, "%s discards a hand card" % name)]
     ctx.add(InfoCard("bane21", "Eye-Level Sticks", play_value(ctx, ev), lines=lines))
 
 
@@ -238,7 +255,8 @@ def _bane23(ctx: Ctx, ev: dict) -> None:
         first = "End of turn: discard a card from hand,"
     else:
         name = who(ctx, ev.get("player"))
-        first = fit("End of turn: %s may discard a hand card," % name, "%s may discard a hand card," % name)
+        first = fit("End of turn: %s may discard a hand card," % name, "%s may discard a hand card," % name,
+                    "%s may discard a card," % name)
     ctx.add(InfoCard("bane23", "Choose Your Poison", lines=[first, "or the reserve top joins the zone"]))
 
 
@@ -264,7 +282,7 @@ def _bane23_answer(ctx: Ctx, ev: dict) -> None:
 # ---------------------------------------------------------------------------- the boons
 def _boon30(ctx: Ctx, ev: dict) -> None:
     options = [str(c) for c in ev.get("options") or ()]
-    n = strength(ctx, options[0]) if options else ""
+    n = "/".join(str(s) for s in sorted(set(strength(ctx, c) for c in options)))
     whose = your(ctx, ev.get("player"))
     if len(options) > 1:
         first = fit("Zone cards %s match %s attack (%s)" % (ctx.labels(options), whose, n),
@@ -294,9 +312,12 @@ def _boon30_answer(ctx: Ctx, ev: dict) -> None:
 def _boon31(ctx: Ctx, ev: dict) -> None:
     n = strength(ctx, ev.get("matched") or (ev.get("options") or [None])[0])
     name = who(ctx, ev.get("player"))
-    lines = [fit("%s discarded a %d; the zone holds a %d" % (name, n, n),
-                 "Discarded a %d; the zone holds a %d" % (n, n)),
-             "Move that zone card to the discard pile?"]
+    one = "%s discarded a %d; the zone holds a %d" % (name, n, n)
+    if len(one) <= LINE:
+        lines = [one, "Move that zone card to the discard pile?"]
+    else:
+        lines = [fit("%s discarded a %d;" % (name, n)), "the zone holds a %d: move that card" % n,
+                 "to the discard pile?"]
     ctx.add(InfoCard("boon31", "Selfless Rescue", n, lines=lines))
 
 
@@ -313,10 +334,13 @@ def _boon32(ctx: Ctx, ev: dict) -> None:
 
 
 def _boon33(ctx: Ctx, ev: dict) -> None:
-    name = who(ctx, ev.get("player"))
-    first = "Exact kill: you may put a banished card" if ctx.solo else fit(
-        "Exact kill: %s may put a banished card" % name, "%s may put a banished card" % name)
-    ctx.add(InfoCard("boon33", "Restored Arrows", lines=[first, "under the reserve"]))
+    name = "you" if ctx.solo else who(ctx, ev.get("player"))
+    first = "Exact kill: %s may put a banished card" % name
+    if len(first) <= LINE:
+        lines = [first, "under the reserve"]
+    else:
+        lines = [fit("Exact kill: %s may put" % name, "%s may put" % name), "a banished card under the reserve"]
+    ctx.add(InfoCard("boon33", "Restored Arrows", lines=lines))
 
 
 @on("suffer")
@@ -333,8 +357,9 @@ def _boon35(ctx: Ctx, ev: dict) -> None:
             lines.append("Now put a discard on top of the reserve")
         else:
             name = who(ctx, ev.get("player"))
-            lines.append(fit("%s puts a discard on top of the reserve" % name,
-                             "Then a discard goes on top of the reserve"))
+            one = "%s puts a discard on top of the reserve" % name
+            lines += [one] if len(one) <= LINE else [fit("Now %s puts a discard" % name, "%s puts a discard" % name),
+                                                     "on top of the reserve"]
     else:
         lines.append("No discards to put on the reserve")
     ctx.add(InfoCard("boon35", "A Close Call", damage, lines=lines))

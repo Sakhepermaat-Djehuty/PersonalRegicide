@@ -160,15 +160,17 @@ class InfoCard(object):
     """One info pop-up: ``id`` (its settings row), the ``title``, the strength top left
     (``number``), the ``icon`` (a class letter, TREE, or a glyph; None: the row's), the
     breakdown ``lines``, a big ``middle`` number with its ``caption``, ``immune`` (greyed
-    and stamped IMMUNITY), the ``edge`` colour ("" : the row's, or the icon's class colour)
-    and ``sounds``: the clip and what it falls back on, the first that exists plays."""
+    and stamped IMMUNITY), the ``edge`` colour ("" : the row's, or the icon's class colour),
+    ``sounds``: the clip and what it falls back on, the first that exists plays, and
+    ``number_muted``: the number is drawn muted and struck through (not used)."""
 
     def __init__(self, id: str, title: str, number: Any = "", icon: Optional[str] = None,
                  lines: Sequence[str] = (), middle: Any = "", caption: str = "", immune: bool = False,
-                 edge: str = "", sounds: Optional[Sequence[str]] = None) -> None:
+                 edge: str = "", sounds: Optional[Sequence[str]] = None, number_muted: bool = False) -> None:
         self.id = id
         self.title = title
         self.number = "" if number is None else str(number)
+        self.number_muted = number_muted       # shown but not used (a Druid's or Chanter's strength)
         self.icon = icon
         self.lines = [str(x) for x in lines if x]
         self.middle = "" if middle is None else str(middle)
@@ -195,14 +197,17 @@ class InfoCard(object):
         icon = icon_for(settings, self.id) if self.icon is None else self.icon
         edge = self.edge or (row[4] if row else "") or T.SUIT_COLOR.get(icon, T.CARD_BORDER)
         return {"title": self.title, "number": self.number, "icon": icon, "lines": self.lines[:self.max_lines()],
-                "middle": self.middle, "middle_caption": self.caption, "immune": self.immune, "edge": edge}
+                "middle": self.middle, "middle_caption": self.caption, "immune": self.immune, "edge": edge,
+                "number_muted": self.number_muted}
 
 
 # ---------------------------------------------------------------------------- the builder
 Handler = Callable[["Ctx", dict], None]
 HANDLERS: Dict[str, List[Handler]] = {}
+EACH_EVENT: List[Handler] = []                 # before the handlers of every event, whatever its type
 STARTERS: List[Callable[["Ctx"], None]] = []
 FINISHERS: List[Callable[["Ctx"], None]] = []
+LAST: List[Callable[["Ctx"], None]] = []        # after every finisher (the game-end card)
 
 
 def on(*types: str) -> Callable[[Handler], Handler]:
@@ -212,6 +217,13 @@ def on(*types: str) -> Callable[[Handler], Handler]:
             HANDLERS.setdefault(t, []).append(fn)
         return fn
     return wrap
+
+
+def each_event(fn: Handler) -> Handler:
+    """Register a handler run before the type handlers of every event (e.g. to queue cards
+    held for "after the previous event")."""
+    EACH_EVENT.append(fn)
+    return fn
 
 
 def starter(fn: Callable[["Ctx"], None]) -> Callable[["Ctx"], None]:
@@ -224,6 +236,12 @@ def finisher(fn: Callable[["Ctx"], None]) -> Callable[["Ctx"], None]:
     return fn
 
 
+def last(fn: Callable[["Ctx"], None]) -> Callable[["Ctx"], None]:
+    """Register a finisher that runs after all the others (the card that ends a queue)."""
+    LAST.append(fn)
+    return fn
+
+
 class Ctx(object):
     """What one action did, for the card builders, and the queue being built.
 
@@ -232,11 +250,13 @@ class Ctx(object):
     the event being handled; ``start``: the queue of a fresh game (Battle start);
     ``carry``: a dict kept with the game between actions (``g.extra["info_carry"]``: saved,
     undone and resumed with it) for cards that gather several actions; ``state``: scratch
-    shared by the handlers of this one build."""
+    shared by the handlers of this one build; ``app``: what only the app knows
+    ({"coins_on_loss": n}: the coins losing this campaign mission now earns)."""
 
     def __init__(self, g: Any, events: Sequence[dict], settings: dict, before: Any = None,
-                 start: bool = False) -> None:
+                 start: bool = False, app: Optional[dict] = None) -> None:
         self.g = g
+        self.app = dict(app or {})     # what only the app knows (the coins a mission loss earns)
         self.events = list(events)
         self.settings = settings
         self._before = before
@@ -327,20 +347,30 @@ class Ctx(object):
 
     @property
     def killed(self) -> bool:
-        """The action defeated an enemy."""
-        return self.has("defeat")
+        """The action's damage felled the enemy (its defeat may wait for a box first)."""
+        if self.has("defeat"):
+            return True
+        for e in self.events:
+            if e.get("t") == "damage":
+                try:
+                    if int(e.get("hp", 1)) <= 0:
+                        return True
+                except (TypeError, ValueError):
+                    pass
+        return False
 
     def add(self, card: InfoCard) -> bool:
         """Queue ``card`` if its row is on (a stamped card's row is IMMUNITY's), with the
-        lines waiting for the next card on top of its own, as many as it holds. Returns
-        whether it was queued: a row switched off leaves nothing (no card, no sound, no
-        line)."""
+        lines waiting for the next card on top of its own, as many as it holds (the rest
+        go on the card after it). Returns whether it was queued: a row switched off leaves
+        nothing (no card, no sound, no line)."""
         if not self.on("immunity" if card.immune else card.id):
             return False
         if self.pending:
+            # as many as it holds; the rest wait for the card after it
             room = max(0, card.max_lines() - len(card.lines))
-            card.lines = self.pending[:room] + card.lines if room else card.lines
-            self.pending = []
+            card.lines = self.pending[:room] + card.lines
+            self.pending = self.pending[room:]
         self.cards.append(card)
         return True
 
@@ -358,22 +388,41 @@ class Ctx(object):
             self.add(card)
 
 
-def build(g: Any, events: Sequence[dict], settings: dict, before: Any = None, start: bool = False) -> List[InfoCard]:
+def _run(fn: Callable, *args: Any) -> None:
+    """Run one builder function. One that fails leaves its cards out, never the whole queue:
+    on the phone the error goes to errors.log; elsewhere (the tests) it is raised."""
+    try:
+        fn(*args)
+    except Exception:
+        from . import store
+        if not store._is_pythonista():
+            raise
+        import traceback
+        try:
+            store.log_error("Info pop-ups (%s)\n%s" % (getattr(fn, "__name__", "?"), traceback.format_exc()))
+        except Exception:
+            pass
+
+
+def build(g: Any, events: Sequence[dict], settings: dict, before: Any = None, start: bool = False,
+          app: Optional[dict] = None) -> List[InfoCard]:
     """The queue of info cards for one action (or, with ``start``, for a fresh game)."""
     if g is None or not popups_on(settings):
         return []
-    ctx = Ctx(g, events, settings, before, start)
+    ctx = Ctx(g, events, settings, before, start, app)
     for fn in STARTERS:
-        fn(ctx)
+        _run(fn, ctx)
     for i, ev in enumerate(ctx.events):
         ctx.i = i
+        for fn in EACH_EVENT:
+            _run(fn, ctx, ev)
         for fn in HANDLERS.get(str(ev.get("t")), ()):
-            fn(ctx, ev)
+            _run(fn, ctx, ev)
     ctx.i = len(ctx.events)
     for slot in list(ctx.deferred):
         ctx.flush(slot)
-    for fn in FINISHERS:
-        fn(ctx)
+    for fn in FINISHERS + LAST:
+        _run(fn, ctx)
     if ctx.pending:
         # lines with no card after them wait for the next action's first card
         ctx.carry["lines"] = (list(ctx.carry.get("lines") or []) + ctx.pending)[-MAX_LINES:]

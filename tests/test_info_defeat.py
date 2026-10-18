@@ -26,6 +26,7 @@ from regicide.campaign import missions as M  # noqa: E402
 from regicide.campaign import party as P  # noqa: E402
 
 NAMES = ["Ana", "Ben", "Cy"]
+LONG = ["Bartholomew Quill", "Constantina Vale", "Maximilian Ash"]
 MINE = ("defeated", "exact_kill", "hydra_regrows", "cleanup", "team_damage", "new_enemy", "enemy_shift",
         "enemy_attack", "shielded", "feign_death", "damage_paid", "victory", "loss")
 CORRUPT = ("2S", "3H", "4D", "5C", "6C", "7S", "8H", "9D")
@@ -55,9 +56,11 @@ def off(*rows):
 
 
 def run(g, action, settings=None):
-    """The queue of one action; this group's cards keep the catalogue's size limits."""
+    """The queue of one action; this group's cards keep the catalogue's size limits, every
+    line whole (never cut to fit)."""
     cards = cards_for(g, action, settings)
     fits(mine(cards))
+    assert not [x for c in mine(cards) for x in c.lines if x.endswith("…")], [c.lines for c in mine(cards)]
     return cards
 
 
@@ -77,10 +80,10 @@ def base(players=1, seed=5, hp=None, attack=None, hand=("5C", "9S"), castle=True
     return g
 
 
-def camp(players=1, seed=100, number=1, cards=(), corrupted=(), beast="B_H"):
+def camp(players=1, seed=100, number=1, cards=(), corrupted=(), beast="B_H", names=NAMES):
     """A Legacy attempt at mission ``number`` (its setup choices taken) with these party
     cards and corrupted cards."""
-    c = CampaignState.new(players, NAMES[:players], seed=seed)
+    c = CampaignState.new(players, names[:players], seed=seed)
     c.mission = number
     c.completed = list(range(1, number))
     for d in cards:
@@ -98,8 +101,8 @@ def camp(players=1, seed=100, number=1, cards=(), corrupted=(), beast="B_H"):
     return c.start_attempt(seed=seed)
 
 
-def evergreen(location="A", banes=(), boons=(), seed=5000):
-    c = CampaignState.new(1, ["Ana"], seed=seed)
+def evergreen(location="A", banes=(), boons=(), seed=5000, players=1, names=NAMES):
+    c = CampaignState.new(players, names[:players], seed=seed)
     c.mission = 12
     c.completed = list(range(1, 13))
     c.finished = True
@@ -180,6 +183,77 @@ def test_a_mage_attack_is_banished_at_the_clean_up():
     assert card(cards, "defeated").lines == ["Jack of H → discard pile", "2 played → banished (a mage attack)"]
 
 
+def test_the_base_game_never_calls_a_played_card_the_top_when_the_enemy_lies_on_it():
+    g = base(hp=4, hand=("AS", "4S", "9C"))
+    cards = run(g, lambda: g.play(["AS", "4S"]))
+    assert card(cards, "defeated").lines == ["Jack of H → discard pile", "2 played → discard pile"]
+    assert g.discard[0] == "JH"                             # the base game puts the enemy on top
+    g = base(hp=5, hand=("AS", "4S", "9C"))
+    cards = run(g, lambda: g.play(["AS", "4S"]))
+    assert card(cards, "exact_kill").lines[-1] == "2 played → discard pile, 4♠ on top"
+    assert g.discard[0] == "4S"
+
+
+def test_a_defeat_event_without_its_enemy_names_the_fallen_one_not_the_next():
+    g = base(hp=8)
+    before = g.to_dict()
+    g.play(["5C"])
+    events = [dict(e) for e in g.last_events]
+    for e in events:
+        if e["t"] == "defeat":
+            del e["enemy"]                                  # an older save's event
+    cards = info.build(g, events, dict(ON), before=before)
+    assert card(cards, "defeated").lines[0] == "Jack of H → discard pile"
+
+
+# ---------------------------------------------------------------------------- the exact kill's bonus
+def test_every_exact_kill_bonus_is_told_on_whole_lines():
+    g = camp(1, seed=910, number=10, cards=list(M.MAGE_DECK) + [M.GORAN], corrupted=CORRUPT[:4], beast=None)
+    while g.decision:
+        g.decide(g.legal_actions()[0])
+    g.enemy.hp = 3
+    g.enemy.suits = ()
+    set_hand(g, ["3S", "9S", "8S"])
+    cards = run(g, lambda: g.play(["3S"]))
+    assert "Bonus: zone discarded, not banished" in card(cards, "exact_kill").lines
+    g = evergreen("C", boons=(32, 33), seed=5116, players=2, names=LONG)
+    rig(g, "mission_zone", ["4H", "5H"])
+    rig(g, "banished", ["6D"])
+    g.enemy.hp = 1
+    g.enemy.suits = ()
+    set_hand(g, ["AS", "9S"])
+    first = run(g, lambda: g.play(["AS"]))
+    assert card(first, "exact_kill").lines[2:] == ["Bonus: Precision Strike, Restored Arrows",
+                                                   "Bonus: discard a zone card first", "Bartholomew Quill goes again"]
+    run(g, lambda: g.decide({"type": "precision_strike", "player": 0, "card": "4H", "pile": "zone"}))
+    run(g, lambda: g.decide({"type": "restored_arrows", "player": 0, "card": "6D"}))
+    last = run(g, lambda: g.decide({"type": "zone_discard", "player": 0, "card": "5H"}))
+    assert "Bartholomew Quill took a zone card" in card(last, "cleanup").lines
+    assert "You" not in everything(mine(last)) and "4♥" not in everything(mine(last))
+
+
+def test_a_mission_8_exact_kill_tells_the_pick_once():
+    g = camp(1, seed=908, number=8, cards=list(M.CHANTERS) + [M.GORAN])
+    g.enemy.hp = 3
+    g.enemy.suits = ()
+    set_hand(g, ["3S", "9S", "8S"])
+    cards = run(g, lambda: g.play(["3S"]))
+    assert g.decision["kind"] == "discard_pick"
+    assert card(cards, "exact_kill").lines == ["Troll falls exactly → banished", "Bonus: a discard on top of the reserve",
+                                               "You go again", "3♠ → discard pile"]
+
+
+def test_an_exact_kill_lost_to_explosive_spores_never_goes_again():
+    g = evergreen("A", banes=(13,), seed=5118)
+    g.enemy.hp = 2
+    g.enemy.suits = ()
+    set_hand(g, ["2S", "3C"])
+    cards = run(g, lambda: g.play(["2S"]))
+    assert my_ids(cards) == ["exact_kill", "team_damage", "loss"]
+    assert card(cards, "exact_kill").lines == ["Phase II Experiment → discard pile"]
+    assert card(cards, "team_damage").lines[-1] == "Not enough in hand: the game is lost"
+
+
 # ---------------------------------------------------------------------------- a box before the clean-up
 def _m3_exact():
     g = camp(1, seed=903, number=3, cards=M.MAGE_DECK)
@@ -248,6 +322,20 @@ def test_mission_8_choices_and_the_pick_after_the_clean_up_are_lines():
     assert g.cards[picked].label() not in everything(mine(third))        # it went into the reserve
 
 
+def test_a_zone_build_that_fills_the_zone_promises_no_bonus():
+    g = camp(1, seed=982, number=8, cards=list(M.CHANTERS) + [M.GORAN])
+    rig(g, "mission_zone", ["PILA", "2H", "3H", "4H", "5H", "6H", "7H", "8H", "9H"])
+    g.enemy.hp = 10
+    g.enemy.suits = ()
+    set_hand(g, ["10C", "9S"])
+    set_discard(g, ["2D", "3D", "4D"])
+    run(g, lambda: g.play(["10C"]))
+    run(g, lambda: g.decide({"type": "zone_build", "player": 0, "card": "10C"}))
+    last = run(g, lambda: g.decide({"type": "discard_banish_skip", "player": 0, "skip": True}))
+    assert card(last, "cleanup").lines == ["Troll → banished", "Zone built: 10♣, the zone is full",
+                                           "Zone filled: 0 banished, 13 healed"]
+
+
 def test_mission_9_and_the_boons_never_name_a_card_going_to_a_hand_or_the_reserve():
     g = camp(1, seed=909, number=9, cards=[M.GORAN])
     g.enemy.hp = 6
@@ -298,6 +386,30 @@ def test_the_lake_banishes_reserve_cards_as_a_line_on_the_kill_card():
     exact = card(cards, "exact_kill")
     assert "2 reserve cards banished (Lake)" in exact.lines
     assert "Next: name the zone's discard order" in exact.lines
+    order = dict(g.legal_actions()[0], cards=["4H", "5H"])
+    cards = run(g, lambda: g.decide(order))
+    assert "cleanup" in ids(cards) and "(Lake)" not in everything(cards)        # told once
+
+
+def test_the_lake_banish_after_a_boon_box_is_a_line_on_the_clean_up():
+    g = evergreen("E", boons=(32,), seed=5108)
+    rig(g, "mission_zone", ["4H", "5H"])
+    g.enemy.hp = 1
+    g.enemy.suits = ()
+    set_hand(g, ["AS", "9S"])
+    first = run(g, lambda: g.play(["AS"]))
+    assert "(Lake)" not in everything(first) and g.decision["kind"] == "precision_strike"
+    cards = run(g, lambda: g.decide({"type": "precision_strike", "player": 0, "card": "4H", "pile": "zone"}))
+    assert card(cards, "cleanup").lines[-1] == "1 reserve card banished (Lake)"
+    g = evergreen("E", boons=(32,), seed=5108)
+    rig(g, "mission_zone", ["4H", "5H"])
+    g.enemy.hp = 1
+    g.enemy.suits = ()
+    set_hand(g, ["AS", "9S"])
+    run(g, lambda: g.play(["AS"]), off("cleanup"))
+    cards = run(g, lambda: g.decide({"type": "precision_strike", "player": 0, "card": "4H", "pile": "zone"}),
+                off("cleanup"))
+    assert "(Lake)" not in everything(cards)
 
 
 # ---------------------------------------------------------------------------- Hydra regrows
@@ -456,6 +568,18 @@ def test_new_enemy_after_a_kill_but_never_at_the_start():
     assert "new_enemy" not in ids(run(g, lambda: g.play(["5C"]), off("new_enemy")))
 
 
+def test_immovable_paladins_on_the_new_enemy_keep_to_a_line():
+    g = evergreen("A", banes=(11,), seed=5200)
+    paladin = [c for c in g.castle if "S" in g.cards[c].suits][0]
+    g.castle.remove(paladin)
+    g.castle.insert(0, paladin)
+    g.enemy.hp = 1
+    g.enemy.suits = ()
+    set_hand(g, ["AS", "9S"])
+    cards = run(g, lambda: g.play(["AS"]))
+    assert card(cards, "new_enemy").lines[-2:] == ["6 more in the castle", "Immovable Paladins: 10 less damage"]
+
+
 def test_new_enemy_shows_the_pile_tops_and_a_classless_enemy_has_no_icon():
     g = camp(1, seed=911, number=11, cards=list(M.MAGE_DECK) + [M.GORAN_RENEWED, M.ASH], corrupted=CORRUPT, beast=None)
     if g.decision:
@@ -510,6 +634,18 @@ def test_enemy_changes_stands_after_the_step_that_changed_it_and_names_new_immun
     cards = run(g, lambda: g.play(["5C", "5M"]))
     in_order(cards, "corrupted", "enemy_shift", "mage")
     assert card(cards, "enemy_shift").lines == ["Attack 11 → 19 (banished top 8♠)", "Immune: ♣ → ♣♠"]
+
+
+def test_enemy_changes_stays_away_when_the_attack_killed():
+    g = camp(1, seed=904, number=4, cards=M.MAGE_DECK)
+    g.enemy.suits = ()
+    set_discard(g, ["7C", "2D"])
+    set_hand(g, ["AH", "6C", "9S", "8S"])
+    g.enemy.hp = 10
+    was = info_defeat.raw_attack(g)
+    cards = run(g, lambda: g.play(["AH", "6C"]))             # the heal empties the discard pile
+    assert g.decision["kind"] == "played_discard_order" and (was, info_defeat.raw_attack(g)) == (17, 10)
+    assert "enemy_shift" not in ids(cards) and my_ids(cards) == ["defeated"]
 
 
 def test_enemy_changes_stays_away_when_the_strike_states_the_attack():
@@ -571,6 +707,29 @@ def test_enemy_attacks_offers_feign_death_then_feign_death_and_damage_paid():
     g.play(["2C"])
     cards = run(g, lambda: g.suffer(list(g.active_player.hand)), off("feign_death"))
     assert my_ids(cards) == ["damage_paid"]
+
+
+def test_long_names_keep_who_pays_who_feigns_death_and_every_discard():
+    g = camp(2, seed=4, names=LONG)
+    set_enemy(g, "K", "H")
+    set_hand(g, ["2C", "AS", "AD", "AH", "2D", "2S", "2H", "3C"], 0)
+    cards = run(g, lambda: g.play(["2C"]))
+    assert card(cards, "enemy_attack").lines[1] == "Bartholomew Quill: one card at a time"
+    cards = run(g, lambda: g.suffer(list(g.players[0].hand)))
+    assert card(cards, "feign_death").lines[0] == "Bartholomew Quill discards all 7 cards"
+    assert card(cards, "damage_paid").lines == ["Bartholomew Quill discarded 7 cards", "A♠ A♦ A♥ 2♦ 2♠ 2♥ 3♣",
+                                                "Hand: 0 left"]
+    g = camp(2, seed=4, names=LONG)
+    set_enemy(g, "J", "H")
+    set_hand(g, ["2C", "AS"], 0)
+    cards = run(g, lambda: g.play(["2C"]))
+    assert card(cards, "loss").lines[0] == "Bartholomew Quill cannot pay 10 damage"
+    g = new_game(2, seed=7)
+    g.players[0].name = LONG[0]
+    set_enemy(g, "J", "H")
+    set_hand(g, ["5H", "9S"], 0)
+    cards = run(g, lambda: g.yield_turn())
+    assert card(cards, "enemy_attack").lines[-1] == "Bartholomew Quill discards 10 or more"
 
 
 def test_feign_death_names_the_player_with_two_players():
@@ -671,6 +830,36 @@ def test_a_legacy_victory_names_the_mission_and_stays_last_after_other_finishers
     assert win.lines == ["Bard Justicar was the last enemy", "Won in 1 turn", "Mission 1 complete: rewards next"]
 
 
+def test_the_last_enemy_never_goes_again_and_a_win_after_a_box_names_it():
+    g = camp(1, seed=908, number=8, cards=list(M.CHANTERS) + [M.GORAN])
+    g.castle = []
+    g.enemy.hp = 3
+    g.enemy.suits = ()
+    set_hand(g, ["3S", "9S", "8S"])
+    set_discard(g, ["2D"])
+    first = run(g, lambda: g.play(["3S"]))
+    assert g.decision["kind"] == "discard_pick"
+    assert not [x for x in card(first, "exact_kill").lines if "again" in x]
+    last = run(g, lambda: g.decide({"type": "discard_pick", "player": 0, "card": "2D"}))
+    assert ids(last) == ["victory"]
+    assert card(last, "victory").lines == ["A discard → top of the reserve", "Troll was the last enemy, in 1 turn",
+                                           "Mission 8 complete: rewards next"]
+    assert "dft_fallen" not in g.extra["info_carry"]
+    g = _m6(1, 906, 5, (["5D", "9S", "8S"],))
+    g.castle = []
+    first = run(g, lambda: g.play(["5D"]))
+    assert g.decision["kind"] == "zone_move"
+    assert not [x for x in card(first, "exact_kill").lines if "again" in x]
+    g = camp(1, seed=905, number=5)
+    g.castle = []
+    g.enemy.hp = 3
+    g.enemy.suits = ()
+    set_hand(g, ["3S", "9S"])
+    cards = run(g, lambda: g.play(["3S"]))                 # no next enemy takes the carry damage
+    assert card(cards, "exact_kill").lines == ["Sporeling falls exactly → banished", "3♠ → discard pile",
+                                               "Banished pile shuffled"]
+
+
 def test_defeat_after_the_strike_is_the_last_card_with_its_reason():
     g = base(hand=("2C",))
     g.solo_jesters = 0
@@ -716,3 +905,31 @@ def test_events_from_older_saves_never_raise():
     cards = info.build(g, events, dict(ON), before=g.to_dict())
     assert info_defeat.ERRORS == [] and cards
     fits(mine(cards))
+
+
+def test_a_stand_in_game_without_piles_loses_no_card():
+    """Real flows replayed on a bare game object (no castle, no enemy, no snapshot)."""
+    from types import SimpleNamespace as NS
+    flows = []
+    g = base(hp=10)
+    g.play(["5C"])
+    flows.append((g.last_events, ["exact_kill", "new_enemy"]))
+    g = base(hand=("2C",))
+    g.solo_jesters = 0
+    g.play(["2C"])
+    flows.append((g.last_events, ["enemy_attack", "loss"]))
+    stand = NS(n_players=2, players=[NS(name="Ana", hand=[]), NS(name="Ben", hand=[])],
+               config=NS(rules_id="legacy", max_hand=7, extra={}), rules=NS(mission=6), cards={}, extra={})
+    for events, expected in flows:
+        ctx = info.Ctx(stand, events, dict(ON), before=None)
+        for i, ev in enumerate(ctx.events):
+            ctx.i = i
+            for fn in info.HANDLERS.get(ev["t"], ()):
+                if fn.__module__ == info_defeat.__name__:
+                    fn(ctx, ev)
+        ctx.i = len(ctx.events)
+        for fn in info.FINISHERS + info.LAST:
+            if fn.__module__ == info_defeat.__name__:
+                fn(ctx)
+        assert info_defeat.ERRORS == [] and ids(ctx.cards) == expected
+        fits(ctx.cards)

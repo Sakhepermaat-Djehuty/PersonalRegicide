@@ -606,7 +606,7 @@ def test_the_druid_card_before_the_sorting_and_its_counts_as_one_line():
     first, second, third = _druid_flow(g)
     druid = card(first, "druid")
     assert my_ids(first) == ["druid"] and (druid.title, druid.number) == ("Druid", "5")
-    assert druid.lines == ["Strength not used", "Discard pile (9) shuffled and dealt out", "clockwise from Ana",
+    assert druid.number_muted and druid.lines == ["Discard pile (9) shuffled and dealt out", "clockwise from Ana",
                            "Each sorts 4: one banished, one to hand,", "one on top and one under the reserve"]
     assert my_ids(second) == [] and my_ids(third) == ["damage"]
     assert card(third, "damage").lines[0] == "Druid: banished 2 · hands 2 · reserve 4"
@@ -636,7 +636,7 @@ def test_the_druid_row_off_and_an_empty_discard_pile():
     g.discard = []
     cards = run(g, lambda: g.play(["5U"]))
     assert my_ids(cards) == ["druid", "damage"]
-    assert card(cards, "druid").lines == ["Strength not used", "Discard pile empty: nothing to deal"]
+    assert card(cards, "druid").lines == ["Discard pile empty: nothing to deal"]
 
 
 # ---------------------------------------------------------------- Chanter
@@ -663,7 +663,7 @@ def test_the_chanter_card_before_the_number_box_and_the_draws_as_counts():
     queues = _chanter_flow(g)
     chanter = card(queues[0], "chanter")
     assert my_ids(queues[0]) == ["chanter"] and (chanter.title, chanter.number) == ("Chanter", "5")
-    assert chanter.lines == ["Strength not used", "Ana names 0 to 30 (the reserve)",
+    assert chanter.number_muted and chanter.lines == ["Ana names 0 to 30 (the reserve)",
                              "Everyone draws that many, even over", "the limit, then discards down to 7"]
     assert [my_ids(q) for q in queues[1:]] == [[], [], ["damage"]]
     assert card(queues[-1], "damage").lines[0] == "Chanter 2: Ana +2 −1 · Ben +2 −2"
@@ -691,7 +691,7 @@ def test_the_chanter_row_off_and_a_solo_chanter():
     set_enemy(g, "J", "H")
     set_hand(g, ["5T", "9S"])
     first = run(g, lambda: g.play(["5T"]))
-    assert card(first, "chanter").lines[1:] == ["Name 0 to 42 (the reserve's size)",
+    assert card(first, "chanter").lines == ["Name 0 to 42 (the reserve's size)",
                                                 "Draw that many, even over the limit,", "then discard down to 8"]
     cards = run(g, lambda: g.decide({"type": "chanter_declare", "player": 0, "count": 2}))
     assert card(cards, "damage").lines[0] == "Chanter 2: you drew 2"
@@ -848,7 +848,7 @@ def test_a_long_named_chanter_and_druid_keep_to_a_line():
                                                "cards": a["pick_from"][:a["needs"]]})))
     for q in queues:
         no_cut(q)
-    assert card(queues[0], "chanter").lines[1] == "Maximilian Ash names 0 to 26"
+    assert card(queues[0], "chanter").lines[0] == "Maximilian Ash names 0 to 26"
     assert card(queues[-1], "damage").lines[0] == "Chanter 3: each drew 3, 11 discarded"
     for first, line in (("Wilhelmina", "clockwise from Wilhelmina"),
                         ("Bartholomew", "clockwise from the druid's player")):    # shared with Bartholomew Kay

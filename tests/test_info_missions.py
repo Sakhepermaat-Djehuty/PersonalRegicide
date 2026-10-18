@@ -24,6 +24,7 @@ from regicide.campaign import missions as M  # noqa: E402
 from regicide.campaign import party as P  # noqa: E402
 
 NAMES = ["Ana", "Ben", "Cy"]
+LONG = ["Bartholomew Quill", "Maximilian Ash", "Cy"]      # the longest names the other modules test
 CORRUPT = ("2S", "3H", "4D", "5C", "6C", "7S", "8H", "9D")
 M11_CORRUPT = ("2S", "3H", "4D", "5C", "6H", "7S", "8H", "9D")
 
@@ -49,10 +50,10 @@ def in_order(cards, *row_ids):
     assert [i for i in ids(cards) if i in seen] == seen, (ids(cards), row_ids)
 
 
-def mission(n, players=1, cards=(), corrupted=(), beast=None, seed=None):
+def mission(n, players=1, cards=(), corrupted=(), beast=None, seed=None, names=NAMES):
     """A Legacy mission prepared the way the campaign does it (setup choices taken)."""
     seed = seed or 900 + n
-    c = CampaignState.new(players, NAMES[:players], seed=seed)
+    c = CampaignState.new(players, list(names[:players]), seed=seed)
     c.mission = n
     c.completed = list(range(1, n))
     for d in cards:
@@ -105,9 +106,10 @@ def turn_end(g, play="AS", hand=("10S", "10C", "10D", "9S", "9C"), settings=None
     return suffer_cards(g, settings, hand)
 
 
-def m10(enemy, players=1):
+def m10(enemy, players=1, names=NAMES):
     """Mission 10 with this corrupted party member as the enemy."""
-    g = mission(10, players=players, cards=list(M.MAGE_DECK) + [M.GORAN_RENEWED, M.ASH], corrupted=CORRUPT)
+    g = mission(10, players=players, cards=list(M.MAGE_DECK) + [M.GORAN_RENEWED, M.ASH], corrupted=CORRUPT,
+                names=names)
     g.castle.insert(0, g.enemy.card_id)
     g.enemy = None
     g.castle.remove(enemy)
@@ -255,8 +257,8 @@ def test_m7_pilgrim_skip_is_a_line():
 
 
 # ---------------------------------------------------------------------------- 8 Winds of Chaos
-def _m8_ready():
-    g = mission(8, seed=982, cards=list(M.CHANTERS) + [M.GORAN])
+def _m8_ready(players=1, names=NAMES):
+    g = mission(8, players=players, seed=982, cards=list(M.CHANTERS) + [M.GORAN], names=names)
     rig(g, "mission_zone", ["PILA", "2H", "3H", "4H", "5H", "6H", "7H", "8H", "9H"])
     g.enemy.hp = 10
     g.enemy.suits = ()
@@ -281,6 +283,15 @@ def test_m8_zone_filled_comes_before_the_banish_box():
     assert cards_for(g, lambda: g.decide({"type": "zone_build", "player": 0, "card": "10C"}), off("m8_filled")) == []
 
 
+def test_m8_zone_filled_names_the_player_with_two_players():
+    for names, line in ((NAMES, "Ana may banish any discards;"), (LONG, "Bartholomew Quill may banish discards;")):
+        g = _m8_ready(players=2, names=names)
+        cards = cards_for(g, lambda: g.decide({"type": "zone_build", "player": 0, "card": "10C"}))
+        c = card(cards, "m8_filled")
+        assert line in c.lines and " you " not in text(c)
+        fits(cards)
+
+
 # ---------------------------------------------------------------------------- 9 Hope From Ashes
 def _m9(players=1):
     g = mission(9, players=players, cards=[M.GORAN])
@@ -298,8 +309,9 @@ def test_m9_captured_piles_come_before_their_box_and_the_rescue_is_a_line_on_tur
     assert ids(cards)[-1] == "m9_piles" and g.decision["kind"] == "pile_rescue"
     c = card(cards, "m9_piles")
     assert c.title == "Captured piles" and c.number == ""
-    assert c.lines == ["End of turn: banish a hand card to rescue", "a pile's top to the discard pile,",
+    assert c.lines == ["End of turn: banish a hand card", "to rescue a pile's top to the discard,",
                        "or every pile's top goes to its bottom", "Pile tops: %s" % tops]
+    fits(cards)
     rescued = g.cards[g.extra["captured"][0][0]].label()
     cards = cards_for(g, lambda: g.decide({"type": "pile_rescue", "player": 0, "pile": 0, "card": "8S"}))
     assert card(cards, "turn").lines[0] == "You banished 8♠: %s rescued" % rescued
@@ -410,6 +422,15 @@ def test_m10_bard_enemy_with_an_empty_hand_and_with_two_players():
     fits(cards)
 
 
+def test_m10_bard_enemy_keeps_a_long_name_whole():
+    g = m10("4D", players=2, names=LONG)
+    cards = turn_end(g, play="2C", hand=("10C", "10S", "10H", "6S"))
+    assert card(cards, "m10_bard").lines == ["End of turn: Bartholomew Quill must put", "a hand card in the zone",
+                                             "Enemy attack + its strength"]
+    assert "…" not in everything(cards)
+    fits(cards)
+
+
 def test_m10_bard_switched_off_leaves_no_card_and_no_line():
     g = m10("4D")
     cards = turn_end(g, play="2C", hand=("10C", "10S", "10H", "6S"), settings=off("m10_bard"))
@@ -425,7 +446,8 @@ def test_m11_beast_at_the_start_comes_before_its_box_and_its_answer_is_a_line():
     assert ids(cards) == ["battle_start", "m11_beast"] and g.decision["kind"] == "beast_discard"
     c = cards[1]
     assert c.title == "Beast: Cleric" and c.icon == "H" and c.number == ""
-    assert c.lines == ["Start of turn: discard a hand card"]
+    # the Turn card leaves the enemy to the Beast card, which states it even when nothing moves yet
+    assert c.lines == ["Start of turn: discard a hand card", "Justicar: attack 10"]
     hand_card = g.legal_actions()[0]["card"]
     label = g.cards[hand_card].label()
     cards = cards_for(g, lambda: g.decide(g.legal_actions()[0]))
@@ -464,7 +486,8 @@ def test_m11_beast_with_nothing_to_move_and_the_reshuffle():
     g.tavern[:] = []
     cards = suffer_cards(g, hand=("10S", "10C", "10D"))
     c = card(cards, "m11_beast")
-    assert c.lines == ["Nothing to move: no effect", "All four out: the beasts reshuffle"]
+    assert c.lines == ["Nothing to move: no effect", "Justicar: attack 19 · immune ♣",
+                       "All four out: the beasts reshuffle"]
     fits(cards)
 
 
@@ -472,7 +495,7 @@ def test_m11_two_players_name_the_player():
     g = m11(players=2)
     cards = start_cards(g)
     assert ids(cards) == ["battle_start", "turn", "m11_beast"]
-    assert card(cards, "m11_beast").lines == ["Start of turn: Ana discards a hand card"]
+    assert card(cards, "m11_beast").lines == ["Start of turn: Ana discards a hand card", "Justicar: attack 10"]
 
 
 # ---------------------------------------------------------------------------- 12 Decay to Growth

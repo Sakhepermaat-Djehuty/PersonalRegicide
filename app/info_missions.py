@@ -227,6 +227,15 @@ def outcome(ctx: Ctx, row: str, *variants: str) -> None:
         ctx.line(fit(*variants))
 
 
+def puts(ctx: Ctx, player: Any, head: str = "") -> List[str]:
+    """"{head}Ana puts a hand card in the zone", on two lines when a long name needs them."""
+    name = who(ctx, player)
+    for text in ("%s%s puts a hand card in the zone" % (head, name), "%s puts a hand card in the zone" % name):
+        if len(text) <= LINE:
+            return [text]
+    return [fit("%s%s must put" % (head, name), "%s must put" % name), "a hand card in the zone"]
+
+
 # the helpers above come first: importing ``.info`` loads ``info_evergreen``, which takes
 # them from this module even when this module is the one being imported
 from .info import Ctx, InfoCard, on  # noqa: E402
@@ -388,8 +397,15 @@ def _m8_filled(ctx: Ctx, ev: dict) -> None:
     if ctx.evergreen or ctx.mission != 8 or ev.get("to", "discard") != "discard":
         return
     n = len(ev.get("cards") or ())
-    lines = ["A 10 completes the zone (%s):" % count(n, "card"), "it goes to the discard pile",
-             "Banish any discards you choose;", "the rest heal under the reserve", "No more zone moves this mission"]
+    if ctx.solo:
+        pick = "Banish any discards you choose;"
+    else:
+        box = next((e for e in ctx.later("decide") if e.get("kind") == "discard_banish"), {})
+        name = who(ctx, box.get("player"))
+        pick = fit("%s may banish any discards;" % name, "%s may banish discards;" % name,
+                   "Any discards may be banished;")
+    lines = ["A 10 completes the zone (%s):" % count(n, "card"), "it goes to the discard pile", pick,
+             "the rest heal under the reserve", "No more zone moves this mission"]
     ctx.add(InfoCard("m8_filled", "Zone filled!", 10, lines=lines))
 
 
@@ -405,7 +421,7 @@ def _m9_piles(ctx: Ctx, ev: dict) -> None:
     except Exception:
         tops = []
     if ctx.solo:
-        lines = ["End of turn: banish a hand card to rescue", "a pile's top to the discard pile,"]
+        lines = ["End of turn: banish a hand card", "to rescue a pile's top to the discard,"]
     else:
         name = who(ctx, ev.get("player"))
         lines = [fit("End of turn: %s may banish a hand card" % name, "%s may banish a hand card" % name),
@@ -424,7 +440,7 @@ def _m9_answer(ctx: Ctx, ev: dict) -> None:
         return
     lost, rescued = ctx.label(ev.get("card")), ctx.label(ev.get("rescued"))
     outcome(ctx, "m9_piles", "%s banished %s: %s rescued" % (who(ctx, ev.get("player")), lost, rescued),
-            "%s rescued to the discard pile" % rescued)
+            "%s banished: %s rescued" % (lost, rescued), "%s rescued to the discard pile" % rescued)
 
 
 # ---- 10 Pride to Fall
@@ -467,12 +483,8 @@ def _m10_cleric_empty(ctx: Ctx) -> None:
 
 
 def _m10_bard(ctx: Ctx, ev: dict) -> None:
-    if ctx.solo:
-        first = "End of turn: put a hand card in the zone"
-    else:
-        name = who(ctx, ev.get("player"))
-        first = fit("End of turn: %s puts a hand card in the zone" % name, "%s puts a hand card in the zone" % name)
-    ctx.add(InfoCard("m10_bard", "Bard enemy", lines=[first, "Enemy attack + its strength"]))
+    first = ["End of turn: put a hand card in the zone"] if ctx.solo else puts(ctx, ev.get("player"), "End of turn: ")
+    ctx.add(InfoCard("m10_bard", "Bard enemy", lines=first + ["Enemy attack + its strength"]))
 
 
 def _m10_bard_empty(ctx: Ctx) -> None:
@@ -551,6 +563,15 @@ def _beast_enemy_lines(ctx: Ctx, effect: dict) -> List[str]:
     return [fit(line, "Enemy " + attack)] + (["Immune to %s" % immune] if immune else [])
 
 
+def _beast_asks(ctx: Ctx, suit: str, box: dict, ev: dict) -> str:
+    """A Cleric or Bard beast's box: who discards or banishes a hand card."""
+    verb = "discard" if suit == "H" else "banish"
+    if ctx.solo:
+        return "Start of turn: %s a hand card" % verb
+    name = who(ctx, box.get("player", ev.get("player")))
+    return fit("Start of turn: %s %ss a hand card" % (name, verb), "%s %ss a hand card" % (name, verb))
+
+
 @on("beast_reveal")
 @safe
 def _m11_beast(ctx: Ctx, ev: dict) -> None:
@@ -562,15 +583,9 @@ def _m11_beast(ctx: Ctx, ev: dict) -> None:
         what = BEAST_EFFECTS[suit] % ctx.label(effect.get("moved"))
         lines.append(fit("Start of turn: " + what, what[0].upper() + what[1:]))
         lines += _beast_enemy_lines(ctx, effect)
-    elif box is not None:
-        verb = "discard" if suit == "H" else "banish"
-        if ctx.solo:
-            lines.append("Start of turn: %s a hand card" % verb)
-        else:
-            name = who(ctx, box.get("player", ev.get("player")))
-            lines.append(fit("Start of turn: %s %ss a hand card" % (name, verb), "%s %ss a hand card" % (name, verb)))
     else:
-        lines.append("Nothing to move: no effect")
+        lines.append(_beast_asks(ctx, suit, box, ev) if box is not None else "Nothing to move: no effect")
+        lines += _beast_enemy_lines(ctx, {})          # the Turn card leaves the enemy to this card
     if reshuffle:
         lines.append("All four out: the beasts reshuffle")
     name = ctx.class_title(suit) if suit else ""

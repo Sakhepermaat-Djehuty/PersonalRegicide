@@ -17,30 +17,10 @@ from typing import Any, Callable, List, Optional, Sequence
 from regicide.cards import SUIT_SYMBOL
 
 from . import theme as T
-from .info import Ctx, InfoCard, finisher, on, starter
+from .info import Ctx, InfoCard, each_event, finisher, on, starter
 
 LINE = 40
 
-# every engine event type: the cards waiting for "after event j" are queued before the
-# next event's cards (``_release``)
-EVENT_TYPES = (
-    "add_to_play", "attack_discard", "bane", "banish_order", "banish_redirect", "banish_top",
-    "banished_shuffled", "beast_effect", "beast_reshuffle", "beast_reveal", "beast_skip", "carry_damage",
-    "chanter_declare", "chanter_discard", "choose_next", "cleanup_order", "cleanup_top", "close_call",
-    "close_call_pick", "corrupt_banish", "corrupt_banish_none", "damage", "decide", "declare", "defeat",
-    "discard_banished", "discard_order", "discard_pick", "discard_pick_skip", "discard_top", "draw",
-    "druid_assign", "druid_deal", "druid_done", "emblem_keep", "emblem_pass", "emblem_place", "emblem_skip",
-    "feign_death", "flute_pass", "flute_store", "heal", "jester", "lake_banish", "lost", "mage_peek",
-    "mage_pick", "mage_skip", "no_damage", "pile_rescue", "pile_rotate", "pile_to_reserve",
-    "pile_to_reserve_skip", "pilgrim_banish", "pilgrim_skip", "play", "played_order", "poison",
-    "poison_skip", "power", "precision_strike", "reaver_order", "reaver_pick", "reaver_reveal",
-    "reserve_discard", "reserve_redirect", "restore", "restored_arrows", "restored_arrows_skip", "reveal",
-    "solo_jester", "suffer", "suffer_due", "team_damage", "team_damage_done", "team_damage_prevented",
-    "team_discard", "turn", "whistle_pass", "whistle_skip", "whistle_take", "won", "yield", "zone_absorb",
-    "zone_add", "zone_banish", "zone_banish_skip", "zone_build", "zone_build_stop", "zone_cleared",
-    "zone_discard", "zone_discard_skip", "zone_feed", "zone_filled", "zone_match", "zone_match_skip",
-    "zone_move", "zone_order", "zone_rescue", "zone_sibling", "zone_sibling_skip", "zone_skip",
-)
 # the events that tell of a banish just made (their banish_redirect events come first)
 BANISHERS = ("corrupt_banish", "zone_cleared", "discard_banished", "pilgrim_banish", "zone_banish",
              "beast_effect", "bane", "lake_banish", "pile_rescue", "druid_assign", "reaver_pick", "cleanup_order")
@@ -237,7 +217,7 @@ def _release(ctx: Ctx, upto: int) -> None:
             ctx.add(c)
 
 
-@on(*EVENT_TYPES)
+@each_event
 def _waiting(ctx: Ctx, ev: dict) -> None:
     """Cards held for "after event j" go before the cards of the events after it."""
     _release(ctx, ctx.i)
@@ -343,13 +323,17 @@ def _segment(ctx: Ctx, at: int) -> List[dict]:
 
 def _enemy_changes(ctx: Ctx, events: Sequence[dict]) -> bool:
     """Does a start-of-turn step change the enemy, with a card of its own that says how (a
-    zone that feeds it, a beast)? The start-of-turn banes' cards do not state the enemy."""
+    zone that feeds it, a beast) and that is switched on? The start-of-turn banes' cards do
+    not state the enemy."""
     for e in events:
         t = e.get("t")
         if t in ("beast_reveal", "beast_effect"):
-            return True
-        if t == "zone_add" and ctx.mission != 7 and not (ctx.evergreen and _location(ctx) == "E"):
-            return True
+            if ctx.on("m11_beast"):
+                return True
+        elif t == "zone_add" and ctx.mission != 7 and not (ctx.evergreen and _location(ctx) == "E"):
+            row = {3: "m3_zone", 5: "m5_zone", 10: "m10_zone", 12: "m12_zone"}.get(ctx.mission)
+            if row is None or ctx.on(row):      # a zone card switched off states nothing
+                return True
     return False
 
 

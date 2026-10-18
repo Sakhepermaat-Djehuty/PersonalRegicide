@@ -829,16 +829,19 @@ class InfoCardFace(ui.View):
     that; a rule in the card's colour; a brief breakdown (``lines``); and, for a damage card,
     a big number in the middle (``middle``, with ``middle_caption`` under it). When the
     enemy is immune (``immune``) the card is greyed a little and IMMUNITY is stamped across
-    it: bold, red and diagonal."""
+    it: bold, red and diagonal. A strength that does nothing (``number_muted``: a Druid's or
+    a Chanter's) is drawn muted and struck through. The breakdown's type shrinks until every
+    line fits on one line and every line fits on the card."""
 
     RATIO = 0.64          # height / width: a playing card turned on its side
 
     def __init__(self, title: str, number: str = "", icon: str = "", lines: Sequence[str] = (),
                  middle: str = "", middle_caption: str = "", immune: bool = False, edge: str = "",
-                 **kw) -> None:
+                 number_muted: bool = False, **kw) -> None:
         super().__init__(**kw)
         self.title = title
         self.number = str(number)
+        self.number_muted = number_muted
         self.icon = icon
         self.lines = [str(x) for x in lines]
         self.middle = str(middle)
@@ -871,7 +874,12 @@ class InfoCardFace(ui.View):
         row = 40.0
         if self.number:
             nw = text_size(self.number, 0, 34, True)[0]
-            ui.draw_string(self.number, (x, top - 2, nw + 4, row + 4), (T.FONT_BOLD, 34), self.edge, ui.ALIGN_LEFT)
+            ui.draw_string(self.number, (x, top - 2, nw + 4, row + 4), (T.FONT_BOLD, 34),
+                           T.CARD_INK_MUTED if self.number_muted else self.edge, ui.ALIGN_LEFT)
+            if self.number_muted:
+                strike = ui.Path.rect(x - 1, top + row * 0.5 - 1, nw + 2, 2.5)
+                ui.set_color(T.CARD_INK_MUTED)
+                strike.fill()
             x += nw + 10
         if self.icon:
             size = 28.0
@@ -893,19 +901,32 @@ class InfoCardFace(ui.View):
             mh = msize * 1.15
             cap = 13 if self.middle_caption else 0
             free = h - y - pad
-            text_h = text_size(body, w - 2 * pad, 14)[1] if body else 0.0
+            size = self.body_size(w - 2 * pad, max(0.0, free - mh - cap * 1.3), 14) if body else 14
+            text_h = text_size(body, w - 2 * pad, size)[1] if body else 0.0
             my = y + max(0.0, (free - text_h - mh - cap * 1.3) / 2)
             ui.draw_string(self.middle, (pad, my, w - 2 * pad, mh), (T.FONT_BOLD, msize), ink, ui.ALIGN_CENTER)
             if cap:
                 ui.draw_string(self.middle_caption, (pad, my + mh - 4, w - 2 * pad, cap * 1.3), (T.FONT, cap),
                                T.CARD_INK_MUTED, ui.ALIGN_CENTER)
             if body:
-                ui.draw_string(body, (pad, h - pad - text_h, w - 2 * pad, text_h + 2), (T.FONT, 14), ink,
+                ui.draw_string(body, (pad, h - pad - text_h, w - 2 * pad, text_h + 2), (T.FONT, size), ink,
                                ui.ALIGN_CENTER)
         elif body:
-            ui.draw_string(body, (pad, y, w - 2 * pad, h - y - pad), (T.FONT, 15), ink, ui.ALIGN_LEFT)
+            size = self.body_size(w - 2 * pad, h - y - pad, 15)
+            ui.draw_string(body, (pad, y, w - 2 * pad, h - y - pad), (T.FONT, size), ink, ui.ALIGN_LEFT)
         if self.immune:
             self.draw_stamp(w, h)
+
+    def body_size(self, width: float, height: float, largest: float) -> float:
+        """The largest type size, down to 10 pt, at which no line wraps and all of them fit
+        in ``height``."""
+        size = float(largest)
+        while size > 10:
+            widest = max([text_size(line, 0, size)[0] for line in self.lines] or [0.0])
+            if widest <= width - 2 and len(self.lines) * size * 1.25 <= height:
+                break
+            size -= 0.5
+        return size
 
     @staticmethod
     def draw_stamp(w: float, h: float) -> None:

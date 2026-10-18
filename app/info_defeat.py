@@ -23,8 +23,7 @@ from typing import Any, List, Optional, Sequence, Tuple
 
 from regicide.cards import BASIC_SUITS, SUIT_SYMBOL
 
-from . import info as core
-from .info import MAX_LINES, MAX_LINES_MIDDLE, Ctx, InfoCard, finisher, on, starter
+from .info import MAX_LINES, MAX_LINES_MIDDLE, Ctx, InfoCard, finisher, last, on, starter
 
 LINE = 40
 ERRORS: List[str] = []                     # what a handler swallowed (the tests check it stays empty)
@@ -42,7 +41,7 @@ NEXT = {"zone_move": "Next: move a played card into the zone",
         "played_banish_order": "Next: order the mage attack; top counts"}
 # the defeat-step choices: lines on Clean-up (or on the next card once it was shown)
 CHOICES = ("zone_rescue", "zone_move", "zone_banish", "zone_build", "zone_filled", "pile_to_reserve",
-           "precision_strike", "restored_arrows", "zone_discard", "discard_pick")
+           "precision_strike", "restored_arrows", "zone_discard", "discard_pick", "lake_banish")
 # where the clean-up's events end
 CLEANUP_END = ("reveal", "won", "lost", "decide", "turn", "damage", "carry_damage", "defeat", "team_damage")
 # the cards that state the enemy's attack and immunity (Enemy changes then stays away)
@@ -58,14 +57,25 @@ START_MOVES = ("zone_add", "bane", "beast_effect")
 
 
 def _safe(fn):
-    """A handler that never raises: on the phone a raising builder loses the whole queue."""
+    """A handler that never raises: on the phone a raising builder loses the whole queue
+    (what it swallowed goes to ``ERRORS`` and, on the phone, to errors.log)."""
     @functools.wraps(fn)
     def run(*args: Any) -> None:
         try:
             fn(*args)
         except Exception:
             ERRORS[:] = ERRORS[-9:] + [traceback.format_exc()]
+            _log(fn.__name__)
     return run
+
+
+def _log(name: str) -> None:
+    try:
+        from . import store
+        if store._is_pythonista():
+            store.log_error("Info pop-ups (%s)\n%s" % (name, ERRORS[-1]))
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------- helpers
@@ -93,6 +103,11 @@ def _call(obj: Any, name: str, *args: Any, default: Any = None) -> Any:
         return fn(*args)
     except Exception:
         return default
+
+
+def active(ctx: Ctx) -> int:
+    """The player whose turn it is (0 on a game without one)."""
+    return _int(getattr(ctx.g, "active", 0))
 
 
 def count(n: int, word: str) -> str:
@@ -259,7 +274,8 @@ def kill_facts(ctx: Ctx, i: int, j: Optional[int], dev: dict) -> dict:
     box = {} if dev else box_after(ctx, i)
     cid = dev.get("enemy")
     if cid is None:
-        for game in (ctx.g, ctx.before):
+        # a defeat event without its enemy (an older save): the game after it shows the next one
+        for game in ((ctx.before, ctx.g) if dev else (ctx.g, ctx.before)):
             if getattr(game, "enemy", None) is not None:
                 cid = game.enemy.card_id
                 break
@@ -330,25 +346,38 @@ def _bane(game: Any, n: int) -> bool:
     return bool(_call(game.rules, "has_bane", game, n, default=False))
 
 
-def bonus_line(ctx: Ctx, facts: dict) -> str:
-    """The exact kill's bonus in this mission (or Evergreen setup)."""
+def last_enemy(facts: dict) -> bool:
+    """Was the castle empty when this enemy fell (no next enemy, no next turn)?"""
+    game = facts.get("game")
+    return game is not None and not (getattr(game, "castle", None) or ())
+
+
+def bonus_lines(ctx: Ctx, facts: dict) -> List[str]:
+    """The exact kill's bonuses in this mission (or Evergreen setup), in the engine's
+    order, as many lines as they need (none is dropped; none that needs a next enemy or
+    turn after the last enemy)."""
     game = facts["game"] or ctx.g
     zone = bool(getattr(game, "mission_zone", None))
-    m = ctx.mission if not ctx.evergreen else 0
+    m = 0 if ctx.evergreen or (last_enemy(facts) and ctx.mission in (5, 11, 12)) else ctx.mission
     parts = {3: ["rescue a zone card"] if zone else [],
              5: ["next enemy takes %d" % _int(facts["plan"]["carry_damage"])]
              if facts["plan"].get("carry_damage") else [],
              6: ["rescue a zone card (not Myla)"], 7: ["banish a zone card first"] if zone else [],
              8: ["a discard on top of the %s" % ctx.reserve], 9: ["a pile's top → top of the reserve"],
-             10: ["the zone is discarded, not banished"], 11: ["no beast next turn"],
+             10: ["zone discarded, not banished"], 11: ["no beast next turn"],
              12: ["no zone card next turn"]}.get(m, [])
     if ctx.evergreen:
+        parts += [name for n, name in ((32, "Precision Strike"), (33, "Restored Arrows")) if _boon(game, n)]
         if _location(ctx, game) in ("C", "D") and zone:
             parts.append("discard a zone card first")
-        parts += [name for n, name in ((32, "Precision Strike"), (33, "Restored Arrows")) if _boon(game, n)]
-    if not parts:
-        return ""
-    return fit("Bonus: " + ", ".join(parts), "Bonus: " + parts[0])
+    lines: List[str] = []
+    for part in parts:
+        joined = "%s, %s" % (lines[-1], part) if lines else ""
+        if joined and len(joined) <= LINE:
+            lines[-1] = joined
+        else:
+            lines.append(fit("Bonus: " + part))
+    return lines
 
 
 def guardian_on(ctx: Ctx, game: Any) -> bool:
@@ -388,10 +417,12 @@ def lake_line(ctx: Ctx, i: int) -> str:
     return ""
 
 
-def goes_again(ctx: Ctx, i: int) -> str:
-    if any(e.get("t") == "won" for e in ctx.events[i:]):
+def goes_again(ctx: Ctx, i: int, facts: dict) -> str:
+    """Who plays on after the kill: nobody when the game ends here, or when the castle was
+    empty at the kill (a box holds the win)."""
+    if last_enemy(facts) or any(e.get("t") in ("won", "lost") for e in ctx.events[i:]):
         return ""
-    who = ctx.name(ctx.g.active)
+    who = ctx.name(active(ctx))
     head = "You go again" if ctx.solo else "%s goes again" % who
     return fit(head + "; no end-of-turn effects", head) if end_of_turn_effects(ctx) else head
 
@@ -424,14 +455,14 @@ def fallen_cards(ctx: Ctx, i: int, facts: dict, folded: List[str]) -> List[InfoC
         items += ranked(["Zone → %s" % zone] if zone else [], 3) + ranked(folded, 4)
         out.append(_card(ctx, "hydra_regrows", "Hydra regrows", number, items,
                          icon=class_icon(enemy.suits) if enemy is not None else None))
+    bonus = bonus_lines(ctx, facts) if exact else []
     if exact:
         items = ranked(move_lines(ctx, name, facts, zone, True, zone_cards), 0)
-        items += [(1, bonus_line(ctx, facts)), (2, goes_again(ctx, i))] + ranked(nexts, 2)
+        items += ranked(bonus, 1) + [(2, goes_again(ctx, i, facts))] + ranked(nexts, 2)
         items += [(3, lake)] + ranked(folded, 4)
         out.append(_card(ctx, "exact_kill", "Exact kill!", number, items))
     items = ranked(move_lines(ctx, name, facts, zone, False, zone_cards), 0)
-    items += [(1, bonus_line(ctx, facts) if exact else "")]
-    items += ranked(nexts, 1) + [(2, lake)] + ranked(folded, 3)
+    items += ranked(bonus, 1) + ranked(nexts, 1) + [(2, lake)] + ranked(folded, 3)
     out.append(_card(ctx, "defeated", "Defeated", number, items))
     return out
 
@@ -456,8 +487,10 @@ def _killed(ctx: Ctx, ev: dict) -> None:
         return
     j, dev = defeat_after(ctx, ctx.i)
     facts = kill_facts(ctx, ctx.i, j, dev)
-    folded = sum(cleanup_lines(ctx, j, dev)[1:], []) if j is not None and ctx.on("cleanup") else []
+    folded = sum(cleanup_lines(ctx, j, dev, folded=True)[1:], []) if j is not None and ctx.on("cleanup") else []
     shown = show_fallen(ctx, ctx.i, facts, folded)
+    if shown and lake_line(ctx, ctx.i):
+        ctx.state["dft_lake"] = True
     if j is not None:
         ctx.state.setdefault("dft_folded", {})[j] = shown
     else:
@@ -513,9 +546,17 @@ def discard_top(ctx: Ctx, to_discard: List[str], segment: Sequence[dict]) -> str
     return to_discard[-1]
 
 
-def cleanup_lines(ctx: Ctx, j: Optional[int], dev: dict) -> Tuple[int, List[str], List[str]]:
+def enemy_on_top(ctx: Ctx, dev: dict) -> bool:
+    """Does the fallen enemy go onto the discard pile after the played cards (the base
+    game puts it there last, so a played card is not the top)?"""
+    plan = dev.get("plan") if isinstance(dev.get("plan"), dict) else {}
+    return not getattr(ctx.g.rules, "played_on_top", True) and plan.get("enemy_to", "discard") == "discard"
+
+
+def cleanup_lines(ctx: Ctx, j: Optional[int], dev: dict, folded: bool = False) -> Tuple[int, List[str], List[str]]:
     """(cards cleaned up, what happened to them, what else the clean-up did) for the
-    defeat at event ``j``."""
+    defeat at event ``j``; ``folded``: the lines go on the kill card, whose bonus line
+    already tells mission 8's pick."""
     if j is None:
         return 0, [], []
     segment = cleanup_segment(ctx, j)
@@ -526,6 +567,8 @@ def cleanup_lines(ctx: Ctx, j: Optional[int], dev: dict) -> Tuple[int, List[str]
     lines = []
     if len(to_discard) == 1:
         lines.append("%s → discard pile" % ctx.label(to_discard[0]))
+    elif to_discard and enemy_on_top(ctx, dev):
+        lines.append("%d played → discard pile" % len(to_discard))
     elif to_discard:
         top = ctx.label(discard_top(ctx, to_discard, segment))
         lines.append(fit("%d played → discard pile, %s on top" % (len(to_discard), top),
@@ -544,7 +587,7 @@ def cleanup_lines(ctx: Ctx, j: Optional[int], dev: dict) -> Tuple[int, List[str]
         elif t == "banished_shuffled":
             more.append("Banished pile shuffled")
     tail = ctx.events[j + 1 + len(segment)] if j + 1 + len(segment) < len(ctx.events) else {}
-    if tail.get("t") == "decide" and tail.get("kind") == "discard_pick":
+    if tail.get("t") == "decide" and tail.get("kind") == "discard_pick" and not folded:
         more.append("Next: a discard on top of the %s" % ctx.reserve)
     return len(played), lines, more
 
@@ -569,17 +612,27 @@ def _defeat(ctx: Ctx, ev: dict) -> None:
     kill and the clean-up (its lines were folded into Defeated otherwise)."""
     folded = ctx.state.get("dft_folded") or {}
     if ctx.state.pop("dft_carry", False):
-        lines = sum(cleanup_lines(ctx, ctx.i, ev)[1:], []) if ctx.on("cleanup") else []
+        lines = sum(cleanup_lines(ctx, ctx.i, ev, folded=True)[1:], []) if ctx.on("cleanup") else []
         shown = show_fallen(ctx, ctx.i, kill_facts(ctx, ctx.i, ctx.i, ev), lines)
     else:
         shown = folded.get(ctx.i, False)
     if not shown and ctx.on("cleanup"):
         cleanup_card(ctx, ev)
     ctx.carry.pop("dft", None)
+    if not ctx.later("reveal", "won", "lost"):
+        ctx.carry["dft_fallen"] = enemy_name(ctx, kill_facts(ctx, ctx.i, ctx.i, ev)["cid"])
+
+
+@starter
+@_safe
+def _fallen_carried(ctx: Ctx) -> None:
+    """The enemy of a defeat whose last step waits on a box: the next action's Victory
+    names it (kept for that one action only)."""
+    ctx.state["dft_fallen"] = ctx.carry.pop("dft_fallen", "")
 
 
 def _choice_line(ctx: Ctx, ev: dict) -> str:
-    t, who = ev.get("t"), ctx.name(ev.get("player", ctx.g.active))
+    t, who = ev.get("t"), ctx.name(ev.get("player", active(ctx)))
     label = ctx.label(ev.get("card"))
     if t == "zone_rescue":
         return "Rescued %s to the discard pile" % label
@@ -588,22 +641,32 @@ def _choice_line(ctx: Ctx, ev: dict) -> str:
     if t == "zone_banish":
         return "Banished %s from the zone" % label
     if t == "zone_build":
+        if ctx.later()[:1] and ctx.later()[0].get("t") == "zone_cleared":
+            return "Zone built: %s, the zone is full" % label
         return "Zone built: %s (enemies +%d)" % (label, _int(ev.get("bonus")))
     if t == "zone_filled":
         return "Zone filled: %d banished, %d healed" % (len(ev.get("banished") or ()), _int(ev.get("healed")))
     if t == "zone_discard":
         return "Discarded %s from the zone" % label
+    if t == "lake_banish":
+        return "%s banished (Lake)" % count(len(ev.get("cards") or ()), "reserve card")
     # the cards below go into a hand or the reserve: counted, never named
     if t == "pile_to_reserve":
         return "A captured pile's top → reserve top"
     if t == "precision_strike":
         took = "the top discard" if ev.get("pile") == "discard" else "a zone card"
-        return fit("%s took %s into hand" % (who, took), "Precision Strike: %s to hand" % took)
+        return fit("%s took %s into hand" % (who, took), "%s took %s" % (who, took),
+                   "Precision Strike: %s to hand" % took)
     if t == "restored_arrows":
         return "A banished card → under the %s" % ctx.reserve
     if t == "discard_pick":
         return "A discard → top of the %s" % ctx.reserve
     return ""
+
+
+# a choice asked by a pop-up of its own: with that pop-up switched off its outcome goes too
+CHOICE_ROW = {"zone_filled": "m8_filled", "precision_strike": "boon32", "restored_arrows": "boon33",
+              "lake_banish": "lake"}
 
 
 @on(*CHOICES)
@@ -612,7 +675,9 @@ def _choice(ctx: Ctx, ev: dict) -> None:
     """A defeat-step choice: a line on Clean-up, or on the next card once Clean-up was
     shown (mission 8's pick after the clean-up)."""
     text = _choice_line(ctx, ev)
-    if not text or not ctx.on("cleanup"):
+    if not text or not ctx.on("cleanup") or (ev.get("t") == "lake_banish" and ctx.state.get("dft_lake")):
+        return
+    if ev.get("t") in CHOICE_ROW and not ctx.on(CHOICE_ROW[str(ev.get("t"))]):
         return
     if "dft" in ctx.carry or any(e.get("t") == "defeat" for e in ctx.later()):
         ctx.carry.setdefault("dft", {}).setdefault("choices", []).append(text)
@@ -709,14 +774,16 @@ def castle_lines(ctx: Ctx, game: Any, more: int) -> List[str]:
         return [head]
     why = "Immovable Paladins" if ctx.evergreen else "Paladin enemy"
     both = "%s · takes %d less damage" % (head, r)
-    return [both] if len(both) <= LINE else [head, fit("Takes %d less damage (%s)" % (r, why))]
+    return [both] if len(both) <= LINE else [head, fit("Takes %d less damage (%s)" % (r, why),
+                                                         "%s: %d less damage" % (why, r))]
 
 
 @on("reveal")
 @_safe
 def _new_enemy(ctx: Ctx, ev: dict) -> None:
-    """The next enemy after a kill, as it arrives (Battle start holds the first one)."""
-    if ctx.start:
+    """The next enemy after a kill, as it arrives (Battle start holds the first one; with
+    its row off, New enemy shows the first enemy instead)."""
+    if ctx.start and ctx.on("battle_start"):
         return
     enemy = ev.get("enemy") or {}
     game = at_reveal(ctx, ctx.i)
@@ -724,7 +791,7 @@ def _new_enemy(ctx: Ctx, ev: dict) -> None:
     suits = [str(s) for s in enemy.get("suits") or ()]
     printed = _int(enemy.get("attack"))
     number = game.enemy_attack if game is not None else printed
-    more = len(ctx.g.castle) + len(ctx.later("reveal"))
+    more = len(getattr(ctx.g, "castle", None) or ()) + len(ctx.later("reveal"))
     items = [(0, immune_line(ctx, game, suits)), (1, attack_line(ctx, game, printed))]
     items += ranked(castle_lines(ctx, game, more), 2)
     hp = enemy.get("hp", enemy.get("max_hp", ""))
@@ -758,9 +825,12 @@ def shift_cause(ctx: Ctx, old: Any, new: Any) -> str:
 @_safe
 def _enemy_shift(ctx: Ctx) -> None:
     """The enemy's attack or immunity changed in the middle of an attack (a pile top it
-    reads moved) and no other card of the queue states them."""
+    reads moved) and no other card of the queue states them; not when the attack killed
+    it (its defeat waiting on a box): nothing reads that enemy any more."""
     old, new = ctx.before, ctx.g
     if ctx.base or old is None or new.is_over or not ctx.state.get("shift_seen") or not ctx.on("enemy_shift"):
+        return
+    if any(e.get("t") in ("damage", "carry_damage") and _int(e.get("hp"), 1) <= 0 for e in ctx.events):
         return
     if old.enemy is None or new.enemy is None or old.enemy.card_id != new.enemy.card_id:
         return
@@ -819,15 +889,16 @@ def pay_line(ctx: Ctx, game: Any, player: Any, damage: int) -> str:
     who = ctx.name(player)
     if one_by_one:
         return fit("%s discards one at a time until covered" % who, "%s: one at a time, until covered" % who,
-                   "%s pays, one card at a time" % who)
-    return fit("%s discards cards worth %d or more" % (who, damage), "%s discards %d or more" % (who, damage))
+                   "%s pays, one card at a time" % who, "%s: one card at a time" % who, "%s pays" % who)
+    return fit("%s discards cards worth %d or more" % (who, damage), "%s discards %d or more" % (who, damage),
+               "%s: %d or more" % (who, damage), "%s pays" % who)
 
 
 @on("suffer_due")
 @_safe
 def _enemy_attack(ctx: Ctx, ev: dict) -> None:
     """The enemy strikes: what it deals, how to pay and what if the hand is short."""
-    game, damage, player = ctx.g, _int(ev.get("damage")), ev.get("player", ctx.g.active)
+    game, damage, player = ctx.g, _int(ev.get("damage")), ev.get("player", active(ctx))
     items = [(1, strike_line(game, damage)), (2, pay_line(ctx, game, player, damage))]
     hand = _int(_call(game, "hand_defence_value", _int(player), default=damage))
     if any(e.get("t") == "lost" for e in ctx.later()):
@@ -867,9 +938,10 @@ def _shielded(ctx: Ctx, ev: dict) -> None:
 @_safe
 def _feign_death(ctx: Ctx, ev: dict) -> None:
     n, damage = len(ev.get("cards") or ()), _int(ev.get("damage"))
-    who = ctx.name(ev.get("player", ctx.g.active))
+    who = ctx.name(ev.get("player", active(ctx)))
     head = "You discard the whole hand" if ctx.solo else "%s discards the whole hand" % who
-    items = [(0, fit("%s: %s" % (head, count(n, "card")), head)),
+    items = [(0, fit("%s: %s" % (head, count(n, "card")), head, "%s discards all %s" % (who, count(n, "card")),
+                     "%s: the whole hand" % who)),
              (1, "At the limit (%d) it covers any damage" % ctx.g.config.max_hand),
              (2, "%d damage satisfied" % damage)]
     ctx.add(_card(ctx, "feign_death", "Feign death", damage, items))
@@ -881,28 +953,34 @@ def _damage_paid(ctx: Ctx, ev: dict) -> None:
     """What was discarded (the discard pile is face up; A Close Call's cards go under the
     reserve, so they are counted) and the hand left."""
     cards = [str(c) for c in ev.get("cards") or ()]
-    player = _int(ev.get("player", ctx.g.active))
+    player = _int(ev.get("player", active(ctx)))
     who = ctx.name(player)
     hidden = any(e.get("t") == "close_call" for e in ctx.earlier())
     head = "%s discarded %d" % (who, len(cards))
-    first = head + " " + ("card" if len(cards) == 1 else "cards")
+    first, named = head + " " + ("card" if len(cards) == 1 else "cards"), ""
     if not hidden and cards:
-        first = fit("%s: %s" % (head, ctx.labels(cards)), first)
+        one = "%s: %s" % (head, ctx.labels(cards))
+        if len(one) <= LINE:
+            first = one
+        else:
+            named = ctx.labels(cards)          # a long name: the cards on their own line
     try:
         hand = len(ctx.before.players[player].hand) - len(cards)
     except Exception:
         hand = len(ctx.g.players[player].hand) if 0 <= player < len(ctx.g.players) else 0
-    items = [(0, first), (1, "Hand: %d left" % max(0, hand))]
+    items = [(0, first), (2, named), (1, "Hand: %d left" % max(0, hand))]
     ctx.add(_card(ctx, "damage_paid", "Damage paid", _int(ev.get("damage")), items, middle=_int(ev.get("paid")),
                   caption="paid"))
 
 
 # ---------------------------------------------------------------------------- Victory, Defeat
 def last_fallen(ctx: Ctx) -> str:
+    """The enemy whose defeat won the game (an earlier action's, when a box after the
+    clean-up held the win: mission 8's pick)."""
     for e in reversed(ctx.events):
         if e.get("t") == "defeat":
             return enemy_name(ctx, e.get("enemy"))
-    return ""
+    return str(ctx.state.get("dft_fallen") or "")
 
 
 def victory_card(ctx: Ctx, ev: dict) -> InfoCard:
@@ -912,14 +990,12 @@ def victory_card(ctx: Ctx, ev: dict) -> InfoCard:
         title = "%s victory!" % result.capitalize()
     name = last_fallen(ctx)
     turns = _int(getattr(ctx.g, "turn", 0))
-    items = []
-    if name:
-        took = count(turns, "turn") if turns else ""
-        both = "%s was the last enemy, in %s" % (name, took)
-        if len(both) <= LINE and took:
-            items.append((0, both))
-        else:
-            items += [(0, fit("%s was the last enemy" % name)), (2, "Won in %s" % took if took else "")]
+    took = count(turns, "turn") if turns else ""
+    both = "%s was the last enemy, in %s" % (name, took)
+    if name and took and len(both) <= LINE:
+        items = [(0, both)]
+    else:
+        items = [(0, fit("%s was the last enemy" % name) if name else ""), (2, "Won in %s" % took if took else "")]
     if ctx.base and ctx.solo:
         items.append((1, "Jesters used: %d" % _int(getattr(ctx.g, "solo_jesters_used", 0))))
     if not ctx.base and not ctx.evergreen and ctx.mission:
@@ -933,36 +1009,42 @@ def loss_reason(ctx: Ctx, k: int, ev: dict) -> str:
     reason = str(ev.get("reason") or "")
     t = prev.get("t")
     if t == "suffer_due" or ("cannot suffer" in reason and "team" not in reason.lower()):
-        damage = _int(prev.get("damage")) if t == "suffer_due" else _int(ctx.g.pending_damage)
-        who = ctx.name(prev.get("player", ctx.g.active))
-        return "Cannot pay %d damage" % damage if ctx.solo else fit("%s cannot pay %d damage" % (who, damage))
+        damage = _int(prev.get("damage") if t == "suffer_due" else getattr(ctx.g, "pending_damage", 0))
+        who = ctx.name(prev.get("player", active(ctx)))
+        if ctx.solo:
+            return "Cannot pay %d damage" % damage
+        return fit("%s cannot pay %d damage" % (who, damage), "%s cannot pay %d" % (who, damage))
     if t == "team_damage" or "team cannot" in reason.lower():
         return "Team damage too high"
     if "abandon" in reason.lower() or not prev:
         return "Abandoned"
-    who = ctx.name(ctx.g.active)
+    who = ctx.name(active(ctx))
     return "No legal play or yield" if ctx.solo else fit("%s: no legal play or yield" % who, "No legal play or yield")
 
 
 def loss_card(ctx: Ctx, k: int, ev: dict) -> InfoCard:
     title = "Defeat" if ctx.base or ctx.evergreen else "Mission lost"
-    g = ctx.g
+    enemy = getattr(ctx.g, "enemy", None)
     items = [(0, loss_reason(ctx, k, ev))]
-    alive = g.enemy is not None and g.enemy.hp > 0
-    left = len(g.castle) + (1 if alive else 0)
+    alive = enemy is not None and enemy.hp > 0
+    left = len(getattr(ctx.g, "castle", None) or ()) + (1 if alive else 0)
     enemies = "1 enemy left" if left == 1 else "%d enemies left" % left
     if alive:
-        hp = "%s: %d health left" % (g.enemy.name, g.enemy.hp)
+        hp = "%s: %d health left" % (enemy.name, enemy.hp)
         both = "%s · %s" % (hp, enemies)
-        items += [(1, both)] if len(both) <= LINE else [(1, fit(hp, "%d health left" % g.enemy.hp)), (2, enemies)]
-    elif g.enemy is not None:
-        items.append((1, fit("%s fell; %s" % (g.enemy.name, enemies), enemies)))
+        items += [(1, both)] if len(both) <= LINE else [(1, fit(hp, "%d health left" % enemy.hp)), (2, enemies)]
+    elif enemy is not None:
+        items.append((1, fit("%s fell; %s" % (enemy.name, enemies), enemies)))
     else:
         items.append((1, enemies))
+    coins = _int(ctx.app.get("coins_on_loss"))
+    if coins > 0:
+        # rulebook p.25: each loss of a mission earns as many coins as it has been lost
+        items.append((2, "+%d coin%s (loss %d on this mission)" % (coins, "" if coins == 1 else "s", coins)))
     return _card(ctx, "loss", title, "", items)
 
 
-@finisher
+@last
 @_safe
 def _game_end(ctx: Ctx) -> None:
     """Victory or Defeat: always the last card of the queue (its clip is the jingle)."""
@@ -974,12 +1056,3 @@ def _game_end(ctx: Ctx) -> None:
         if ev.get("t") == "lost":
             ctx.add(loss_card(ctx, k, ev))
             return
-
-
-@starter
-def _game_end_last(ctx: Ctx) -> None:
-    """The game-end card's finisher runs after every other module's finishers."""
-    finishers = core.FINISHERS
-    if finishers and finishers[-1] is not _game_end and _game_end in finishers:
-        finishers.remove(_game_end)
-        finishers.append(_game_end)
