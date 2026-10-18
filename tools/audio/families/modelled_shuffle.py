@@ -20,10 +20,10 @@ What a riffle is made of, and what models each part here:
            and the deck's low, heavily damped modes near 115 to 135 Hz and nearly twice
            that, the thrum (``_flick``)
   halves   the cards come off the two halves by turns, but the thumbs never quite
-           alternate: often two or three come off one half together. The near half's
-           edges face the listener and are heard plainly, the far half's softly, so the
-           ear follows an uneven train of flicks, now spread out, now bunched, with softer
-           ticks between (``_riffle``)
+           alternate: often two, now and then three, come off one half together. The near
+           half's edges face the listener and are heard plainly, the far half's softly, so
+           the ear follows an uneven train of flicks, now spread out, now bunched, with
+           softer ticks between (``_riffle``)
   purr     the bent halves never stop moving while the cards stream off them: a low
            rumble under the separate thrums, swelling with each card (``_riffle``)
   rustle   the thumb's skin running over the card edges between the flicks (``_rustle``)
@@ -40,7 +40,7 @@ The owner asked for "a bit less speedy": these riffles keep the reference's shap
 bend, a quickening crescendo whose low thrum swells most, the hands choking the deck into
 a near-silent pause, and the squaring snap), but the cards flick free 23 to 44 ms apart
 instead of about 17, so the flicks one hears come 20 to 125 ms apart (most 40 to 80)
-instead of 25 to 60, and the whole sound lasts 0.96 to 1.1 s instead of 0.72. Each flick
+instead of 25 to 60, and the whole sound lasts 0.9 to 1.1 s instead of 0.72. Each flick
 differs a little (its timing, strength, the pitch of its tick, some cards slipping off
 softly, now and then two letting go together), and the halves interleave unevenly, so the
 flicks one hears never fall into a steady beat: a slow riffle whose cards alternated
@@ -315,21 +315,20 @@ def _riffle(count: int, first: float, last: float, seed: int,
             jitter: float = 0.25, choke: float = 0.012, tail: float = 0.06) -> Tuple[np.ndarray, float]:
     """The riffle proper: ``count`` cards flicking free from ``first`` to ``last`` seconds
     apart (the thumbs speed up as the halves empty), their ticks following ``click_db`` and
-    the thrum ``body_db`` (dB along the riffle, 0..1; a steady hand: no tick more than half
-    a decibel above the crescendo's top), each gap uneven by up to ``jitter``. The cards
-    come off the two halves by turns, each half with its own tick pitch (``ring``): the
-    near half, whose edges face the listener, is heard plainly; the far half's ticks are
-    ``accent`` dB softer and duller (above ``far_lp`` the deck shadows them) and its thrum
-    muffled too. The turns are uneven: after each card the same half lets the next one go
-    too with odds ``slip``, so the near half's flicks come now spread out, now bunched,
-    as in a real riffle, and never in a steady beat. A card let go softly also lands
-    softly: its slap on the card below follows its tick (``slap`` of it). Now and then two
-    cards let go together (``pair``) or a card slides off softly instead of snapping
-    (``soft``).
-    The held packet's low mode rises from ``low[0]`` to ``low[1]`` and rings longer as the
-    thumbs press harder (``low_tau``); under it all run the deck's purr (``purr``) and the
-    thumbs' rustle (``rustle``). ``choke`` seconds after the last card the hands close on
-    the deck and damp its thrum. Returns the sound and its last release."""
+    the thrum ``body_db`` (dB along the riffle, 0..1; a steady hand: no tick more than half a
+    decibel above the crescendo's top), each gap uneven by up to ``jitter``. The cards come
+    off the two halves by turns, each half with its own tick pitch (``ring``): the near half,
+    whose edges face the listener, is heard plainly; the far half's ticks are ``accent`` dB
+    softer and duller (above ``far_lp`` the deck shadows them) and its thrum muffled too. The
+    turns are uneven: after each card the same half lets the next one go too with odds
+    ``slip``, so the near half's flicks come now spread out, now bunched, as in a real riffle,
+    and never in a steady beat. A card let go softly also lands softly: its slap on the card
+    below follows its tick (``slap`` of it). Now and then two cards let go together (``pair``)
+    or a card slides off softly instead of snapping (``soft``). The held packet's low mode
+    rises from ``low[0]`` to ``low[1]`` and rings longer as the thumbs press harder
+    (``low_tau``); under it all run the deck's purr (``purr``) and the thumbs' rustle
+    (``rustle``). ``choke`` seconds after the last card the hands close on the deck and damp
+    its thrum. Returns the sound and its last release."""
     rng = np.random.default_rng(seed)
     times = _gaps(count, first, last, seed + 1, jitter)
     u = np.linspace(0.0, 1.0, count)
@@ -494,15 +493,15 @@ def _cascade(dur: float, count: int, seed: int, first: float = 0.003, last: floa
 
 # ----------------------------------------------------------------------------- the candidates
 def shuf_ref_riffle():
-    # the reference at about three quarters of its speed (0.96 s against 0.72): the thumbs
+    # the reference at about three quarters of its speed (0.91 s against 0.72): the thumbs
     # bend the deck (a stray card or two slipping), 21 cards flick free 34 ms apart easing
     # to 23 (the reference: about 17), the flicks one hears spread out at first and
-    # bunching up as it builds (20 to 110 ms apart), with a swelling thrum; the hands
+    # bunching up as it builds (20 to 120 ms apart), with a swelling thrum; the hands
     # close on the deck, and the squaring snap is the brightest moment, as in the
     # reference
     t_rif = 0.19
     bend = _bend(4100, strays=(0.008, 0.06, 0.12), dur=0.15)
-    rif, last = _riffle(21, 0.034, 0.023, 4212)
+    rif, last = _riffle(21, 0.034, 0.023, 4214)
     snap_at = t_rif + last + 0.08
     sq = _square(4130)
     x = _place([(bend, 0.0, _over(bend, rif, -18.0)), (rif, t_rif, 1.0),
@@ -518,14 +517,16 @@ def shuf_ref_gentle():
     # contact ringing the packet low, more thump than click), softer than the riffle's
     # loudest flicks
     t_rif = 0.21
-    bend = _bend(5100, strays=(0.01, 0.07, 0.14), dur=0.17, ring=4600.0)
+    # (the first stray card slips a little later than in the riffle, so the sound opens on
+    # the faint rustle of the bend rather than on a tick)
+    bend = _bend(5100, strays=(0.02, 0.075, 0.14), dur=0.17, ring=4600.0)
     rif, last = _riffle(20, 0.044, 0.033, 5303, ring=(4900.0, 3900.0), soft=0.2,
                         click_db=((0, -21), (0.15, -13.5), (0.65, -12), (0.88, -6.5), (1, -10)))
     snap_at = t_rif + last + 0.1
     sq = _square(5130, ring=3000.0, width=0.0004, spread=0.006, snap=0.6, puff=0.4, knock=0.3, knock_f=800.0,
                  thump=0.6, low=95.0, low_tau=0.009, pre=0.15, gap=0.026, rush=0.4, settle=0.04, lp=4500.0)
     x = _place([(bend, 0.0, _over(bend, rif, -18.0)), (rif, t_rif, 1.0),
-                (sq, snap_at - SQUARE_LEAD, _over(sq, rif, -5.0, hp=0.0))], snap_at + 0.17)
+                (sq, snap_at - SQUARE_LEAD, _over(sq, rif, -1.0, hp=0.0))], snap_at + 0.17)
     return _finish(_room(x, 0.24), 19.5, lp=12000)
 
 

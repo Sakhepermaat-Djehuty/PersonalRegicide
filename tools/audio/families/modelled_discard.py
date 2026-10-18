@@ -269,17 +269,16 @@ def _land(seed: int, depth: float = 0.0, soft: float = 0.0, thump: float = 0.4, 
           round_db: float = 5.0, dur: float = 0.09) -> np.ndarray:
     """The card coming down flat on the pile, its first contact ``LEAD`` seconds into the
     buffer. Its edge meets the pile: a contact pulse (wider is softer) rings the card's
-    bending modes for a millisecond or two (``snap``), the pile under it gives a short,
-    dull knock (noise struck once, 0.8 to 3.2 kHz: a stack of card on cloth is too soft
-    and too damped to knock lower, like a box; ``knock``) and a few fibres crush
-    (``spit``). ``drop``
-    seconds later the face lands: the sheet unbends onto the pile (a quick run of tiny
-    clicks) and claps flat (``clap``), and the air pushed out from under it (a small push,
-    then a quicker opposite swing; ``pff`` adds its low breath of noise) sets the pile, the
-    cloth and the tabletop going, a low, heavily damped thump (``thump``). ``depth``
-    (0..1) is how tall the pile has grown: more card under it, a duller knock and clap, a
-    lower, more damped thump and a shorter fall (edge and face come closer together);
-    ``soft`` is a gentler hand (a wider contact, less snap and clap)."""
+    bending modes for a millisecond or two (``snap``), the pile under it gives a short, dull
+    knock (noise struck once, 0.8 to 3.2 kHz: a stack of card on cloth is too soft and too
+    damped to knock lower, like a box; ``knock``) and a few fibres crush (``spit``). ``drop``
+    seconds later the face lands: the sheet unbends onto the pile (a quick run of tiny clicks)
+    and claps flat (``clap``), and the air pushed out from under it (a small push, then a
+    quicker opposite swing; ``pff`` adds its low breath of noise) sets the pile, the cloth and
+    the tabletop going, a low, heavily damped thump (``thump``). ``depth`` (0..1) is how tall
+    the pile has grown: more card under it, a duller knock and clap, a lower, more damped
+    thump and a shorter fall (edge and face come closer together); ``soft`` is a gentler hand
+    (a wider contact, less snap and clap)."""
     n = _n(dur)
     rng = np.random.default_rng(seed)
     t = _t(n)

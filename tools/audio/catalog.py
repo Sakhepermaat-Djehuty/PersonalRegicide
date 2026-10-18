@@ -38,10 +38,13 @@ class Event:
 EVENTS: List[Event] = [
     # cards in the hand and on the table
     Event("card_select", "Cards", "Select a card", "You tap a card in your hand to add it to your play.", -24, 0.25),
-    Event("card_deselect", "Cards", "Deselect a card", "You tap a selected card again to take it back.", -26, 0.25),
+    # deselect sits 4 dB under select: their weight is in the bass a phone speaker hardly
+    # plays, so 2 dB on paper came out level on the phone
+    Event("card_deselect", "Cards", "Deselect a card", "You tap a selected card again to take it back.", -28, 0.25),
     Event("play", "Cards", "Play an attack", "Your selected cards go onto the table against the enemy.", -19, 0.9),
     Event("draw", "Cards", "Draw cards", "Cards come into your hand (a Bard's draw, a refill).", -21, 1.0),
-    Event("shuffle", "Cards", "Shuffle", "A pile is shuffled (a Cleric's heal, a new castle).", -21, 1.6),
+    # a riffle's thrum sits under 150 Hz: 2 dB more, to sound as loud as a draw on a phone
+    Event("shuffle", "Cards", "Shuffle", "A pile is shuffled (a Cleric's heal, a new castle).", -19, 1.6),
     Event("discard", "Cards", "Discard to suffer", "You discard cards to pay the enemy's attack.", -21, 0.9),
     # the fight
     Event("hit", "Combat", "Damage the enemy", "Your attack deals damage and the enemy survives.", -18, 1.0),
