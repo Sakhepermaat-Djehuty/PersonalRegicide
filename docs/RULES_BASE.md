@@ -71,7 +71,8 @@ Play one of the following face up in front of the enemy:
 
 Or **yield**: say "yield", skip steps 2 and 3, go straight to step 4. A player may not
 yield if every other player yielded on their most recent turn (so with 2 players you
-cannot yield if the other player just yielded; with 1 player you can never yield). The
+cannot yield if the other player just yielded). Solo, by the owner's ruling, a player may
+yield but not twice running (yield, then play a Jester power to recover). The
 engine records each player's last turn action and applies this literally: it is not a
 "consecutive yields" counter, so the bonus turn after a kill is still restricted if the
 other players' last turns were yields. The record is not reset when a new enemy appears
