@@ -4230,7 +4230,7 @@ Immunity
 Each enemy ignores the power of its own suit. A Jester cancels that immunity for the rest of the fight, deals no damage, skips the enemy's attack, and lets its player choose who goes next.
 
 Yielding
-Skip steps 2 and 3 and go straight to suffering damage. Not allowed if every other player yielded on their last turn, and never in a solo game.
+Skip steps 2 and 3 and go straight to suffering damage. Not allowed if every other player yielded on their last turn; solo, not twice running.
 
 Solo
 Hand of 8. Instead of Jesters in the deck you have two Jester powers: at the start of your turn or before suffering damage, discard your hand and draw 8. Win without using them for a gold medal, with one for silver, with both for bronze.

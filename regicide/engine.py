@@ -875,7 +875,7 @@ class Game:
             raise IllegalAction("Not the moment to yield.")
         if not self.can_yield():
             raise IllegalAction("You may not yield now." if self.n_players > 1
-                                else "You cannot yield in a solo game.")
+                                else "You may not yield twice running.")
         self.last_action[self.active] = "yielded"
         # A claimer who yields forms no attack: the Jester's "ignores immunity" is spent
         # (rulebook p.20: paladins played after the Jester attack do not ignore immunity).
