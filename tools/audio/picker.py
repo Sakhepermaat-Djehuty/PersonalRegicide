@@ -39,6 +39,8 @@ def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     dest = argv[0]
     man = load_manifests()
+    from install import defaults
+    default_of = defaults()          # what the game plays for a pop-up until the owner picks
     events = []
     paths = []
     for ev in EVENTS:
@@ -55,7 +57,8 @@ def main(argv=None) -> int:
             ref = MODELLED.get(r.get("family", ""))
             items.append({"id": r["id"], "name": r["name"], "note": r["note"], "tags": r.get("tags", []),
                           "secs": r["stats"]["seconds"], "src": rel, "suite": SUITES.get(r.get("family", ""), ""),
-                          "badge": "New \u00b7 modelled on your %s" % ref if ref else ""})
+                          "badge": "New \u00b7 modelled on your %s" % ref if ref else "",
+                          "default": default_of.get(ev.id) == r["id"]})
         events.append({"id": ev.id, "group": ev.group, "title": ev.title, "when": ev.when, "kind": ev.kind,
                        "items": items})
     data = json.dumps({"events": events}, ensure_ascii=False, separators=(",", ":"))

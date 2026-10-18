@@ -99,6 +99,11 @@ section { display: grid; gap: 18px; }
 .slot[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
 .slot .hint { font-weight: 400; opacity: 0.8; }
 
+.queues { display: grid; gap: 10px; padding: 12px 14px; background: var(--panel); border-radius: 14px; margin-bottom: 12px; }
+.queues .row { display: flex; flex-wrap: wrap; gap: 8px; }
+.queues .now { font-size: 13px; color: var(--muted); min-height: 1.4em; }
+.queues .now b { color: var(--accent); }
+.event .head .pick.dflt { color: var(--muted); font-style: italic; }
 .summary { display: grid; gap: 12px; padding: 14px; background: var(--panel); border-radius: 14px; }
 .summary pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: var(--mono); font-size: 12px; color: var(--fg); background: var(--bg); padding: 10px; border-radius: 10px; max-height: 220px; overflow: auto; }
 .summary .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
@@ -135,7 +140,19 @@ const TURN = [["card_select", 0], ["card_select", 420], ["play", 800], ["power_d
               ["suffer", 1100], ["discard", 1000], ["draw", 900], ["card_select", 900], ["play", 450],
               ["defeat_enemy", 650], ["new_enemy", 1500], ["button", 1400], ["popup", 300]];
 
+// pop-up queues as the game plays them, to judge the tunes in order
+const QUEUES = [
+  ["Gøran kill", ["info_cleric", "info_bard", "info_warrior", "info_defeated", "info_new_enemy", "info_turn"]],
+  ["Immune, then struck", ["info_immunity", "info_damage", "info_enemy_attack", "info_damage_paid", "info_turn"]],
+  ["Exact kill", ["info_warrior", "info_exact_kill", "info_cleanup", "info_new_enemy", "info_turn"]],
+  ["Mage and Emblem", ["info_mage", "info_azure_emblem", "info_warrior", "info_enemy_attack"]],
+  ["Jester", ["info_jester", "info_turn"]],
+  ["Mission 5 end of turn", ["info_damage_paid", "info_m5_zone", "info_turn"]],
+  ["Evergreen turn", ["info_bane16", "info_turn", "info_shrine", "info_boon35"]],
+];
 const effects = DATA.events.filter(e => e.kind !== "music");
+const isInfo = ev => ev.group === "Info pop-ups";
+const defaultItem = ev => ev.items.find(i => i.default) || ev.items[0];
 const musicEv = DATA.events.find(e => e.kind === "music");
 let picks = { effects: {}, music: { menu: undefined, jack: undefined, queen: undefined, king: undefined } };
 let db = null, saveTimer = null;
@@ -187,10 +204,53 @@ function render() {
     const n = evs.reduce((k, e) => k + e.items.length, 0);
     links.append(el("a", { href: "#" + gid }, group, el("span", { class: "n", text: String(n) })));
     const sec = el("section", { id: gid, "aria-label": group }, el("h2", { text: group }));
+    if (group === "Info pop-ups") sec.append(renderQueues());
     for (const ev of evs) sec.append(ev.kind === "music" ? renderMusic(ev) : renderEvent(ev));
     groups.append(sec);
   }
   refresh();
+}
+
+function renderQueues() {
+  const now = el("p", { class: "now", id: "queue-now", text: "Each card's tune plays as the card appears. Hear a queue the way the game plays it: your pick for each card, else its default." });
+  const row = el("div", { class: "row" });
+  for (const [name, ids] of QUEUES) {
+    const b = el("button", { class: "btn quiet", type: "button", text: "\u25b6 " + name });
+    b.addEventListener("click", () => playQueue(ids));
+    row.append(b);
+  }
+  return el("div", { class: "queues" }, el("h3", { text: "Play in order" }), row, now);
+}
+
+let queueToken = 0;
+function playQueue(ids) {
+  const token = ++queueToken;
+  const steps = ids.map(id => effects.find(e => e.id === id)).filter(Boolean).map(ev => {
+    const cur = picks.effects[ev.id];
+    const it = cur ? ev.items.find(i => i.id === cur) : (cur === null ? null : defaultItem(ev));
+    return [ev, it];
+  });
+  const now = document.getElementById("queue-now");
+  const show = k => {
+    now.textContent = "";
+    steps.forEach(([ev, it], i) => {
+      if (i) now.append(" \u2192 ");
+      const label = ev.title.replace(/^\d+ \u00b7 /, "") + (it ? "" : " (none)");
+      now.append(i === k ? el("b", { text: label }) : label);
+    });
+  };
+  const next = k => {
+    if (token !== queueToken) return;
+    if (k >= steps.length) { show(-1); return; }
+    show(k);
+    const it = steps[k][1];
+    if (!it) { setTimeout(() => next(k + 1), 400); return; }
+    const a = audioFor(it.src);
+    a.currentTime = 0; a.volume = volume;
+    a.onended = () => setTimeout(() => next(k + 1), 180);
+    const p = a.play(); if (p && p.catch) p.catch(() => next(k + 1));
+  };
+  next(0);
 }
 
 function renderEvent(ev) {
@@ -269,15 +329,23 @@ function refresh() {
     if (!p) continue;
     const cur = picks.effects[ev.id];
     const it = ev.items.find(i => i.id === cur);
+    if (cur === undefined && isInfo(ev)) {
+      p.textContent = "Default: " + defaultItem(ev).name;
+      p.className = "pick dflt";
+      continue;
+    }
     p.textContent = cur === undefined ? "" : (cur === null ? "None" : it ? it.name : "");
     p.className = "pick" + (cur === null ? " none" : "");
   }
   for (const s of document.querySelectorAll(".slot")) s.setAttribute("aria-pressed", String(picks.music[s.dataset.slot] === s.dataset.id));
   for (const t of document.querySelectorAll(".track")) t.classList.toggle("assigned", Object.values(picks.music).includes(t.dataset.id));
-  const done = effects.filter(e => picks.effects[e.id] !== undefined).length + SLOTS.filter(([k]) => picks.music[k] !== undefined).length;
-  const total = effects.length + (musicEv ? SLOTS.length : 0);
+  const plain = effects.filter(e => !isInfo(e)), tunes = effects.filter(isInfo);
+  const done = plain.filter(e => picks.effects[e.id] !== undefined).length + SLOTS.filter(([k]) => picks.music[k] !== undefined).length;
+  const total = plain.length + (musicEv ? SLOTS.length : 0);
+  const tuned = tunes.filter(e => picks.effects[e.id] !== undefined).length;
   document.getElementById("count").innerHTML = "";
   document.getElementById("count").append(el("b", { text: String(done) }), " of " + total + " picked");
+  if (tunes.length) document.getElementById("count").append(" \u00b7 pop-up tunes ", el("b", { text: String(tuned) }), " of " + tunes.length + " (the rest play their default)");
   document.getElementById("picks").textContent = summaryText();
 }
 
