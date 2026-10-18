@@ -105,7 +105,9 @@ for each stage of the castle: the Jacks, the Queens and the Kings (an enemy of a
 rank, as in mission 10, goes by its strength). The sounds are made for the game with
 tools/audio (see tools/audio/build.py) from real instrument recordings, the MIT-licensed
 Fluid R3 and MuseScore General sample banks, and modelled table sounds; the chosen files
-live in app/sounds/. Settings,
+live in app/sounds/ (tools/audio/install.py puts the picker page's picks there). Every
+info pop-up has its own tune of about 2 seconds, all in D, played as its card appears
+(the Jester's is the Whistle jig); one not yet picked plays its default. Settings,
 "Sound": sound effects, music, and "Play sound when the phone is on silent" (on by
 default; off honours the ring/silent switch).
 
