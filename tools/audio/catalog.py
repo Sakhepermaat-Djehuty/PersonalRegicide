@@ -35,6 +35,101 @@ class Event:
     kind: str = "effect"  # "effect" (mono, played on demand), "jingle" (mono, once), "music" (stereo loop)
 
 
+# Info pop-ups (app/info.py ROWS, docs/INFO_POPUPS.md "Melody plan"): every card of the
+# queue shown after an action plays its own short clip, "info_<row id>", 2.0 to 2.4 s (the
+# four Jester rows 2.6 s: the Whistle jig with one more bar). Battle start, Victory and
+# Defeat play the mission_start, victory and loss jingles instead, so they have no event.
+# Mastered as jingles at about -20 dB; Turn and Yield 3 dB softer, Enemy attacks, Exact
+# kill! and IMMUNITY 1.5 dB louder.
+def _info(row: str, title: str, when: str, loudness_db: float = -20.0, max_seconds: float = 2.4) -> Event:
+    return Event("info_" + row, "Info pop-ups", title, when, loudness_db, max_seconds, 2.0, "jingle")
+
+
+INFO_EVENTS: List[Event] = [
+    # turn
+    _info("turn", "Turn", "A new turn begins (2+ players: it names who plays next).", -23),
+    _info("yield", "Yield", "A player yields the turn.", -23),
+    # the attack's cards entering play
+    _info("corrupted", "Corrupted", "A corrupted card enters play and a card is banished."),
+    _info("restored", "Restored", "A restored card enters play."),
+    _info("declared", "Declared", "A card's value or class is declared as it enters play."),
+    _info("kinfolk_flute", "Kinfolk Flute", "The Kinfolk Flute can grow the attack, just before its box."),
+    _info("scarlet_whistle", "Scarlet Whistle", "The Scarlet Whistle can add or take a card, just before its box."),
+    _info("azure_emblem", "Azure Emblem", "The Azure Emblem places or keeps peeked cards, just before its box."),
+    _info("mother_corrupt", "Mother (corrupt)", "The corrupt Evergreen Mother asks for a banish, just before her box."),
+    _info("mother_restored", "Mother (restored)", "The restored Evergreen Mother saves banished cards."),
+    # the Jester (the Whistle jig)
+    _info("jester", "Jester (base)", "A Jester is played (base game, 2+ players).", max_seconds=2.6),
+    _info("jester_claim", "Jester claim", "A Jester is played to claim the next turn (Legacy, 2+ players).",
+          max_seconds=2.6),
+    _info("solo_jester_refresh", "Solo Jester: new hand", "A solo Jester discards the hand and draws a new one.",
+          max_seconds=2.6),
+    _info("solo_jester_attack", "Solo Jester: attack", "A solo Jester is played as an attack (Legacy solo).",
+          max_seconds=2.6),
+    # the classes
+    _info("immunity", "IMMUNITY", "Any class card stamped IMMUNITY: the enemy blocks that power.", -18.5),
+    _info("mage", "Mage", "A Mage peeks at the reserve, just before the pick box."),
+    _info("druid", "Druid", "A Druid deals cards, just before the sorting box."),
+    _info("cleric", "Cleric", "A Cleric heals cards from the discard pile into the reserve."),
+    _info("bard", "Bard", "A Bard draws cards for the party."),
+    _info("chanter", "Chanter", "A Chanter calls a number, just before the number box."),
+    _info("reaver", "Reaver", "A Reaver digs into the reserve, just before the count box."),
+    _info("warrior", "Warrior", "A Warrior doubles the attack's damage."),
+    _info("paladin", "Paladin", "A Paladin's shield lowers the enemy's attack."),
+    _info("guardian", "Guardian", "A Guardian protects the party."),
+    # damage and defeat
+    _info("damage", "Damage", "The attack deals its damage (no Warrior doubling it)."),
+    _info("defeated", "Defeated", "The enemy is defeated (not exactly)."),
+    _info("exact_kill", "Exact kill!", "The enemy is defeated exactly and joins the party's cards.", -18.5),
+    _info("cleanup", "Clean-up", "After a kill: the played cards are cleared away."),
+    _info("team_damage", "Team damage", "Every player must pay team damage."),
+    # the enemy
+    _info("new_enemy", "New enemy", "The next enemy is revealed from the castle."),
+    _info("enemy_shift", "Enemy changes", "A pile top changes mid-attack and so changes the enemy."),
+    _info("enemy_attack", "Enemy attacks", "The enemy strikes back: damage to pay, just before the discard box.",
+          -18.5),
+    _info("shielded", "No damage", "The enemy's attack is shielded to nothing."),
+    _info("feign_death", "Feign death", "A player feigns death to escape the enemy's attack."),
+    _info("damage_paid", "Damage paid", "The enemy's attack is paid with discarded cards."),
+    # missions
+    _info("hydra_regrows", "2 · Hydra regrows", "Mission 2: a defeated Hydra head goes back under the castle."),
+    _info("m3_zone", "3 · Zone grows", "Mission 3, end of turn: the zone gives the enemy a new immunity."),
+    _info("m5_zone", "5 · Zone grows", "Mission 5, end of turn: the zone makes the enemy stronger."),
+    _info("m5_carry", "5 · Carry damage", "Mission 5: extra damage carries on to the next enemy."),
+    _info("m7_pilgrim", "7 · Pilgrim arrives", "Mission 7, start of turn: a pilgrim joins the zone."),
+    _info("m7_match", "7 · Pilgrim match", "Mission 7: a played card matches a pilgrim, just before the box."),
+    _info("m8_filled", "8 · Zone filled!", "Mission 8, at a kill: the zone is filled, just before the banish box."),
+    _info("m9_piles", "9 · Captured piles", "Mission 9, end of turn: a captured pile can be rescued, before its box."),
+    _info("m10_zone", "10 · Zone grows", "Mission 10, start of turn: the zone makes the enemy stronger."),
+    _info("m10_cleric", "10 · Cleric enemy", "Mission 10, end of turn: the corrupted Cleric heals the zone."),
+    _info("m10_bard", "10 · Bard enemy", "Mission 10, end of turn: the corrupted Bard wants a card, before its box."),
+    _info("m11_beast", "11 · Beast", "Mission 11, start of turn: a beast is revealed and acts."),
+    _info("m12_zone", "12 · Zone grows", "Mission 12, start of turn: the zone makes the enemy stronger and immune."),
+    # Evergreen: locations
+    _info("shrine", "Shrine", "Evergreen, end of turn at the Shrine: a reserve card joins the zone."),
+    _info("cave", "Cave", "Evergreen, end of turn in the Cave: a reserve card joins the zone."),
+    _info("cave_collapse", "Cave collapses", "Evergreen, end of turn: the Cave's zone collapses."),
+    _info("forest", "Forest", "Evergreen, end of turn in the Forest: a banished card joins the zone."),
+    _info("hills", "Hills", "Evergreen, end of turn in the Hills: a banished card joins the zone."),
+    _info("lake", "Lake", "Evergreen, start of turn at the Lake: a card joins the zone."),
+    # Evergreen: banes
+    _info("bane10", "Poisonous Clerics", "Bane 10, end of turn: discarded cards feed the zone."),
+    _info("bane12", "Duplicitous Bards", "Bane 12, end of turn: the zone demands a card, before its box."),
+    _info("bane14", "Absorbtion", "Bane 14, at a kill: the zone absorbs cards."),
+    _info("bane15", "Tread Carefully", "Bane 15, at a non-exact kill: discard cards are banished."),
+    _info("bane16", "Lingering Dread", "Bane 16, start of turn: the dread lingers."),
+    _info("bane21", "Eye-Level Sticks", "Bane 21, in an attack: a card must be discarded, before its box."),
+    _info("bane22", "The Fiery Crucible", "Bane 22, start of turn: the crucible burns."),
+    _info("bane23", "Choose Your Poison", "Bane 23, end of turn: choose a poison, before its box."),
+    # Evergreen: boons
+    _info("boon30", "Squad of Siblings", "Boon 30, in an attack: a sibling can join from the zone, before its box."),
+    _info("boon31", "Selfless Rescue", "Boon 31, after paying damage: a zone card can be rescued, before its box."),
+    _info("boon32", "Precision Strike", "Boon 32, at an exact kill: a precision strike, before its box."),
+    _info("boon33", "Restored Arrows", "Boon 33, at an exact kill: arrows are restored, before its box."),
+    _info("boon35", "A Close Call", "Boon 35, after paying damage: a close call, before its pick box."),
+]
+
+
 EVENTS: List[Event] = [
     # cards in the hand and on the table
     Event("card_select", "Cards", "Select a card", "You tap a card in your hand to add it to your play.", -24, 0.25),
@@ -68,6 +163,8 @@ EVENTS: List[Event] = [
     Event("victory", "Jingles", "Victory", "You win a game or a mission.", -17, 6.0, 0.5, "jingle"),
     Event("loss", "Jingles", "Loss", "You lose a game or a mission attempt.", -19, 6.0, 0.5, "jingle"),
     Event("mission_start", "Jingles", "Mission start", "A new mission or attempt begins.", -19, 5.0, 0.5, "jingle"),
+    # info pop-ups: one clip per card (INFO_EVENTS above)
+    *INFO_EVENTS,
     # music: any track can be picked for the menus or for each stage of the castle
     Event("music", "Music", "Music", "A looping track; pick one for the menus and one for each stage of the castle: "
                                         "the Jacks, the Queens and the Kings (or none).", -21, 150.0, 20.0, "music"),
