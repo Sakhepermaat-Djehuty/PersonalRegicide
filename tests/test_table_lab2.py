@@ -68,6 +68,14 @@ def _tap_button(app, title):
     ui.tap(app, *ui.root_point(app, b))
 
 
+def _declare(app, gs, n):
+    """The Chanter's stepper to ``n``, then its button."""
+    st = gs.overlay.stepper
+    while st.value != n:
+        st._step(1 if n > st.value else -1)
+    ui.tap(app, *ui.root_point(app, gs.overlay.go_btn))
+
+
 def _tap_card(app, gs, card_id):
     ui.tap(app, *ui.root_point(app, gs.hand.views[card_id]))
 
@@ -530,7 +538,7 @@ def _cap_chanter(app, names):
     gs.reveal_hand()
     gs.hand.set_selection(["3T"])
     _tap_button(app, "Play")
-    _tap_button(app, "3")                              # everyone draws 3: the second player is over 7
+    _declare(app, gs, 3)                               # everyone draws 3: the second player is over 7
     return gs, g
 
 
@@ -1171,7 +1179,7 @@ def test_a_thirteen_card_hand_after_a_chanters_draw_keeps_readable_cards_on_a_sm
     gs.refresh(after_action=False)
     gs.hand.set_selection(["3T"])
     _tap_button(app, "Play")
-    _tap_button(app, "6")                                 # 7 left + 6 drawn
+    _declare(app, gs, 6)                                  # 7 left + 6 drawn
     assert g.decision["kind"] == "chanter_discard" and len(gs.hand.cards) == 13
     assert gs.right_btn.title == "Discard 0/%d" % (13 - g.config.max_hand)      # down to the hand limit
     hand = gs.hand
