@@ -21,7 +21,7 @@ from regicide.rules import GameConfig
 
 from . import store
 from . import theme as T
-from .widgets import (CardStrip, CardView, HandGrid, PileView, TableHeader, TableStrip, fit_label, fit_title, make_button, make_label,
+from .widgets import (CardStrip, CardView, CountStepper, HandGrid, PileView, TableHeader, TableStrip, fit_label, fit_title, make_button, make_label,
                       set_enabled, text_size)
 
 VERSION = "alpha 5.1"
@@ -1834,28 +1834,132 @@ class DeclareOverlay(PickOverlay):
         return strip
 
 
-class ReaverCountOverlay(PickOverlay):
-    """Reaver, first step: how many cards to reveal from the top of the reserve deck (a grid
-    of numbers when the deck is big)."""
+class CountOverlay(Overlay):
+    """A number to choose (the Reaver's reveal, the Chanter's declaration): a stepper with
+    the number large between − and +, a line saying what that number means, and one
+    button acting on it. A step changes the number, the line and the button in place: a
+    rebuild would drop a key that is being held."""
+
+    def __init__(self, screen: GameScreen, **kw) -> None:
+        super().__init__(screen, **kw)
+        self.value: Optional[int] = None
+        self.stepper: Optional[CountStepper] = None
+        self.caption_label: Optional[ui.Label] = None
+        self.go_btn: Optional[ui.Button] = None
 
     def heading(self, g: Game, d: dict) -> tuple:
-        return ("Reaver", "Choose how many cards to reveal from the top of the reserve deck (%d left). One of "
-                          "them adds its strength to the damage, all of them are banished, then the damage is "
-                          "doubled." % len(g.tavern))
+        return ("How many?", "")
 
-    def columns(self, n: int) -> int:
-        return 5 if n > self.MANY else 1
+    def first(self, g: Game, d: dict, lo: int, hi: int) -> int:
+        return lo
+
+    def caption(self, g: Game, d: dict, n: int) -> str:
+        return ""
+
+    def go_title(self, g: Game, d: dict, a: dict) -> str:
+        return a.get("label", str(a.get("count")))
+
+    def counts(self, g: Game) -> Dict[int, dict]:
+        return dict((int(a["count"]), a) for a in g.legal_actions() if "count" in a)
+
+    def build(self) -> List[ui.View]:
+        g = self.screen.game
+        d = g.decision or {}
+        acts = self.counts(g)
+        title, text = self.heading(g, d)
+        items: List[ui.View] = [make_label(title, (0, 0, 10, 36), 20, True, T.ACCENT, ui.ALIGN_CENTER),
+                                self.text(text, 13)]
+        if not acts:
+            items.append(make_button("Game menu", lambda s: self.screen._menu(s), (0, 0, 10, 36), False, 13))
+            return items
+        lo, hi = min(acts), max(acts)
+        if self.value is None or self.value not in acts:
+            self.value = max(lo, min(hi, self.first(g, d, lo, hi)))
+        self.stepper = CountStepper(self.value, lo, hi, self._changed, frame=(0, 0, 10, 72))
+        # as tall as the longest line any number gives, so a step never needs a rebuild
+        tallest = max(self.text(self.caption(g, d, n), 13).height for n in sorted(set((lo, hi, self.value))))
+        self.caption_label = self.text(self.caption(g, d, self.value), 13, color=T.MUTED, min_height=tallest)
+        self.go_btn = make_button(self.go_title(g, d, acts[self.value]), lambda s: self._go(), (0, 0, 10, 46))
+        items += [self.stepper, self.caption_label, self.go_btn,
+                  make_button("Game menu", lambda s: self.screen._menu(s), (0, 0, 10, 36), False, 13)]
+        return items
+
+    def _changed(self, n: int) -> None:
+        g = self.screen.game
+        d = g.decision or {}
+        acts = self.counts(g)
+        if n not in acts:
+            return
+        self.value = n
+        if self.caption_label is not None:
+            self.caption_label.text = self.caption(g, d, n)
+        if self.go_btn is not None:
+            self.go_btn.title = self.go_title(g, d, acts[n])
+            fit_title(self.go_btn)
+
+    def _go(self) -> None:
+        acts = self.counts(self.screen.game)
+        if self.value in acts:
+            self.screen.decide(acts[self.value])
 
 
-class ChanterDeclareOverlay(PickOverlay):
-    """Chanter: how many cards everyone draws (a grid of numbers, 0 included)."""
+class ReaverCountOverlay(CountOverlay):
+    """Reaver, first step: how many cards to reveal from the top of the reserve deck."""
 
     def heading(self, g: Game, d: dict) -> tuple:
-        return ("Chanter", "Declare any number from 0 to %d: starting with you and going clockwise, every player "
-                           "draws that many cards ignoring the hand limit, then discards down to it." % len(g.tavern))
+        return ("Reaver", "Choose how many cards to reveal from the top of the reserve deck. One of them adds "
+                          "its strength to the damage, all of them are banished, then the damage is doubled.")
 
-    def columns(self, n: int) -> int:
-        return 5 if n > self.MANY else 1
+    def caption(self, g: Game, d: dict, n: int) -> str:
+        left = len(g.tavern) - n
+        return "%d of the %d reserve cards revealed and banished; %d left in the deck." % (n, len(g.tavern), left)
+
+    def go_title(self, g: Game, d: dict, a: dict) -> str:
+        return "Reveal %d" % int(a["count"])
+
+
+class ChanterDeclareOverlay(CountOverlay):
+    """Chanter: how many cards everyone draws (0 included). It starts at the number that
+    fills the declaring player's hand to the limit; the line under it says what each
+    player's hand comes to and who then discards."""
+
+    def heading(self, g: Game, d: dict) -> tuple:
+        return ("Chanter", "Declare a number: starting with you and going clockwise, every player draws that "
+                           "many cards ignoring the hand limit, then discards down to it.")
+
+    def first(self, g: Game, d: dict, lo: int, hi: int) -> int:
+        me = int(d.get("player", g.active))
+        return g.config.max_hand - len(g.players[me].hand)
+
+    def draws(self, g: Game, d: dict, n: int) -> List[tuple]:
+        """(seat, hand before, cards drawn) clockwise from the declaring player."""
+        me = int(d.get("player", g.active))
+        left = len(g.tavern)
+        out = []
+        for k in range(g.n_players):
+            p = (me + k) % g.n_players
+            got = min(n, left)
+            left -= got
+            out.append((p, len(g.players[p].hand), got))
+        return out
+
+    def caption(self, g: Game, d: dict, n: int) -> str:
+        limit = g.config.max_hand
+        parts = []
+        for p, had, got in self.draws(g, d, n):
+            over = had + got - limit
+            who = "Your hand" if g.n_players == 1 else ("You" if p == int(d.get("player", g.active)) else g.players[p].name)
+            parts.append("%s: %d → %d%s" % (who, had, had + got, ", discards %d" % over if over > 0 else ""))
+        text = "; ".join(parts) + " (limit %d)." % limit
+        if n and any(got < n for _, _, got in self.draws(g, d, n)):
+            text += " The reserve runs out."
+        return text
+
+    def go_title(self, g: Game, d: dict, a: dict) -> str:
+        n = int(a["count"])
+        if g.n_players == 1:
+            return "Draw %d" % n if n else "Draw nothing"
+        return "Everyone draws %d" % n if n else "Nobody draws"
 
 
 class PileToReserveOverlay(PickOverlay):

@@ -227,3 +227,59 @@ def test_a_grid_shown_whole_does_not_scroll_and_an_empty_one_is_left_out(tmp_pat
     ov = gs.overlay
     assert isinstance(ov, DiscardPickOverlay) and ov.grid_view is None and ov.card_views == {}
     assert not ui.find(ov.panel, lambda v: isinstance(v, ui.ScrollView))
+
+
+def test_a_held_stepper_key_runs_on_to_the_end_and_a_grey_key_is_silent(monkeypatch):
+    """The Chanter's and the Reaver's number: a tap steps once; a held key steps on until
+    it is lifted or the end is reached; a key at its end does nothing and makes no sound;
+    the number itself is not a key."""
+    from app import widgets
+    from app.widgets import CountStepper
+    sounds, seen = [], []
+    monkeypatch.setattr(widgets, "TAP_SOUND", lambda: sounds.append(1))
+    ui.cancel_delays()
+    st = CountStepper(2, 0, 9, seen.append, frame=(0, 0, 240, 72))
+
+    def touch(x, phase):
+        return ui.Touch((x, 36), (x, 36), phase)
+    st.touch_began(touch(10, "began"))                   # − : one step at once
+    st.touch_ended(touch(10, "ended"))
+    ui.run_delays()                                      # lifted: the queued repeat does nothing
+    assert st.value == 1 and seen == [1] and len(sounds) == 1
+    st.touch_began(touch(120, "began"))                  # the number: nothing
+    assert st.value == 1 and len(sounds) == 1
+    st.touch_began(touch(230, "began"))                  # + held: runs on to 9 and stops there
+    ui.run_delays()
+    assert st.value == 9 and seen[-1] == 9 and st.held == 0 and len(sounds) == 2
+    st.touch_ended(touch(230, "ended"))
+    st.touch_began(touch(230, "began"))                  # + at the end: grey, silent
+    assert st.value == 9 and len(sounds) == 2 and not st.can(1) and st.can(-1)
+    st.touch_ended(touch(230, "ended"))
+    assert ui.render(st).size[0] > 0
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_the_chanter_box_fits_and_its_line_says_what_each_hand_comes_to(tmp_path, monkeypatch, size):
+    from app.screens import ChanterDeclareOverlay
+    app = _app(tmp_path, monkeypatch, size)
+    from regicide.engine import PHASE_DECIDE
+    gs, g = _mission(app, 8)
+    set_hand(g, ["9S", "8S"])
+    g.phase = PHASE_DECIDE
+    g.decision = {"kind": "chanter_declare", "player": 0, "max": len(g.tavern), "play_index": 0}
+    gs.refresh(after_action=False)
+    ov = gs.overlay
+    assert isinstance(ov, ChanterDeclareOverlay)
+    limit = g.config.max_hand
+    assert ov.stepper.value == limit - 2                 # fills the hand to the limit
+    assert ov.caption_label.text == "Your hand: 2 → %d (limit %d)." % (limit, limit)
+    assert ui.button(app, "Draw %d" % (limit - 2))
+    ov.stepper._step(1)
+    assert ov.caption_label.text == "Your hand: 2 → %d, discards 1 (limit %d)." % (limit + 1, limit)
+    assert ui.button(app, "Draw %d" % (limit - 1))
+    for _ in range(limit):
+        ov.stepper._step(-1)
+    assert ov.stepper.value == 0 and ui.button(app, "Draw nothing")
+    panel = ov.panel
+    assert panel.y >= 0 and panel.y + panel.height <= size[1]
+    assert ui.render(app).size[0] > 0

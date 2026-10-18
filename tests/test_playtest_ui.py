@@ -821,7 +821,7 @@ def test_the_table_under_a_choice_box_is_current_and_public(app):
 
 
 def test_tall_choice_boxes_scroll_their_options_and_keep_the_hold_button_on_screen(app):
-    from app.screens import ChanterDeclareOverlay, PickOverlay
+    from app.screens import PickOverlay
     ui.set_screen_size(320, 568)
     try:
         app.frame = (0, 0, 320, 568)
@@ -830,7 +830,7 @@ def test_tall_choice_boxes_scroll_their_options_and_keep_the_hold_button_on_scre
         g.decision = {"kind": "chanter_declare", "player": 0, "max": len(g.tavern), "play_index": 0}
         from regicide.engine import PHASE_DECIDE
         g.phase = PHASE_DECIDE
-        ov = ChanterDeclareOverlay(gs)
+        ov = PickOverlay(gs)          # a long list of options (the Chanter itself has a stepper now)
         gs._show_overlay(ov)
         assert ov.panel.y + ov.panel.height <= gs.height + 1          # the box fits on the screen
         scrolls = [v for v in ov.panel.subviews if isinstance(v, ui.ScrollView)]
@@ -862,7 +862,7 @@ def test_review_recheck_toast_class_box_scroll_cut_and_the_game_log(app):
     assert isinstance(gs.overlay, ClassChoiceOverlay)
     assert gs.hand.selected == [] and gs.enemy.projection is None and not gs.enemy.warn and not gs.right_btn.enabled
     # every scrolled grid of options ends halfway through a button
-    from app.screens import ChanterDeclareOverlay
+    from app.screens import PickOverlay
     from regicide.engine import PHASE_DECIDE
     for w, h in ((320, 568), (375, 667), (390, 844), (430, 932)):
         app.frame = (0, 0, w, h)
@@ -872,7 +872,7 @@ def test_review_recheck_toast_class_box_scroll_cut_and_the_game_log(app):
         g.tavern.extend([c for c in list(g.discard)])
         g.decision = {"kind": "chanter_declare", "player": 0, "max": len(g.tavern), "play_index": 0}
         g.phase = PHASE_DECIDE
-        ov = ChanterDeclareOverlay(gs)
+        ov = PickOverlay(gs)
         gs._show_overlay(ov)
         for sv in [v for v in ov.panel.subviews if isinstance(v, ui.ScrollView)]:
             bh, gap = 40, 8

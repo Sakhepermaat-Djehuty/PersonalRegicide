@@ -625,6 +625,92 @@ class PeekButton(ui.View):
         self._set(False)
 
 
+class CountStepper(ui.View):
+    """A number chosen with a − key and a + key either side of it (the Chanter's
+    declaration, the Reaver's reveal). A tap on a side steps once; held, it steps on, slowly
+    and then faster, until it is lifted or the end is reached. A key at its end greys and is
+    silent. ``on_change(value)`` follows each step."""
+
+    KEY = 60.0
+
+    def __init__(self, value: int, lo: int, hi: int, on_change: Optional[Callable[[int], None]] = None,
+                 **kw) -> None:
+        super().__init__(**kw)
+        self.lo, self.hi = int(lo), int(hi)
+        self.value = max(self.lo, min(self.hi, int(value)))
+        self.on_change = on_change
+        self.held = 0            # -1 or +1 while a key is held
+        self._token = 0          # a lifted finger ends the repeats asked for while it was down
+        self.background_color = None
+
+    def can(self, step: int) -> bool:
+        return self.lo <= self.value + step <= self.hi
+
+    def key_rect(self, step: int) -> tuple:
+        k = min(self.KEY, self.height)
+        y = (self.height - k) / 2.0
+        return (0, y, k, k) if step < 0 else (self.width - k, y, k, k)
+
+    def draw(self) -> None:
+        for step, sign in ((-1, "−"), (1, "+")):
+            x, y, w, h = self.key_rect(step)
+            on = self.can(step)
+            ui.set_color(T.ACCENT if self.held == step else (T.PANEL_2 if on else T.BTN_DISABLED))
+            ui.Path.rounded_rect(x, y, w, h, 12).fill()
+            size = h * 0.55
+            ui.draw_string(sign, (x, y + (h - size * 1.25) / 2.0, w, size * 1.3), (T.FONT_BOLD, size),
+                           T.BG if self.held == step else (T.BTN_TEXT if on else T.MUTED), ui.ALIGN_CENTER)
+        k = self.key_rect(1)[2]
+        size = min(46.0, self.height * 0.7)
+        ui.draw_string(str(self.value), (k, (self.height - size * 1.25) / 2.0, self.width - 2 * k, size * 1.3),
+                       (T.FONT_BOLD, size), T.TEXT, ui.ALIGN_CENTER)
+
+    def set_value(self, value: int) -> None:
+        self.value = max(self.lo, min(self.hi, int(value)))
+        self.set_needs_display()
+
+    def _step(self, step: int) -> bool:
+        if not self.can(step):
+            return False
+        self.value += step
+        self.set_needs_display()
+        if self.on_change is not None:
+            self.on_change(self.value)
+        return True
+
+    def touch_began(self, touch) -> None:
+        x = touch.location[0]
+        if self.width / 3.0 <= x <= self.width * 2 / 3.0:
+            return                                  # the number itself is not a key
+        step = -1 if x < self.width / 2.0 else 1
+        if not self.can(step):
+            return
+        if TAP_SOUND is not None:
+            TAP_SOUND()
+        self.held = step
+        self._token += 1
+        self._step(step)
+        tok = self._token
+        ui.delay(lambda: self._repeat(tok, 0), 0.45)
+
+    def _repeat(self, tok: int, n: int) -> None:
+        if tok != self._token or not self.held:
+            return
+        if not self._step(self.held):
+            self.held = 0
+            self.set_needs_display()
+            return
+        ui.delay(lambda: self._repeat(tok, n + 1), 0.12 if n < 6 else 0.05)
+
+    def touch_moved(self, touch) -> None:
+        pass
+
+    def touch_ended(self, touch) -> None:
+        self.held = 0
+        self._token += 1
+        self.set_needs_display()
+
+
 class RelicCard(ui.View):
     """A relic as a small card: its symbol in its colour on a card face, "relic" below.
     A tap reports through ``on_tap`` (the deck list opens the relic's card)."""

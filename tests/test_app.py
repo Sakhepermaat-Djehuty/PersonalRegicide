@@ -715,6 +715,13 @@ def _mage_attempt(app, names=("Solo",), relics=("emblem",), corrupted=()):
     return gs, app.game
 
 
+def _step(app, stepper, step):
+    """Tap the stepper's \u2212 (step -1) or + (step +1) key."""
+    x, y, w, h = stepper.key_rect(step)
+    cx, cy = ui.root_point(app, stepper)
+    ui.tap(app, cx - stepper.width / 2.0 + x + w / 2.0, cy - stepper.height / 2.0 + y + h / 2.0)
+
+
 def _pick_card(app, gs, cid, title):
     """In a card grid box: tap the card, then the button that names it."""
     ui.tap(app, *ui.root_point(app, gs.overlay.card_views[cid]))
@@ -923,7 +930,7 @@ def _mission_attempt(app, number, names=("Solo",), relics=(), beast=None):
     return gs, app.game
 
 
-def test_reaver_count_grid_then_pick_overlay(app):
+def test_reaver_count_stepper_then_pick_overlay(app):
     from app import store
     from app.screens import ReaverCountOverlay, ReaverPickOverlay
     from app.widgets import CardStrip
@@ -942,11 +949,15 @@ def test_reaver_count_grid_then_pick_overlay(app):
     _tap_button(app, "Play")
     assert g.phase == PHASE_DECIDE and g.decision["kind"] == "reaver_count"
     assert isinstance(gs.overlay, ReaverCountOverlay)
-    numbers = [b.title for b in ui.find(gs.overlay, lambda v: isinstance(v, ui.Button) and v.title.isdigit())]
-    assert numbers == [str(n) for n in range(1, len(g.tavern) + 1)]   # a grid of counts, five per row
+    # a stepper from 1 to the whole reserve, starting at 1: + steps up, the button follows
+    st = gs.overlay.stepper
+    assert (st.lo, st.hi, st.value) == (1, len(g.tavern), 1) and ui.button(app, "Reveal 1")
+    assert not [b for b in ui.find(gs.overlay, lambda v: isinstance(v, ui.Button) and v.title.isdigit())]
     assert ui.render(app).size[0] > 0
     assert store.load_attempt(app.campaign.slot).phase == PHASE_DECIDE
-    _tap_button(app, "2")
+    _step(app, st, +1)
+    assert st.value == 2 and "2 of the %d reserve cards" % len(g.tavern) in gs.overlay.caption_label.text
+    _tap_button(app, "Reveal 2")
     assert g.decision["kind"] == "reaver_pick" and g.decision["revealed"] == ["7H", "2D"]
     assert isinstance(gs.overlay, ReaverPickOverlay)
     assert list(gs.overlay.card_views) == ["7H", "2D"] and not any(v.dimmed for v in gs.overlay.card_views.values())
@@ -1328,7 +1339,7 @@ def test_druid_overlay_assigns_the_dealt_cards_to_four_slots(app):
     assert [c.id for c in gs.hand.cards] == g.players[0].hand
 
 
-def test_chanter_declare_grid_then_the_other_players_discard_down(app):
+def test_chanter_declare_stepper_then_the_other_players_discard_down(app):
     from app.screens import ChanterDeclareOverlay, DecisionOverlay
     from helpers import set_mission_enemy
     gs, g = _mission_attempt(app, 8, names=("Ana", "Ben"))
@@ -1344,10 +1355,15 @@ def test_chanter_declare_grid_then_the_other_players_discard_down(app):
     assert _pv(gs)["decision_kind"] == "chanter_declare"   # the Chanter's declaration comes first
     _tap_button(app, "Play")
     assert g.phase == PHASE_DECIDE and g.decision["kind"] == "chanter_declare" and isinstance(gs.overlay, ChanterDeclareOverlay)
-    numbers = [b.title for b in ui.find(gs.overlay, lambda v: isinstance(v, ui.Button) and v.title.isdigit())]
-    assert numbers == [str(n) for n in range(0, len(g.tavern) + 1)]
+    # 0 to the whole reserve, starting where Ana's hand (one card) fills up to the limit of 7
+    st = gs.overlay.stepper
+    assert (st.lo, st.hi, st.value) == (0, len(g.tavern), 6) and ui.button(app, "Everyone draws 6")
     assert ui.render(app).size[0] > 0
-    _tap_button(app, "3")
+    for _ in range(3):
+        _step(app, st, -1)
+    assert st.value == 3 and ui.button(app, "Everyone draws 3")
+    assert gs.overlay.caption_label.text == "You: 1 \u2192 4; Ben: 6 \u2192 9, discards 2 (limit 7)."
+    _tap_button(app, "Everyone draws 3")
     # Ana drew to 4 cards, Ben to 9: Ben must discard two; the phone goes to him first
     assert g.decision["kind"] == "chanter_discard" and g.deciding == 1
     assert isinstance(gs.overlay, DecisionOverlay) and gs.hand.cards == []
