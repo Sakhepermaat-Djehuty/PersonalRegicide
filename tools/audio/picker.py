@@ -61,7 +61,15 @@ def main(argv=None) -> int:
                           "default": default_of.get(ev.id) == r["id"]})
         events.append({"id": ev.id, "group": ev.group, "title": ev.title, "when": ev.when, "kind": ev.kind,
                        "items": items})
-    data = json.dumps({"events": events}, ensure_ascii=False, separators=(",", ":"))
+    # a dark test bed in the spirit of the missions' music, to hear the pop-up clips over it
+    bed = ""
+    bed_src = os.path.join(OUT, "_bed", "dark_bed.mp3")
+    if os.path.exists(bed_src):
+        bed = "a/_bed/dark_bed.mp3"
+        os.makedirs(os.path.join(dest, "a", "_bed"), exist_ok=True)
+        shutil.copyfile(bed_src, os.path.join(dest, bed))
+        paths.append(bed)
+    data = json.dumps({"events": events, "bed": bed}, ensure_ascii=False, separators=(",", ":"))
     page = open(TEMPLATE, encoding="utf-8").read().replace("/*__DATA__*/null", data)
     os.makedirs(dest, exist_ok=True)
     with open(os.path.join(dest, "index.html"), "w", encoding="utf-8") as f:

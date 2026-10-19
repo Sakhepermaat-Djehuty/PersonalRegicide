@@ -117,6 +117,7 @@ section { display: grid; gap: 18px; }
     <div class="controls">
       <label class="vol" for="vol">Volume <input id="vol" type="range" min="0" max="1" step="0.05" value="0.8"></label>
       <button class="btn" id="turn" type="button">Hear a turn</button>
+      <label class="vol" for="bed" id="bed-label" hidden><input id="bed" type="checkbox"> Play over a dark music bed</label>
       <span class="count" id="count"></span>
     </div>
   </header>
@@ -176,9 +177,28 @@ function audioFor(src) {
   if (!audioCache.has(src)) { const a = new Audio(src); a.preload = "auto"; audioCache.set(src, a); }
   return audioCache.get(src);
 }
+// the dark bed: loops under everything while on, and dips under each clip as the game's
+// music does (to 45%)
+const BED_LEVEL = 0.55, DUCK = 0.45;
+let bed = null, bedTimer = null;
+function bedOn() { return !!bed && !bed.paused; }
+function duckBed(ms) {
+  if (!bedOn()) return;
+  bed.volume = volume * BED_LEVEL * DUCK;
+  clearTimeout(bedTimer);
+  bedTimer = setTimeout(() => { if (bed) bed.volume = volume * BED_LEVEL; }, ms);
+}
+function toggleBed(on) {
+  if (!DATA.bed) return;
+  if (!bed) { bed = new Audio(DATA.bed); bed.loop = true; bed.preload = "auto"; }
+  if (on) { bed.volume = volume * BED_LEVEL; const p = bed.play(); if (p && p.catch) p.catch(() => {}); }
+  else bed.pause();
+}
+
 function playSrc(src, card) {
   const a = audioFor(src);
   a.volume = volume;
+  duckBed(2600);
   try { a.currentTime = 0; } catch (e) {}
   const p = a.play();
   if (card) {
@@ -247,6 +267,7 @@ function playQueue(ids) {
     if (!it) { setTimeout(() => next(k + 1), 400); return; }
     const a = audioFor(it.src);
     a.currentTime = 0; a.volume = volume;
+    duckBed(2800);
     a.onended = () => setTimeout(() => next(k + 1), 180);
     const p = a.play(); if (p && p.catch) p.catch(() => next(k + 1));
   };
@@ -400,8 +421,13 @@ function hearTurn() {
 document.getElementById("vol").addEventListener("input", e => {
   volume = Number(e.target.value);
   for (const a of audioCache.values()) a.volume = volume;
+  if (bed) bed.volume = volume * BED_LEVEL;
 });
 document.getElementById("turn").addEventListener("click", hearTurn);
+if (DATA.bed) {
+  document.getElementById("bed-label").hidden = false;
+  document.getElementById("bed").addEventListener("change", e => toggleBed(e.target.checked));
+}
 document.getElementById("copy").addEventListener("click", async () => {
   const text = summaryText();
   const saved = document.getElementById("saved");
