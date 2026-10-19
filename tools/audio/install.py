@@ -8,7 +8,7 @@ tools/audio/out/<event>/<id>.wav (build.py first) to app/sounds/effects/<event>.
 picked track from tools/audio/out/music/<id>.m4a to app/sounds/music/<slot>.m4a. An event
 or slot left unpicked (or picked as "none") has no file, so the game is silent there.
 The info pop-ups' clips the owner has not picked yet get a default (``defaults``: the
-first candidate its family lists, the Whistle jig for the Jester cards), so every card has
+first option its family lists, the Whistle jig for the Jester cards), so every card has
 its tune. Their clips are low-passed at 7.5 kHz, so they are installed at 22.05 kHz (half
 the size, nothing lost). app/sounds/PICKS.json records what was installed.
 """
@@ -34,13 +34,13 @@ SLOTS = ("menu", "jack", "queen", "king")
 
 
 def defaults() -> dict:
-    """The default clip of every info pop-up event: the first candidate its family lists
-    (the Whistle jig where there is one)."""
+    """The default clip of every info pop-up event: the first option its family lists
+    (the owner's Whistle jig for the Jester cards)."""
     fam_dir = os.path.join(HERE, "families")
     sys.path.insert(0, fam_dir)
     found: dict = {}
     for f in sorted(os.listdir(fam_dir)):
-        if f.startswith("tunes_") and f.endswith(".py"):
+        if f.startswith("stingers_") and f.endswith(".py"):
             for c in getattr(importlib.import_module(f[:-3]), "CANDIDATES", []):
                 found.setdefault(c.event, [])
                 found[c.event].append(c.id)
@@ -48,7 +48,7 @@ def defaults() -> dict:
     for ev in EVENTS:
         ids = found.get(ev.id) or []
         if ev.group == "Info pop-ups" and ids:
-            out[ev.id] = "whistle_jig" if "whistle_jig" in ids else ids[0]
+            out[ev.id] = "jig" if "jig" in ids else ids[0]
     return out
 
 
@@ -74,12 +74,18 @@ def install(picks: dict, sounds: str = SOUNDS, use_defaults: bool = True) -> dic
     eff_dir, mus_dir = os.path.join(sounds, "effects"), os.path.join(sounds, "music")
     os.makedirs(eff_dir, exist_ok=True)
     os.makedirs(mus_dir, exist_ok=True)
-    missing = []
+    missing, replaced = [], []
+    fallback = defaults() if use_defaults else {}
     for event, cid in sorted(effects.items()):
         if event not in EVENT_BY_ID or EVENT_BY_ID[event].kind == "music":
             missing.append("%s: not an effect" % event)
             continue
         src = os.path.join(OUT, event, cid + ".wav")
+        if not os.path.exists(src) and event in fallback:
+            # a pop-up clip picked from a set since replaced: its row plays the default
+            replaced.append("%s/%s" % (event, cid))
+            effects[event] = cid = fallback[event]
+            src = os.path.join(OUT, event, cid + ".wav")
         if not os.path.exists(src):
             missing.append("%s/%s: not built" % (event, cid))
             continue
@@ -100,7 +106,7 @@ def install(picks: dict, sounds: str = SOUNDS, use_defaults: bool = True) -> dic
     for name in os.listdir(mus_dir):
         if name.endswith(".m4a") and name[:-4] not in music:
             os.remove(os.path.join(mus_dir, name))
-    record = {"effects": effects, "music": music, "defaults": sorted(defaulted)}
+    record = {"effects": effects, "music": music, "defaults": sorted(defaulted), "replaced": replaced}
     with open(os.path.join(sounds, "PICKS.json"), "w") as f:
         json.dump(record, f, indent=1, sort_keys=True)
     if missing:
@@ -114,8 +120,9 @@ def main(argv=None) -> int:
     picks = picks.get("data", picks)          # the db document as the Artifact tool returns it
     record = install(picks)
     size = sum(os.path.getsize(os.path.join(d, f)) for d, _, fs in os.walk(SOUNDS) for f in fs)
-    print("%d effects (%d by default), %d tracks installed (%.1f MB) -> %s" % (
-        len(record["effects"]), len(record["defaults"]), len(record["music"]), size / 1e6, SOUNDS))
+    print("%d effects (%d by default, %d picks from a replaced set), %d tracks installed (%.1f MB) -> %s" % (
+        len(record["effects"]), len(record["defaults"]), len(record["replaced"]), len(record["music"]), size / 1e6,
+        SOUNDS))
     return 0
 
 

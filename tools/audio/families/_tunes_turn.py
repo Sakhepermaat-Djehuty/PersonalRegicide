@@ -1,4 +1,7 @@
-"""Info pop-ups, the turn group (docs/INFO_POPUPS.md, "Melody plan"): Turn and Yield, the
+"""Kept for the owner's Whistle jig (stingers_turn imports _whistle_jig); the rest is the first,
+melodic set of pop-up clips, replaced by the stingers (not built: the leading underscore).
+
+Info pop-ups, the turn group (docs/INFO_POPUPS.md, "Melody plan"): Turn and Yield, the
 cards of an attack entering play (Corrupted, Restored, Declared), the relics asked just
 before their boxes (Kinfolk Flute, Scarlet Whistle, Azure Emblem), the Evergreen Mother's
 two lullabies, and the four Jester rows (the Whistle jig, one bar longer).

@@ -17,7 +17,7 @@ approach: instrumental, textural, hybrid):
   azure_emblem     mystery: the blue emblem glints, a hidden card is placed or kept
   mother_corrupt   dread: the Evergreen Mother's lullaby gone dark (a minor colour, F)
   mother_restored  warmth: the same voice healed, high and open
-  the four Jester rows   mischief: the owner's Whistle jig (tunes_turn's render, imported,
+  the four Jester rows   mischief: the owner's Whistle jig (_tunes_turn's render, imported,
                    started straight on the whistle) and two simple tricks each
 
 Each option opens on its own source and pitch (``python3 _stingers.py over stingers_turn``
@@ -35,7 +35,7 @@ from _stingers import (JESTER_S, A, Layer, air, breath, chains, creak, embers, h
                        rumble, rustle, slide, stinger, strike, swell, tune, water, wind)
 from _stingers import _drop_tail, _from_onset, _prog
 from catalog import Candidate
-from tunes_turn import _whistle_jig
+from _tunes_turn import _whistle_jig
 
 
 # ============================================================================= helpers
@@ -263,7 +263,7 @@ def _mother_restored_box() -> np.ndarray:
 
 # ============================================================================= the Jester (mischief)
 def _jig() -> np.ndarray:
-    # the owner's Whistle jig (tunes_turn's render, one bar longer) started straight on the
+    # the owner's Whistle jig (_tunes_turn's render, one bar longer) started straight on the
     # whistle as combat.py's original is: no harp pickup before it and no harp note after it
     return _whistle_jig(pickup_kind=None, tail=False)
 
