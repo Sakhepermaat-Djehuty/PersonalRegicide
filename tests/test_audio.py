@@ -258,3 +258,32 @@ def test_a_missing_file_is_silence_not_an_error(sounds, monkeypatch, tmp_path):
     a.game_events([{"t": "play"}, {"t": "damage"}])
     a.music("jack")
     assert sound.history == [] and a.player is None
+
+
+def test_an_info_clip_turns_the_music_down_until_it_is_over(monkeypatch, tmp_path):
+    """The music ducks under a pop-up's clip and comes back when it ends; moving on to the
+    next card keeps it down, the last one lets it up."""
+    import wave
+    eff = tmp_path / "effects"
+    eff.mkdir()
+    for name in ("info_cleric", "info_turn"):
+        with wave.open(str(eff / (name + ".wav")), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(22050)
+            w.writeframes(b"\0\0" * 22050 * 2)          # 2 s
+    monkeypatch.setattr(AU, "SOUNDS", str(tmp_path))
+    queued = []
+    a = AU.Audio({}, delay=lambda fn, s: queued.append((s, fn)))
+    a.player = sound.Player("music.m4a")
+    a.player.volume = 1.0
+    h = a.clip(["info_cleric", "power_heal"])
+    assert h is not None and a.player.volume == AU.Audio.DUCK and abs(queued[-1][0] - 2.0) < 0.01
+    a.stop(h)                                            # a tap moves on...
+    h2 = a.clip(["info_turn"])                           # ...to the next card: still down
+    for _, fn in queued[:-1]:
+        fn()
+    assert a.player.volume == AU.Audio.DUCK
+    a.stop(h2)
+    queued[-1][1]()                                      # the last one is over
+    assert a.player.volume == 1.0

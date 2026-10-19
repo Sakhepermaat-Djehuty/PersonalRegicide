@@ -181,7 +181,8 @@ class Audio:
 
     def clip(self, events: Sequence[str]) -> object:
         """Play the first of ``events`` that has a file (an info card's clip, or the short
-        sound it falls back on). Returns what ``stop`` takes (None: nothing plays)."""
+        sound it falls back on), the music turned down under it (``duck``). Returns what
+        ``stop`` takes (None: nothing plays)."""
         if self.sound is None or not self.on("sound_effects"):
             return None
         for event in events:
@@ -190,17 +191,45 @@ class Audio:
             path = self.effect_path(event)
             if os.path.exists(path):
                 try:
-                    return self.sound.play_effect(path, 0.8)
+                    handle = self.sound.play_effect(path, 0.8)
                 except Exception:
                     return None
+                self.duck(self.length(event))
+                return handle
         return None
 
     def stop(self, handle: object) -> None:
-        """Stop a clip ``clip`` started (the card it belongs to was moved on from)."""
+        """Stop a clip ``clip`` started (the card it belongs to was moved on from); the
+        music comes back up shortly unless another clip starts."""
         if handle is None or self.sound is None:
             return
         try:
             self.sound.stop_effect(handle)
+        except Exception:
+            pass
+        self.duck(0.25)
+
+    # the music under an info card's clip: turned down, back up when the clip is over
+    DUCK = 0.45
+
+    def duck(self, seconds: float) -> None:
+        """Hold the music down for ``seconds`` (from now; a later call replaces it)."""
+        self._duck_token = getattr(self, "_duck_token", 0) + 1
+        if self.player is None:
+            return
+        try:
+            self.player.volume = self.DUCK
+        except Exception:
+            return
+        token = self._duck_token
+        if self.delay is not None:
+            self.delay(lambda: self._unduck(token), max(0.05, seconds))
+
+    def _unduck(self, token: int) -> None:
+        if token != getattr(self, "_duck_token", 0) or self.player is None:
+            return
+        try:
+            self.player.volume = 1.0
         except Exception:
             pass
 
