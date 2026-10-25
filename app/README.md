@@ -61,8 +61,8 @@ face down with their count in the circle on the back, the discard and banished p
 up with the top card showing and the count in a badge (mission 10's enemy deck is face up
 too). A tap opens a pile: the castle shows every enemy of the game, the defeated ones
 greyed and the one faced marked; the discard and banished piles are in order, the top card
-first; the reserve is sorted like the deck list. Settings, "Card backs": Lattice, Crowns,
-Sunburst or Flat.
+first; the reserve is sorted like the deck list. Settings, "Card backs": Veil (black, the
+wordmark), Lattice, Crowns, Sunburst or Flat.
 
 The table carries no running text. The status line holds the turn and, solo, the Jester
 powers left (in pass and play, whose turn it is); what happened is in the game log (Menu).
@@ -72,8 +72,8 @@ names itself in one line above the hand.
 Cards that cannot join the selection are greyed. A greyed card that can be played alone
 starts a new selection when tapped. The solo Kinfolk Flute's stored cards stay greyed
 until a set of their strength is begun (or they make a set on their own). A selected card
-whose class power the enemy is immune to gets a red edge and a "!" in its corner, and so
-does the enemy. While suffering, the Discard button shows the tally ("Discard 8/12"),
+whose class power the enemy is immune to gets a jagged white edge and a white "!" in its
+corner, and so does the enemy. While suffering, the Discard button shows the tally ("Discard 8/12"),
 where cards go one at a time the rest grey out once the damage is covered, and a hand too
 short to pay lights the Jester power up.
 
@@ -82,12 +82,26 @@ too (a solo player may yield, though not twice running). The cards played agains
 enemy sit under the hand, above the buttons (Settings: "Played cards under the hand" puts them back above it). On a short
 screen they share a row with the mission zone.
 
+## The look
+
+The lab is dressed after Veilwraith (Hall or Nothing): black and greys only, no hue
+anywhere (colour is what that world lost). What matters is told by brightness (white: a
+selection, a warning, a number that counts now), by shape (the suits and classes) and by
+marks. Fog drifts behind every screen. Cards are black with a faint frame inside the edge
+and a few scratches (the same on a card every time); a corrupted card sits in a dark
+sleeve with cracks running over its face, a restored one in a pale sleeve. Buttons are
+black tiles with a thin pale frame inside (dim on a quiet button, faint when it can't be
+pressed), as Veilwraith's number tiles. Choice boxes and the info cards' text sit on
+panels torn along their top edge. The menu and the Veil card backs carry a brushed
+"Regicide" wordmark. Type is Iowan Old Style. Everything is drawn in code (app/veil.py);
+the fog comes from tools/art/make_art.py (noise, no pictures), nothing from the game.
+
 ## Info pop-ups
 
 Every phase of the game is told on a landscape info card that shows over the table after
 the action that caused it: the strength top left, the phase's icon and title, a short
 breakdown and, for a blow, a big number in the middle. A class power the enemy is immune
-to shows its card greyed with a red IMMUNITY stamp. A tap anywhere moves on to the next
+to shows its card greyed with a white IMMUNITY stamp. A tap anywhere moves on to the next
 card, a long press skips the rest; a choice box, a handover or the result waits underneath
 until the last card is gone. A fresh mission opens on its Battle start card (after the
 rules card). Settings, "Info Pop Ups": the box switches them all off (the short step sounds
