@@ -2,15 +2,26 @@
 so a failed dark override shows. It answers the Veil look's device questions that the
 headless fake ui (tools/fakeui) cannot:
 
-  1. does forcing dark work, from which thread, and is window() set right after present?
+  1. does the app's dark override (app/veil.py force_dark, called as App.layout calls it)
+     find the view controller, turn it and the status bar dark, and leave Pythonista's
+     own editor light? (After closing, check that the editor is still light.)
   2. is the keyboard dark when a field in the forced-dark view is edited?
   3. does a disabled ui.Button draw its title in its tint (#7a7874) or in a system grey?
   4. Iowan's line height against the app's 1.3 x size text rects: does text clip or vanish?
   5. does touch_ended arrive (phase 'cancelled') when a scroll view steals a touch?
 
 Read the printed lines in the console after closing (the X at the top left)."""
+import os
+import sys
+
+import console
 import ui
-from objc_util import ObjCInstance, ObjCClass, on_main_thread
+from objc_util import ObjCInstance, ObjCClass
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+from app import veil  # noqa: E402  (the app's own force_dark, as shipped)
 
 print("system ui style:", ui.get_ui_style())
 for name in ("IowanOldStyle-Roman", "IowanOldStyle-Bold", "IowanOldStyle-Italic"):
@@ -58,7 +69,17 @@ class TouchProbe(ui.View):
         print("probe touch_ended, phase =", t.phase, "(hold still 0.5 s on the grey box, then drag to scroll)")
 
 
-root = ui.View(frame=(0, 0, 390, 700), background_color="#060606", name="Veil probe")
+class Root(ui.View):
+    """Calls the app's force_dark from layout(), as App.layout does, until it finds the
+    view controller."""
+
+    def layout(self):
+        if not getattr(self, "dark", False):
+            self.dark = veil.force_dark(self)
+            print("force_dark found the view controller:", self.dark)
+
+
+root = Root(frame=(0, 0, 390, 700), background_color="#060606", name="Veil probe")
 root.add_subview(TextProbe(frame=(0, 0, 390, 212), background_color="#060606"))
 
 box = ui.View(frame=(16, 222, 358, 36), background_color="#0b0b0b", border_width=1, border_color="#353533",
@@ -91,6 +112,15 @@ root.add_subview(sv)
 
 def report(sender):
     o = ObjCInstance(root)
+    vc = ObjCClass("UIViewController")
+    r = o.nextResponder()
+    while r is not None and not r.isKindOfClass_(vc):
+        r = r.nextResponder()
+    if r is None:
+        print("no view controller above the view")
+    else:
+        print("view controller:", r._get_objc_classname(), " override:", r.overrideUserInterfaceStyle(),
+              " style:", r.traitCollection().userInterfaceStyle(), " status bar style:", r.preferredStatusBarStyle())
     print("view override:", o.overrideUserInterfaceStyle(), " view style now:", o.traitCollection().userInterfaceStyle(),
           "(2 = dark)")
     w = o.window()
@@ -104,16 +134,19 @@ def report(sender):
         print("disabled UIButton title colour:", btn.titleColorForState_(2), " alpha:", btn.alpha())
 
 
-root.add_subview(ui.Button(frame=(16, 552, 358, 40), title="Print report (after trying the field)",
+root.add_subview(ui.Button(frame=(16, 552, 175, 40), title="Print report",
                            action=report, tint_color="white", background_color="#222222"))
 
 
-@on_main_thread
-def force_dark(view):
-    ObjCInstance(view).setOverrideUserInterfaceStyle_(2)
+@ui.in_background
+def alert(sender):
+    console.alert("Dark?", "Is this alert dark?", "OK", hide_cancel_button=True)
 
 
-force_dark(root)                      # before present, on the main thread, the view only
+root.add_subview(ui.Button(frame=(199, 552, 175, 40), title="Show an alert",
+                           action=alert, tint_color="white", background_color="#222222"))
+
+
 root.present("fullscreen")
 w = ObjCInstance(root).window()
 print("window() right after present (interpreter thread):", w is not None)

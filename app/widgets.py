@@ -350,7 +350,7 @@ def draw_tag(x: float, y: float, w: float, band: float, text: str) -> None:
 
 def draw_card_ground(w: float, h: float, r: float, edge=None, seed="card", veil_alpha: float = 0.62) -> None:
     """A large card's ground (the pop-ups): black, the fog showing through (the more, the
-    lower ``veil_alpha``), a few dark scores, the faint frame inside its edge and a pale rim."""
+    lower ``veil_alpha``), a few dark scores and a pale rim."""
     ui.set_color(T.CARD_FACE)
     outer = ui.Path.rounded_rect(1, 1, w - 2, h - 2, r)
     outer.fill()
@@ -489,7 +489,7 @@ class CardView(ui.View):
         # its class; a classless card (a pilgrim, a 19) shows its rank large in the middle.
         # Only the story characters (Gøran, Myla, Esme, the High Arcana) carry a name, and a
         # pilgrim or a Wild Animal a one-word reminder of what it is. Each class pip is drawn
-        # in its own colour and shrinks so that four (an Evergreen card) still fit. A
+        # in ink and shrinks so that four (an Evergreen card) still fit. A
         # restored card adds the restoration pip, a small tree, after its classes.
         rank = "2/5" if c.has("twofive") else c.rank
         suits = list(c.suits)
@@ -606,7 +606,7 @@ class CardView(ui.View):
         """The enemy as a Veilwraith Foe card, the one pale card on the table: a billow lit
         from behind, its letter dark in it, its rank and class small and upright in the
         corner, and across the bottom a dark panel torn along its top holding the classes
-        it is immune to (empty when it has none, or they are cancelled). A corrupted enemy
+        it is immune to (a cancelled immunity shown muted and struck through). A corrupted enemy
         sits in its dark, cracked sleeve."""
         W, H = self.width, self.height
         sleeve = sleeve_color(c)
@@ -629,12 +629,14 @@ class CardView(ui.View):
             ui.draw_string(rank, (x, y + (h - panel_h) * 0.47 - size * 0.62, w, size * 1.3), (T.FONT_BOLD, size), ink,
                            ui.ALIGN_CENTER)
             # its rank and class, small and upright in the corner
-            rs = max(w * 0.17, 13.0)
+            rs = max(w * 0.17, 11.0)
             pad = max(3.0, w * 0.05)
             ui.draw_string(rank, (x + pad, y + pad * 0.6, rs * 1.4, rs * 1.3), (T.FONT_BOLD, rs), ink, ui.ALIGN_CENTER)
             for i, s_ in enumerate(face_pips(c)[:3]):
-                draw_symbol(s_, x + pad + rs * 0.7, y + pad * 0.6 + rs * 1.25 + rs * 0.5 + i * rs * 0.95, rs * 0.8,
-                            ink)
+                py_ = y + pad * 0.6 + rs * 1.25 + rs * 0.5 + i * rs * 0.95
+                if py_ + rs * 0.45 > y + h - panel_h - 2:
+                    break                           # (a small card: no pip on the tear)
+                draw_symbol(s_, x + pad + rs * 0.7, py_, rs * 0.8, ink)
             # the torn panel and what the enemy is immune to on it
             veil.torn_panel(x, y + h - panel_h, w, panel_h + 1, ("foe", c.id), T.FOE_PANEL, T.FOE_RIM, 3.5)
             icons = list(self.center_icons or [])
@@ -1021,8 +1023,13 @@ class RelicCard(ui.View):
             # the corrupt Mother: cracked
             veil.cracks(2, 2, w - 4, h - 4, "mother", T.CORRUPTED_CRACK, 3, 0.8)
         elif self.relic_id == "mother_restored":
-            # the restored Mother: a pale line inside the edge, whole
-            line = ui.Path.rounded_rect(4, 4, w - 8, h - 8, max(1.5, rad - 3))
+            # the restored Mother: in a grey sleeve with a pale line inside it, as a restored card
+            band = 3.5
+            ui.set_color(T.RESTORED)
+            for (bx, by, bw_, bh_) in ((1, 1, w - 2, band), (1, h - 1 - band, w - 2, band),
+                                       (1, 1, band, h - 2), (w - 1 - band, 1, band, h - 2)):
+                ui.Path.rect(bx, by, bw_, bh_).fill()
+            line = ui.Path.rounded_rect(1 + band, 1 + band, w - 2 - 2 * band, h - 2 - 2 * band, max(1.5, rad - 3))
             line.line_width = 1
             ui.set_color(T.RESTORED_LINE)
             line.stroke()
@@ -1031,10 +1038,10 @@ class RelicCard(ui.View):
 
 
 class PlayingCardFace(ui.View):
-    """The face of a card pop-up, drawn like the game's playing cards: a cream face with
-    rounded corners, an edge in the card's colour and a small index (``corner``: a list of
-    (text, colour)) in the top-left and bottom-right corners. Its content (name, icon,
-    text) is added as subviews by ``card_popup_face``."""
+    """The face of a card pop-up: a black card with the fog through it, a pale rim, its
+    text on a panel torn along its top (from ``panel_y``) and a small index (``corner``: a
+    list of (text, colour)) in the top-left and bottom-right corners. Its content (name,
+    icon, text) is added as subviews by ``card_popup_face``."""
 
     def __init__(self, edge: str = "", corner=None, **kw) -> None:
         super().__init__(**kw)
@@ -1268,7 +1275,9 @@ class TableHeader(ui.View):
             v = CardView(g.card(g.enemy.card_id), frame=self.card_frame())
             v.force_kind = "royal"
             v.touch_enabled = False
-            immune = list(g.rules.immune_suits(g) or ())
+            # (once a Jester cancels it, the rules report no immunity: the enemy's own classes
+            # are what was cancelled)
+            immune = list(g.enemy.suits) if g.immunity_cancelled else list(g.rules.immune_suits(g) or ())
             icons = immune if not g.immunity_cancelled else []
             if g.extra.get("jester_attack"):
                 # a claimed Jester's attack ignores immunity (all but a fixed one, Myla's)

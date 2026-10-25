@@ -355,15 +355,17 @@ def field_box(tf, frame) -> ui.View:
     return box
 
 
-def force_dark(view) -> None:
+def force_dark(view) -> bool:
     """The look is black: ask iOS for its dark appearance on this view and on the view
     controller that shows it (so the keyboard, the status bar and the phone's own controls
     stay dark whatever the phone is set to), on the main thread. Pythonista's own window is
-    left alone. Off the phone (no objc_util) it does nothing."""
+    left alone. Returns whether the controller was found (True off the phone, where there is
+    nothing to do; False: try again once the view is shown)."""
     try:
         from objc_util import ObjCClass, ObjCInstance, on_main_thread
     except ImportError:
-        return
+        return True
+    found = []
 
     @on_main_thread
     def apply():
@@ -376,11 +378,14 @@ def force_dark(view) -> None:
         if r is not None:
             r.setOverrideUserInterfaceStyle_(2)
             r.setNeedsStatusBarAppearanceUpdate()
+            found.append(True)
 
     try:
         apply()
     except Exception as e:      # an older iOS: the look still works, only the phone's own bits stay light
         print("force_dark:", e)
+        return True
+    return bool(found)
 
 
 # ---------------------------------------------------------------------------- panels

@@ -248,8 +248,8 @@ class App(ui.View):
 
     def layout(self) -> None:
         if not getattr(self, "_dark", False):
-            self._dark = True
-            veil.force_dark(self)
+            # until the app sits under its view controller, try again at the next layout
+            self._dark = veil.force_dark(self)
         cur = getattr(self, "current", None)
         if cur is not None:
             T.apply_safe_area(self)
@@ -822,7 +822,9 @@ class GameScreen(Screen):
         self.left_btn.frame = (m, bar_y, bw, bar_h)
         self.mid_btn.frame = (m + bw + 8, bar_y, bw, bar_h)
         self.right_btn.frame = (m + 2 * (bw + 8), bar_y, bw, bar_h)
-        self.toast.frame = (m + 20, bar_y - 52, w - 2 * m - 40, 46)
+        # over the played cards' row, never over its name (a short phone gets a shorter toast)
+        top = max(bar_y - 52, self.strip.y + getattr(self.strip, "label_h", 13.0) + 2)
+        self.toast.frame = (m + 20, top, w - 2 * m - 40, bar_y - 6 - top)
         if self.overlay is not None:
             self.overlay.frame = (0, 0, w, h)
             if hasattr(self.overlay, "layout"):
@@ -3738,6 +3740,8 @@ class MapScreen(Screen):
 
     STOPS = [(0.14, 0.92), (0.40, 0.86), (0.70, 0.84), (0.86, 0.72), (0.62, 0.64), (0.32, 0.60),
              (0.14, 0.48), (0.40, 0.42), (0.70, 0.40), (0.84, 0.28), (0.56, 0.20), (0.26, 0.12)]
+    # each stop's title above (True) or below its tile, so no two collide on a small phone
+    LABEL_ABOVE = (True, True, False, True, True, False, True, True, False, True, True, True)
 
     def __init__(self, app: "App", **kw) -> None:
         super().__init__(app, **kw)
@@ -3825,7 +3829,10 @@ class _MapCanvas(ui.View):
                 veil.number_tile(x - s / 2.0, y - s / 2.0, s, str(n), done, ink=T.BTN_TEXT if done else T.MUTED)
             if camp is not None and camp.revealed(n):
                 title = mission_info(n)["title"]
-                ty = y + s / 2.0 + 2 if i % 2 == 0 else y - s / 2.0 - 17
+                ty = y - s / 2.0 - 19 if MapScreen.LABEL_ABOVE[i] else y + s / 2.0 + 3
+                tw = ui.measure_string(title, 0, (T.FONT_ITALIC, 11))[0]
+                ui.set_color((0, 0, 0, 0.7))          # the route never runs through the letters
+                ui.Path.rounded_rect(x - tw / 2.0 - 4, ty + 1, tw + 8, 15, 3).fill()
                 ui.draw_string(title, (x - 60, ty, 120, 16), (T.FONT_ITALIC, 11), T.TEXT, ui.ALIGN_CENTER)
 
     def touch_ended(self, touch) -> None:

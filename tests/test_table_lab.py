@@ -111,6 +111,7 @@ def test_a_clash_with_the_enemys_immunity_puts_a_red_edge_on_the_card_and_the_en
     g.immunity_cancelled = True
     gs.refresh(after_action=False)
     assert gs.enemy.card_view.center_icons == []
+    assert gs.enemy.card_view.struck_icons == ["S"]          # shown struck through on its panel
     gs.hand.set_selection(["5S"])
     assert not gs.enemy.warn and not gs.hand.warned
 
