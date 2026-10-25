@@ -1,35 +1,55 @@
 """Colours, fonts and metrics shared by the screens."""
 from __future__ import annotations
 
-BG = "#171a21"
-PANEL = "#242938"
-PANEL_2 = "#2e3447"
-TEXT = "#f3f4f6"
-MUTED = "#9aa3b5"
-ACCENT = "#e3b84f"        # gold: selection, highlights
-DANGER = "#e0605a"
-OK = "#6ccf7a"
-BTN = "#3a62c7"
-BTN_TEXT = "#ffffff"
-BTN_DISABLED = "#3a4053"
-CARD_FACE = "#f8f4ea"
-CARD_FACE_DIM = "#cfcabd"
-CORRUPTED = "#9440c8"     # the corrupted sleeve (purple)
-RESTORED = "#21b05f"      # the restored sleeve (green)
-EVERGREEN = "#1f9e55"     # the Evergreen tree (Gøran and Esme): the four basic classes
-CARD_BACK = "#4b3d8a"
-CARD_INK = "#262626"        # text printed on a card face (the card pop-ups)
-CARD_INK_MUTED = "#6b6458"
-SHADE = (0.09, 0.10, 0.13, 0.25)   # over a card that is not available yet (a mercenary in the box)
-COIN = "#f5c542"
-COIN_RIM = "#a87410"
-CARD_BORDER = "#1e1e1e"
-JESTER_COLOR = "#8e44ad"
-SUIT_COLOR = {"H": "#d6453f", "D": "#d9842b", "C": "#2f8f47", "S": "#2f5fb3",
-              "M": "#7b3fbf", "R": "#b3372f", "G": "#2f7f8f", "U": "#5f8f2f", "T": "#b37f2f"}
+# The Veil look (after Veilwraith): black and greys only. Colour is what this world has
+# lost, so nothing here has a hue; what matters is told by brightness (the brighter, the
+# more it matters), by shape (the suits) and by marks (a cracked sleeve, a torn edge).
+BG = "#060606"
+PANEL = "#121212"
+PANEL_2 = "#1c1c1c"
+PANEL_VEIL = (0.03, 0.03, 0.03, 0.62)   # laid over the fog inside a panel: it shows faintly
+TEXT = "#e2dfd9"          # bone: the text on black
+BRIGHT = "#ffffff"        # the brightest mark: a selection, a number that matters now
+MUTED = "#8a8885"
+FAINT = "#4c4b49"         # what can't be used now
+ACCENT = "#ffffff"        # selection, highlights (white, as the gold was)
+DANGER = "#ffffff"        # a warning stands out by brightness (and its torn edge), not by red
+OK = "#b9b6b0"
+BTN = "#0b0b0b"           # a button: a black tile...
+BTN_EDGE = "#353533"      # ...with a dark edge...
+FRAME = "#d9d5ce"         # ...and the pale frame inside it (Veilwraith's number tiles)
+FRAME_QUIET = "#4e4d4a"   # the frame of a quieter button, and of a panel
+FRAME_OFF = "#262625"
+BTN_TEXT = "#f1eee8"
+BTN_DISABLED = "#0b0b0b"
+RIM = "#9d9a94"           # the lit edge along a tear
+SCAR = (1.0, 1.0, 1.0, 0.07)   # the faint scratches scored into a card or a panel
+CARD_FACE = "#0e0e0e"     # a black card...
+CARD_FACE_DIM = "#0e0e0e"
+CARD_RIM = "#4a4946"      # ...its edge...
+CARD_FRAME = "#2c2b29"    # ...and the faint frame inside it
+CARD_VEIL = (0.28, 0.28, 0.28, 0.55)   # the grey veil over a card that can't be played
+TORN_PANEL = (0.07, 0.07, 0.07, 0.92)  # a text panel with a torn top edge
+CORRUPTED = "#2e2d2b"     # the corrupted sleeve: dark and cracked
+CORRUPTED_CRACK = "#d0ccc5"
+RESTORED = "#e9e6e0"      # the restored sleeve: pale and whole
+EVERGREEN = "#e9e6e0"     # the Evergreen tree (Gøran and Esme): the four basic classes
+CARD_BACK = "#000000"
+CARD_INK = "#e2dfd9"      # text printed on a card face (the card pop-ups)
+CARD_INK_MUTED = "#8f8c87"
+SHADE = (0.18, 0.18, 0.18, 0.62)   # over a card that is not available yet (a mercenary in the box)
+COIN = "#cfccc6"          # tarnished silver
+COIN_RIM = "#4f4e4b"
+CARD_BORDER = "#4a4946"
+JESTER_COLOR = "#ffffff"
+SUIT_COLOR = {"H": TEXT, "D": TEXT, "C": TEXT, "S": TEXT,
+              "M": TEXT, "R": TEXT, "G": TEXT, "U": TEXT, "T": TEXT}
 
-FONT = "<system>"
-FONT_BOLD = "<system-bold>"
+# Iowan Old Style: a book serif with a calligraphic warmth, the nearest to the card
+# titles' type among the phone's fonts.
+FONT = "IowanOldStyle-Roman"
+FONT_BOLD = "IowanOldStyle-Bold"
+FONT_ITALIC = "IowanOldStyle-Italic"
 
 TOP_INSET = 48      # below the notch when presented fullscreen with no title bar
 BOTTOM_INSET = 28   # above the home indicator

@@ -115,6 +115,7 @@ def test_a_muted_number_and_type_that_shrinks_to_fit_a_small_card():
     assert args["number_muted"] is True and len(args["lines"]) == 6
     face = InfoCardFace(frame=(0, 0, 292, 187), **args)
     size = face.body_size(260, 110, 15)
-    assert size < 15 and max(ui.measure_string(line, 0, ("<system>", size))[0] for line in face.lines) <= 258
+    from app import theme as T
+    assert size < 15 and max(ui.measure_string(line, 0, (T.FONT, size))[0] for line in face.lines) <= 258
     assert 6 * size * 1.25 <= 110
     assert ui.render(face).size[0] > 0

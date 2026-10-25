@@ -1,6 +1,7 @@
 """Card backs: the back of every face-down card, and of the reserve and castle piles on the
-table, where a plain circle in the middle holds the pile's count. Four styles, picked in
-Settings (``card_back``): Lattice (the default), Crowns, Sunburst and Flat.
+table, where a plain circle holds the pile's count. Five styles, picked in Settings
+(``card_back``): Veil (the default: black, with the brushed wordmark, as Veilwraith's
+backs carry theirs), Lattice, Crowns, Sunburst and Flat, all in greys.
 
 Each style is ``draw(x, y, w, h, count=None, plain=False)``: one back filling the rect;
 ``count`` puts the number in the circle (without it the circle's place shows the style's
@@ -16,6 +17,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 import ui
 
 from . import theme as T
+from . import veil
 
 Point = Tuple[float, float]
 
@@ -51,12 +53,46 @@ def _count(cx: float, cy: float, d: float, count: int, ink: str, scale: float = 
     ui.draw_string(txt, (cx - d / 2.0, cy - lh / 2.0, d, lh), font, ink, ui.ALIGN_CENTER)
 
 
+DISC = "#d8d4cd"          # the count's circle: pale, the count in black
+DISC_INK = "#0a0a0a"
+
+
+# ---------------------------------------------------------------------------- Veil
+# Black, a faint frame inside the edge and the wordmark across the middle; a pile's count
+# in a black disc ringed in bone below it.
+VL_RIM = "#3c3b38"        # lighter than the field: the layers of a pile stay apart
+VL_FIELD = "#050505"
+VL_FRAME = "#2e2d2a"
+
+
+def veil_back(x: float, y: float, w: float, h: float, count: Optional[int] = None, plain: bool = False) -> None:
+    rad = max(6.0, min(w, h) * 0.12)
+    _rr(x, y, w, h, rad, VL_RIM)
+    _rr(x + 1, y + 1, w - 2, h - 2, rad - 1, VL_FIELD)
+    if plain:
+        return
+    fi = max(3.0, min(w, h) * 0.07)
+    veil.inset_frame(x, y, w, h, fi, VL_FRAME, 0.75, max(1.5, rad - fi))
+    if min(w, h) >= 40:
+        veil.scratches(x + fi + 2, y + fi + 2, w - 2 * fi - 4, h - 2 * fi - 4, "back", 3, T.SCAR, 0.6)
+    cx = x + w / 2.0
+    if count is None:
+        veil.draw_logo(x + w * 0.08, y + h * 0.28, w * 0.84, h * 0.44, T.TEXT)
+        return
+    veil.draw_logo(x + w * 0.12, y + h * 0.1, w * 0.76, h * 0.36, T.TEXT)
+    d = min(w * 0.6, h * 0.42)
+    cy = y + h * 0.68
+    _oval(cx, cy, d + 3, T.TEXT)
+    _oval(cx, cy, d, VL_FIELD)
+    _count(cx, cy, d, count, T.TEXT)
+
+
 # ---------------------------------------------------------------------------- Lattice
-# A deep indigo field with a fine violet diamond lattice and a muted gold inner frame.
-LAT_RIM = "#211a42"       # the 1pt dark edge: the layers of a pile stay apart
-LAT_FIELD = T.CARD_BACK
-LAT_LINE = "#7162bc"
-LAT_FRAME = "#b8924a"     # muted gold (the bright gold marks a selected card)
+# A black field with a fine grey diamond lattice and a pale grey inner frame.
+LAT_RIM = "#2e2d2a"       # the 1pt edge: the layers of a pile stay apart
+LAT_FIELD = "#0a0a0a"
+LAT_LINE = "#3b3a37"
+LAT_FRAME = "#7d7a74"
 
 
 def _clip_line(p0: Point, d: Point, poly: Sequence[Point]) -> Optional[Tuple[Point, Point]]:
@@ -140,19 +176,19 @@ def lattice(x: float, y: float, w: float, h: float, count: Optional[int] = None,
     d = w * 0.64
     gap = 5.0 if big else 2.5
     _oval(cx, cy, d + 2 * gap, LAT_FIELD)      # the lattice stops short of the circle
-    _oval(cx, cy, d, T.CARD_FACE)
-    _count(cx, cy, d, count, LAT_FIELD)
+    _oval(cx, cy, d, DISC)
+    _count(cx, cy, d, count, DISC_INK)
 
 
 # ---------------------------------------------------------------------------- Crowns
-# An oxblood field in a gold frame with a small crown in each corner.
-CR_RIM = "#7f3e4a"        # lighter than the field: the layers of a pile stay apart
-CR_FIELD = "#5a1624"
-CR_BAND = "#45101c"
-CR_GOLD = "#b8924a"
-CR_CROWN = "#c39b50"
-CR_HALO = "#3a0c16"
-CR_INK = "#4a0f1b"
+# A charcoal field in a pale grey frame with a small crown in each corner.
+CR_RIM = "#4a4946"        # lighter than the field: the layers of a pile stay apart
+CR_FIELD = "#161616"
+CR_BAND = "#0c0c0c"
+CR_GOLD = "#8a8780"
+CR_CROWN = "#a19d96"
+CR_HALO = "#050505"
+CR_INK = DISC_INK
 CR_SHAPE = ((0.08, 1.0), (0.92, 1.0), (0.95, 0.7), (1.0, 0.16), (0.73, 0.5), (0.5, -0.04),
             (0.27, 0.5), (0.0, 0.16), (0.05, 0.7))
 CR_JEWELS = ((0.0, 0.16), (0.5, -0.04), (1.0, 0.16))
@@ -203,18 +239,18 @@ def crowns(x: float, y: float, w: float, h: float, count: Optional[int] = None, 
     rim = max(1.0, d * 0.035)
     _oval(cx, cy, d + 2 * max(1.0, s), CR_HALO)
     _oval(cx, cy, d, CR_GOLD)
-    _oval(cx, cy, d - 2 * rim, T.CARD_FACE)
+    _oval(cx, cy, d - 2 * rim, DISC)
     _count(cx, cy, d - 2 * rim, count, CR_INK, 1.1)
 
 
 # ---------------------------------------------------------------------------- Sunburst
-# A dark purple field with thin rays fanning out from behind the circle.
-SB_RIM = "#7c6bc2"        # not a sleeve colour (corrupted is a brighter purple)
-SB_BORDER = "#1f1630"
-SB_FIELD = "#2a1e45"
-SB_RAY = "#3a2961"
-SB_HUB = "#140e22"
-SB_INK = "#2a1f4a"
+# A near-black field with thin grey rays fanning out from behind the circle.
+SB_RIM = "#5a5853"
+SB_BORDER = "#0a0a0a"
+SB_FIELD = "#141414"
+SB_RAY = "#232322"
+SB_HUB = "#050505"
+SB_INK = DISC_INK
 SB_RAYS = 12
 SB_SHARE = 0.42
 
@@ -294,17 +330,17 @@ def sunburst(x: float, y: float, w: float, h: float, count: Optional[int] = None
         return
     gap = max(1.8, d * 0.03)
     _oval(cx, cy, d + 2 * gap, SB_HUB)
-    _oval(cx, cy, d, T.CARD_FACE)
+    _oval(cx, cy, d, DISC)
     _count(cx, cy, d, count, SB_INK)
 
 
 # ---------------------------------------------------------------------------- Flat
-# A quiet slate back in the app's own flat style: one inset line, a dot in each corner.
-FL_RIM = "#0f1116"
-FL_EDGE = "#454d65"       # a light bevel inside the dark rim: a pile's layers alternate
-FL_FIELD = T.PANEL_2
-FL_LINE = "#5c6580"
-FL_MOTIF = "#6f7892"
+# A quiet charcoal back: one inset line, a dot in each corner.
+FL_RIM = "#050505"
+FL_EDGE = "#3a3936"       # a light bevel inside the dark rim: a pile's layers alternate
+FL_FIELD = "#151515"
+FL_LINE = "#4a4946"
+FL_MOTIF = "#6a6862"
 
 
 def flat(x: float, y: float, w: float, h: float, count: Optional[int] = None, plain: bool = False) -> None:
@@ -332,10 +368,12 @@ def flat(x: float, y: float, w: float, h: float, count: Optional[int] = None, pl
         _oval(cx, cy, d - 2 * lw, FL_FIELD)
         _oval(cx, cy, dot * 1.4, FL_MOTIF)
         return
-    _oval(cx, cy, d, T.CARD_FACE)
-    _count(cx, cy, d, count, FL_FIELD)
+    _oval(cx, cy, d, DISC)
+    _count(cx, cy, d, count, DISC_INK)
 
 
-STYLES: Dict[str, Callable[..., None]] = {"lattice": lattice, "crowns": crowns, "sunburst": sunburst, "flat": flat}
-NAMES = {"lattice": "Lattice", "crowns": "Crowns", "sunburst": "Sunburst", "flat": "Flat"}
-ORDER = ("lattice", "crowns", "sunburst", "flat")
+STYLES: Dict[str, Callable[..., None]] = {"veil": veil_back, "lattice": lattice, "crowns": crowns,
+                                          "sunburst": sunburst, "flat": flat}
+NAMES = {"veil": "Veil", "lattice": "Lattice", "crowns": "Crowns", "sunburst": "Sunburst", "flat": "Flat"}
+ORDER = ("veil", "lattice", "crowns", "sunburst", "flat")
+DEFAULT = "veil"

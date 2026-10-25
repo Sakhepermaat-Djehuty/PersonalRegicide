@@ -408,7 +408,7 @@ def test_the_pass_and_play_status_line_names_whose_turn_it_is(app):
 def test_a_long_name_on_a_small_phone_keeps_the_name_in_the_status_line(app):
     from app.widgets import text_size
     _resize(app, 320, 568)
-    name = "Bartholomew Montgomery"
+    name = "Bartholomew Montgomery III"
     app.start_game(GameConfig(players=2, names=(name, "Ben"), open_hands=True), seed=6)
     gs = app.current
     assert text_size("Turn 1 · " + name, 0, 13)[0] > gs.status.width >= text_size(name, 0, 13)[0]
@@ -416,16 +416,16 @@ def test_a_long_name_on_a_small_phone_keeps_the_name_in_the_status_line(app):
 
 
 # ---------------------------------------------------------------------------- 4. the card backs
-def test_the_card_back_setting_picks_the_style_and_an_unknown_one_falls_back_to_the_lattice(app):
+def test_the_card_back_setting_picks_the_style_and_an_unknown_one_falls_back_to_the_veil(app):
     from app import backs, widgets
     from app.screens import apply_face_style
     for style in backs.ORDER:
         apply_face_style({"card_back": style})
         assert widgets.BACK_STYLE == style
     apply_face_style({"card_back": "no such style"})
-    assert widgets.BACK_STYLE == "lattice"
+    assert widgets.BACK_STYLE == "veil"
     apply_face_style({})
-    assert widgets.BACK_STYLE == "lattice"
+    assert widgets.BACK_STYLE == "veil"
 
 
 def test_draw_back_draws_the_chosen_style(app, monkeypatch):
@@ -449,16 +449,16 @@ def test_the_settings_button_cycles_the_card_backs_saves_them_and_the_table_draw
     from app.screens import SettingsScreen
     from app.widgets import BackSample, CardView
     app.show(SettingsScreen(app))
-    assert _back_button(app).title == "Lattice ›" and ui.find(app, lambda v: isinstance(v, BackSample))
+    assert _back_button(app).title == "Veil ›" and ui.find(app, lambda v: isinstance(v, BackSample))
     seen = []
     for _ in range(len(backs.ORDER)):
         b = _back_button(app)
         seen.append(b.title)
         ui.tap(app, *ui.root_point(app, b))
         assert widgets.BACK_STYLE == app.settings["card_back"] == store.load_settings()["card_back"]
-    assert seen == ["Lattice ›", "Crowns ›", "Sunburst ›", "Flat ›"]
-    assert app.settings["card_back"] == "lattice" and _back_button(app).title == "Lattice ›"
-    for _ in range(3):
+    assert seen == ["Veil ›", "Lattice ›", "Crowns ›", "Sunburst ›", "Flat ›"]
+    assert app.settings["card_back"] == "veil" and _back_button(app).title == "Veil ›"
+    for _ in range(4):
         ui.tap(app, *ui.root_point(app, _back_button(app)))
     assert widgets.BACK_STYLE == "flat"
     # the table's face-down piles and cards use it
@@ -474,7 +474,7 @@ def test_the_settings_button_cycles_the_card_backs_saves_them_and_the_table_draw
     assert used == [(0, 0, 60, 86, None, False)]
 
 
-def test_an_unknown_stored_card_back_shows_as_lattice_and_moves_on_to_crowns(app):
+def test_an_unknown_stored_card_back_shows_as_veil_and_moves_on_to_lattice(app):
     from app import store, widgets
     from app.screens import App, MenuScreen, SettingsScreen
     app.settings["card_back"] = "velvet"                 # a style from another build
@@ -482,12 +482,12 @@ def test_an_unknown_stored_card_back_shows_as_lattice_and_moves_on_to_crowns(app
     widgets.BACK_STYLE = "crowns"                        # what was drawn before: the start must replace it
     a = App()                                            # a fresh start reads it
     a.show(MenuScreen(a))
-    assert widgets.BACK_STYLE == "lattice"
+    assert widgets.BACK_STYLE == "veil"
     a.show(SettingsScreen(a))
-    assert _back_button(a).title == "Lattice ›"
+    assert _back_button(a).title == "Veil ›"
     ui.tap(a, *ui.root_point(a, _back_button(a)))
-    assert a.settings["card_back"] == "crowns" == store.load_settings()["card_back"]
-    assert widgets.BACK_STYLE == "crowns" and _back_button(a).title == "Crowns ›"
+    assert a.settings["card_back"] == "lattice" == store.load_settings()["card_back"]
+    assert widgets.BACK_STYLE == "lattice" and _back_button(a).title == "Lattice ›"
 
 
 # ---------------------------------------------------------------------------- 5. decisions made with the hand
@@ -727,7 +727,7 @@ def test_under_a_handover_box_the_action_buttons_lose_the_tally_picked_before(ap
 
 # ---------------------------------------------------------------------------- 6. the Jester power's cue
 def test_the_jester_power_lights_up_when_the_hand_cannot_pay(app):
-    from app import theme as T
+    from app.widgets import button_look
     app.start_game(GameConfig(players=1), seed=5)
     gs, g = app.current, app.game
     set_enemy(g, "K", "S")
@@ -737,32 +737,32 @@ def test_the_jester_power_lights_up_when_the_hand_cannot_pay(app):
     _tap_button(app, "Play")
     assert g.phase == PHASE_SUFFER and g.rules.solo_jester_mode(g) == "refresh"
     assert g.hand_defence_value() >= g.pending_damage
-    assert not gs.mid_btn.hidden and gs.mid_btn.enabled and gs.mid_btn.background_color == T.PANEL_2
+    assert not gs.mid_btn.hidden and gs.mid_btn.enabled and button_look(gs.mid_btn) == "quiet"
     # what the hand is worth decides, not how many cards it holds: two cards that pay
     # exactly leave it plain, five that fall one short light it
     set_hand(g, ["10S", "10D"])
     gs.refresh(after_action=False)
     assert g.hand_defence_value() == g.pending_damage == 20
-    assert gs.mid_btn.enabled and gs.mid_btn.background_color == T.PANEL_2
+    assert gs.mid_btn.enabled and button_look(gs.mid_btn) == "quiet"
     set_hand(g, ["2D", "3H", "4D", "5C", "5H"])
     gs.refresh(after_action=False)
     assert g.hand_defence_value() == g.pending_damage - 1
-    assert gs.mid_btn.enabled and gs.mid_btn.background_color == T.BTN
+    assert gs.mid_btn.enabled and button_look(gs.mid_btn) == "lit"
     set_hand(g, ["2D", "3H"])                             # 5 cannot pay 20
     gs.refresh(after_action=False)
     assert g.hand_defence_value() < g.pending_damage
-    assert gs.mid_btn.enabled and gs.mid_btn.background_color == T.BTN            # lit: the way out
+    assert gs.mid_btn.enabled and button_look(gs.mid_btn) == "lit"            # lit: the way out
     _tap_button(app, "Suggest")
     assert not gs.right_btn.enabled                       # nothing the hand holds pays it
     g.solo_jesters = 0
     gs.refresh(after_action=False)
-    assert not gs.mid_btn.enabled and gs.mid_btn.background_color == T.BTN_DISABLED
+    assert not gs.mid_btn.enabled and button_look(gs.mid_btn) == "off"
     # the cue is for the suffer step only: while playing the Jester stays a plain button
     app.start_game(GameConfig(players=1), seed=5)
     gs, g = app.current, app.game
     set_hand(g, ["2D"])
     gs.refresh(after_action=False)
-    assert g.phase == PHASE_PLAY and gs.mid_btn.enabled and gs.mid_btn.background_color == T.PANEL_2
+    assert g.phase == PHASE_PLAY and gs.mid_btn.enabled and button_look(gs.mid_btn) == "quiet"
 
 
 # ---------------------------------------------------------------------------- 7. the header under a claimed Jester

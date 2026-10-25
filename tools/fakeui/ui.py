@@ -664,7 +664,9 @@ class View:
 
     @frame.setter
     def frame(self, value):
+        old = (getattr(self, "_w", None), getattr(self, "_h", None))
         self._x, self._y, self._w, self._h = (float(v) for v in value)
+        self._autoresize(old)
         self._relayout()
 
     @property
@@ -673,7 +675,9 @@ class View:
 
     @bounds.setter
     def bounds(self, value):
+        old = (self._w, self._h)
         self._w, self._h = float(value[2]), float(value[3])
+        self._autoresize(old)
         self._relayout()
 
     def _get_x(self): return self._x
@@ -683,10 +687,18 @@ class View:
     def _set_y(self, v): self._y = float(v)
     y = property(_get_y, _set_y)
     def _get_w(self): return self._w
-    def _set_w(self, v): self._w = float(v); self._relayout()
+    def _set_w(self, v):
+        old = (self._w, self._h)
+        self._w = float(v)
+        self._autoresize(old)
+        self._relayout()
     width = property(_get_w, _set_w)
     def _get_h(self): return self._h
-    def _set_h(self, v): self._h = float(v); self._relayout()
+    def _set_h(self, v):
+        old = (self._w, self._h)
+        self._h = float(v)
+        self._autoresize(old)
+        self._relayout()
     height = property(_get_h, _set_h)
 
     @property
@@ -696,6 +708,30 @@ class View:
     @center.setter
     def center(self, c):
         self._x, self._y = c[0] - self._w / 2, c[1] - self._h / 2
+
+    def _autoresize(self, old) -> None:
+        """UIKit's autoresizing: a subview with ``flex`` "W"/"H" grows with this view, one
+        with "L"/"T" (a flexible left/top margin) moves with it ("LR", "TB": half each)."""
+        ow, oh = old
+        if ow is None or oh is None or "subviews" not in self.__dict__:
+            return
+        dw, dh = self._w - ow, self._h - oh
+        if not dw and not dh:
+            return
+        for v in self.subviews:
+            f = getattr(v, "flex", "") or ""
+            if not f:
+                continue
+            x, y, w, h = v._x, v._y, v._w, v._h
+            if "W" in f:
+                w += dw
+            elif "L" in f:
+                x += dw / 2.0 if "R" in f else dw
+            if "H" in f:
+                h += dh
+            elif "T" in f:
+                y += dh / 2.0 if "B" in f else dh
+            v.frame = (x, y, max(0.0, w), max(0.0, h))
 
     def _relayout(self):
         if hasattr(self, "layout") and callable(getattr(self, "layout")):

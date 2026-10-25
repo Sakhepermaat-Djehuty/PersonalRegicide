@@ -14,6 +14,7 @@ from regicide.cards import BASIC_SUITS, CLASS_NAME, SUIT_NAME, SUIT_SYMBOL, Card
 from regicide.engine import Game
 
 from . import theme as T
+from . import veil
 
 
 TAP_SOUND: Optional[Callable[[], None]] = None   # set by the app: the button sound
@@ -37,9 +38,7 @@ def make_button(title: str, action: Callable, frame=(0, 0, 100, 44), primary: bo
     b.title = title
     b.action = with_tap_sound(action)
     b.font = (T.FONT_BOLD, font_size)
-    b.background_color = T.BTN if primary else T.PANEL_2
-    b.tint_color = T.BTN_TEXT
-    b.corner_radius = 10
+    veil.dress_button(b, primary)      # a black tile with the pale frame inside it
     return b
 
 
@@ -57,8 +56,15 @@ def fit_title(b: ui.Button, max_size: float = 0, min_size: float = 11, bold: boo
 
 def set_enabled(b: ui.Button, on: bool, primary: bool = True) -> None:
     b.enabled = on
-    b.background_color = (T.BTN if primary else T.PANEL_2) if on else T.BTN_DISABLED
-    b.tint_color = T.BTN_TEXT if on else T.MUTED
+    veil.dress_button(b, primary, on)
+
+
+def button_look(b: ui.Button) -> str:
+    """How a button is dressed: "lit" (a main action: the bright frame), "quiet" (the dim
+    frame) or "off" (it can't be pressed)."""
+    f = veil.frame_of(b)
+    colour = f.colour if f is not None else None
+    return {T.FRAME: "lit", T.FRAME_QUIET: "quiet", T.FRAME_OFF: "off"}.get(colour, "")
 
 
 def make_label(text: str, frame, size: int = 15, bold: bool = False, color: str = T.TEXT,
@@ -109,7 +115,7 @@ def card_color(card: Card) -> str:
         return T.EVERGREEN
     if card.suits:
         return T.SUIT_COLOR.get(card.suits[0], T.TEXT)
-    return "#444444"
+    return T.TEXT
 
 
 TREE_PIP = "tree"   # pseudo-suit: the Evergreen tree, standing for the four basic classes
@@ -159,7 +165,7 @@ def draw_tree(x: float, y: float, w: float, h: float, color: str) -> None:
 # "classic" lays numbered cards out like playing cards (a 7 shows seven icons, the number
 # and icon in two corners, the lower half turned) and gives a royal a big letter.
 FACE_STYLE = "simple"
-BACK_STYLE = "lattice"     # the card backs (``app.backs``), from the "card_back" setting
+BACK_STYLE = "veil"        # the card backs (``app.backs``), from the "card_back" setting
 CLASSIC_MIN_WIDTH = 54.0   # narrower cards (a 320-pt phone's hand) keep the simple face: too small to read
 
 # pip positions (x, y in 0..1 of the pip area), the standard playing-card layouts
@@ -248,7 +254,7 @@ def coin_metrics(W: float, H: float) -> tuple:
 
 
 def draw_coin(x: float, y: float, d: float) -> None:
-    """One gold coin, diameter ``d``, top-left corner at (x, y)."""
+    """One coin (tarnished silver), diameter ``d``, top-left corner at (x, y)."""
     ui.set_color(T.COIN_RIM)
     ui.Path.oval(x, y, d, d).fill()
     ui.set_color(T.COIN)
@@ -296,19 +302,53 @@ def draw_count_circle(cx: float, cy: float, d: float, count: int, fill: str, ink
 
 
 def draw_clash(W: float, H: float) -> None:
-    """A gentle warning: a red edge round the card and a red "!" disc in its bottom-left
-    corner (a class power the enemy is immune to)."""
-    r = max(6.0, min(W, H) * 0.12)
-    edge = ui.Path.rounded_rect(1.5, 1.5, W - 3, H - 3, r)
-    edge.line_width = 3
-    ui.set_color(T.DANGER)
-    edge.stroke()
+    """A warning (a class power the enemy is immune to): a jagged white edge round the
+    card, set apart from a selection's smooth one, and a white "!" disc in its bottom-left
+    corner."""
+    teeth = jagged_outline(2.5, 2.5, W - 5, H - 5, max(2.0, min(W, H) * 0.05))
+    veil.polyline(teeth, T.DANGER, 1.6)
     d = max(14.0, min(W, H) * 0.22)
     x, y = 3.0, H - d - 3.0
+    ui.set_color(T.BG)
+    ui.Path.oval(x - 1.5, y - 1.5, d + 3, d + 3).fill()
     ui.set_color(T.DANGER)
     ui.Path.oval(x, y, d, d).fill()
     size = d * 0.7
-    ui.draw_string("!", (x, y + (d - size * 1.2) / 2.0, d, size * 1.3), (T.FONT_BOLD, size), T.TEXT, ui.ALIGN_CENTER)
+    ui.draw_string("!", (x, y + (d - size * 1.2) / 2.0, d, size * 1.3), (T.FONT_BOLD, size), T.BG, ui.ALIGN_CENTER)
+
+
+def jagged_outline(x: float, y: float, w: float, h: float, tooth: float) -> list:
+    """A closed saw-toothed line round the rect, its teeth pointing in."""
+    pts = []
+    for (x0, y0, x1, y1, nx, ny) in ((x, y, x + w, y, 0, 1), (x + w, y, x + w, y + h, -1, 0),
+                                     (x + w, y + h, x, y + h, 0, -1), (x, y + h, x, y, 1, 0)):
+        length = math.hypot(x1 - x0, y1 - y0)
+        n = max(2, int(length / (tooth * 1.6)))
+        for i in range(n):
+            t0, t1 = i / float(n), (i + 0.5) / float(n)
+            pts.append((x0 + (x1 - x0) * t0, y0 + (y1 - y0) * t0))
+            pts.append((x0 + (x1 - x0) * t1 + nx * tooth, y0 + (y1 - y0) * t1 + ny * tooth))
+    pts.append((x, y))
+    return pts
+
+
+def draw_card_ground(w: float, h: float, r: float, edge=None, seed="card") -> None:
+    """A large card's ground (the pop-ups): black, the fog showing faintly through, the
+    faint frame inside its edge and a pale rim."""
+    ui.set_color(T.CARD_FACE)
+    outer = ui.Path.rounded_rect(1, 1, w - 2, h - 2, r)
+    outer.fill()
+    with ui.GState():
+        outer.add_clip()
+        veil.draw_fog(0, 0, w, h, "fog_l.jpg")
+        ui.set_color(T.PANEL_VEIL)
+        ui.Path.rect(0, 0, w, h).fill()
+        veil.scratches(8, 8, w - 16, h - 16, seed, 4, T.SCAR, 0.7)
+    veil.inset_frame(0, 0, w, h, 6.0, T.CARD_FRAME, 1.0, max(2.0, r - 6))
+    rim = ui.Path.rounded_rect(1.5, 1.5, w - 3, h - 3, r)
+    rim.line_width = 1.5
+    ui.set_color(T.RIM)
+    rim.stroke()
 
 
 class CardView(ui.View):
@@ -340,6 +380,11 @@ class CardView(ui.View):
 
     def draw(self) -> None:
         self._draw_face()
+        if self.dimmed and self.face_up and not self.shaded:
+            # the grey veil over a card that can't be played
+            W, H = self.width, self.height
+            ui.set_color(T.CARD_VEIL)
+            ui.Path.rounded_rect(1, 1, W - 2, H - 2, max(6.0, min(W, H) * 0.12)).fill()
         if self.shaded and self.face_up:
             # a shade over the whole card; the coins are drawn after it, so they stay bright
             W, H = self.width, self.height
@@ -375,19 +420,29 @@ class CardView(ui.View):
             draw_back(0, 0, W, H)
             return
         c = self.card
-        # Sleeves, as on the physical cards: a corrupted card sits in a purple sleeve, a
-        # restored one in a green sleeve. The sleeve is a thick coloured edge around the face.
+        # A black card, as Veilwraith's action cards: a faint frame inside its edge and a
+        # few scratches scored into it (the same ones every time: seeded by the card).
+        # Sleeves, as on the physical cards: a corrupted card sits in a dark sleeve, cracked
+        # (the cracks run on across its face), a restored one in a pale, whole sleeve.
         sleeve = sleeve_color(c)
         sw = max(2.5, min(W, H) * 0.08) if sleeve else 0.0
         if sleeve:
             ui.set_color(sleeve)
             ui.Path.rounded_rect(1, 1, W - 2, H - 2, r).fill()
-        ui.set_color(T.CARD_FACE_DIM if self.dimmed else T.CARD_FACE)
+        ui.set_color(T.CARD_FACE)
         ui.Path.rounded_rect(1 + sw, 1 + sw, W - 2 - 2 * sw, H - 2 - 2 * sw, max(3.0, r - sw * 0.6)).fill()
+        if not self.small and min(W, H) >= 40:
+            veil.scratches(4 + sw, 4 + sw, W - 8 - 2 * sw, H - 8 - 2 * sw, c.id, 3, T.SCAR, 0.7)
+        fi = max(3.0, min(W, H) * 0.07) + sw
+        veil.inset_frame(0, 0, W, H, fi, T.BRIGHT if self.selected else T.CARD_FRAME, 1.0 if self.selected else 0.75,
+                         max(1.5, r - fi))
+        if c.has("corrupted"):
+            veil.cracks(1, 1, W - 2, H - 2, (c.id, "crack"), T.CORRUPTED_CRACK, 3 if min(W, H) >= 40 else 2,
+                        1.0 if min(W, H) >= 40 else 0.7)
         if self.selected or not sleeve:
             border = ui.Path.rounded_rect(1.5, 1.5, W - 3, H - 3, r)
-            border.line_width = 3 if self.selected else 1
-            ui.set_color(T.ACCENT if self.selected else T.CARD_BORDER)
+            border.line_width = 2.5 if self.selected else 1
+            ui.set_color(T.ACCENT if self.selected else T.CARD_RIM)
             border.stroke()
         # everything below is drawn inside the face (the sleeve's inner edge)
         ox, oy = sw, sw
@@ -462,8 +517,8 @@ class CardView(ui.View):
             ui.draw_string(rank, (ox, oy + top + max(0.0, (low - top) - size * 1.2) / 2.0, w, size * 1.3),
                            (T.FONT_BOLD, size), col, ui.ALIGN_CENTER)
         if caption:
-            ui.draw_string(caption, (ox + 2, oy + bottom - cap_h, w - 4, cap_h), (T.FONT, max(8, h * 0.1)), "#333333",
-                           ui.ALIGN_CENTER)
+            ui.draw_string(caption, (ox + 2, oy + bottom - cap_h, w - 4, cap_h), (T.FONT_ITALIC, max(8, h * 0.1)),
+                           T.CARD_INK_MUTED, ui.ALIGN_CENTER)
         if c.is_royal:
             ui.draw_string("%d" % c.value, (ox, oy + bottom - cap_h, w - 5, cap_h), (T.FONT_BOLD, h * 0.12), col,
                            ui.ALIGN_RIGHT)
@@ -600,14 +655,21 @@ class PeekButton(ui.View):
 
     def draw(self) -> None:
         w, h = self.width, self.height
-        ui.set_color(T.ACCENT if self.held else T.PANEL_2)
-        ui.Path.rounded_rect(0, 0, w, h, 10).fill()
+        # a black tile with a dim frame; held, it turns pale (the box is away)
+        ui.set_color(T.ACCENT if self.held else T.BTN)
+        ui.Path.rounded_rect(0, 0, w, h, 4).fill()
+        edge = ui.Path.rounded_rect(0.5, 0.5, w - 1, h - 1, 4)
+        edge.line_width = 1
+        ui.set_color(T.BTN_EDGE)
+        edge.stroke()
+        if not self.held:
+            veil.inset_frame(0, 0, w, h, 3.0, T.FRAME_QUIET, 1.0, 2.0)
         text = self.held_title if self.held else self.title
         size = 13.0
         while size > 10 and text_size(text, 0, size, True)[0] > w - 10:
             size -= 1
         ui.draw_string(text, (4, (h - size * 1.25) / 2.0, w - 8, size * 1.3), (T.FONT_BOLD, size),
-                       T.BG if self.held else T.BTN_TEXT, ui.ALIGN_CENTER)
+                       T.BG if self.held else T.MUTED, ui.ALIGN_CENTER)
 
     def _set(self, held: bool) -> None:
         if held != self.held:
@@ -655,11 +717,18 @@ class CountStepper(ui.View):
         for step, sign in ((-1, "−"), (1, "+")):
             x, y, w, h = self.key_rect(step)
             on = self.can(step)
-            ui.set_color(T.ACCENT if self.held == step else (T.PANEL_2 if on else T.BTN_DISABLED))
-            ui.Path.rounded_rect(x, y, w, h, 12).fill()
+            held = self.held == step
+            ui.set_color(T.ACCENT if held else T.BTN)
+            ui.Path.rounded_rect(x, y, w, h, 4).fill()
+            if not held:
+                edge = ui.Path.rounded_rect(x + 0.5, y + 0.5, w - 1, h - 1, 4)
+                edge.line_width = 1
+                ui.set_color(T.BTN_EDGE)
+                edge.stroke()
+                veil.inset_frame(x, y, w, h, 3.0, T.FRAME if on else T.FRAME_OFF, 1.0, 2.0)
             size = h * 0.55
             ui.draw_string(sign, (x, y + (h - size * 1.25) / 2.0, w, size * 1.3), (T.FONT_BOLD, size),
-                           T.BG if self.held == step else (T.BTN_TEXT if on else T.MUTED), ui.ALIGN_CENTER)
+                           T.BG if held else (T.BTN_TEXT if on else T.FAINT), ui.ALIGN_CENTER)
         k = self.key_rect(1)[2]
         size = min(46.0, self.height * 0.7)
         ui.draw_string(str(self.value), (k, (self.height - size * 1.25) / 2.0, self.width - 2 * k, size * 1.3),
@@ -726,14 +795,19 @@ class TickBox(ui.View):
     def draw(self) -> None:
         s = min(self.width, self.height) - 2
         x, y = (self.width - s) / 2.0, (self.height - s) / 2.0
-        box = ui.Path.rounded_rect(x, y, s, s, 7)
-        ui.set_color(T.OK if self.value else T.PANEL_2)
-        if not self.enabled:
-            ui.set_color(T.BTN_DISABLED)
+        box = ui.Path.rounded_rect(x, y, s, s, 4)
+        # ticked: a pale tile with a black tick; crossed: a black tile, framed, a grey cross
+        ui.set_color((T.TEXT if self.enabled else T.MUTED) if self.value else T.BTN)
         box.fill()
+        if not self.value:
+            edge = ui.Path.rounded_rect(x + 0.5, y + 0.5, s - 1, s - 1, 4)
+            edge.line_width = 1
+            ui.set_color(T.BTN_EDGE if self.enabled else T.FRAME_OFF)
+            edge.stroke()
+            veil.inset_frame(x, y, s, s, 3.0, T.FRAME_QUIET if self.enabled else T.FRAME_OFF, 1.0, 2.0)
         mark = "✓" if self.value else "✗"
         size = s * 0.62
-        ink = T.BG if self.value and self.enabled else T.MUTED
+        ink = T.BG if self.value else (T.MUTED if self.enabled else T.FAINT)
         ui.draw_string(mark, (x, y + (s - size * 1.25) / 2.0, s, size * 1.3), (T.FONT_BOLD, size), ink,
                        ui.ALIGN_CENTER)
 
@@ -771,16 +845,18 @@ class RelicCard(ui.View):
         from regicide.campaign.relics import RELICS
         r = RELICS.get(self.relic_id, {})
         w, h = self.width, self.height
-        col = str(r.get("color", T.ACCENT))
+        col = T.TEXT          # (a relic's own colour belongs to the coloured look)
+        rad = max(5.0, min(w, h) * 0.12)
         ui.set_color(T.CARD_FACE)
-        ui.Path.rounded_rect(1, 1, w - 2, h - 2, max(5.0, min(w, h) * 0.12)).fill()
-        edge = ui.Path.rounded_rect(2, 2, w - 4, h - 4, max(5.0, min(w, h) * 0.12))
-        edge.line_width = 2.5
-        ui.set_color(col)
+        ui.Path.rounded_rect(1, 1, w - 2, h - 2, rad).fill()
+        veil.inset_frame(0, 0, w, h, 4.0, T.CARD_FRAME, 0.75, max(1.5, rad - 4))
+        edge = ui.Path.rounded_rect(1.5, 1.5, w - 3, h - 3, rad)
+        edge.line_width = 1.5
+        ui.set_color(T.RIM)
         edge.stroke()
         size = h * 0.42
         ui.draw_string(str(r.get("symbol", "?")), (0, h * 0.14, w, size * 1.3), (T.FONT_BOLD, size), col, ui.ALIGN_CENTER)
-        ui.draw_string("relic", (0, h * 0.7, w, h * 0.2), (T.FONT, max(8.0, h * 0.14)), "#555555", ui.ALIGN_CENTER)
+        ui.draw_string("relic", (0, h * 0.7, w, h * 0.2), (T.FONT_ITALIC, max(8.0, h * 0.14)), T.MUTED, ui.ALIGN_CENTER)
 
 
 class PlayingCardFace(ui.View):
@@ -806,12 +882,7 @@ class PlayingCardFace(ui.View):
     def draw(self) -> None:
         w, h = self.width, self.height
         r = 18.0
-        ui.set_color(T.CARD_FACE)
-        ui.Path.rounded_rect(1, 1, w - 2, h - 2, r).fill()
-        edge = ui.Path.rounded_rect(3, 3, w - 6, h - 6, r - 2)
-        edge.line_width = 3
-        ui.set_color(self.edge)
-        edge.stroke()
+        draw_card_ground(w, h, r, self.edge, seed=("face",) + tuple(t for t, _ in self.corner))
         if not self.corner:
             return
         size = 17.0
@@ -860,12 +931,7 @@ class InfoCardFace(ui.View):
     def draw(self) -> None:
         w, h = float(self.width), float(self.height)
         r = 16.0
-        ui.set_color(T.CARD_FACE_DIM if self.immune else T.CARD_FACE)
-        ui.Path.rounded_rect(1, 1, w - 2, h - 2, r).fill()
-        edge = ui.Path.rounded_rect(3, 3, w - 6, h - 6, r - 2)
-        edge.line_width = 3
-        ui.set_color(self.edge)
-        edge.stroke()
+        draw_card_ground(w, h, r, self.edge, seed=("info", self.title))
         ink = T.CARD_INK_MUTED if self.immune else T.CARD_INK
         pad = 16.0
         top = 12.0
@@ -875,7 +941,7 @@ class InfoCardFace(ui.View):
         if self.number:
             nw = text_size(self.number, 0, 34, True)[0]
             ui.draw_string(self.number, (x, top - 2, nw + 4, row + 4), (T.FONT_BOLD, 34),
-                           T.CARD_INK_MUTED if self.number_muted else self.edge, ui.ALIGN_LEFT)
+                           T.CARD_INK_MUTED if self.number_muted else T.BRIGHT, ui.ALIGN_LEFT)
             if self.number_muted:
                 strike = ui.Path.rect(x - 1, top + row * 0.5 - 1, nw + 2, 2.5)
                 ui.set_color(T.CARD_INK_MUTED)
@@ -899,9 +965,10 @@ class InfoCardFace(ui.View):
         ui.draw_string(self.title, (x, top + (row - tsize * 1.25) / 2 + 1, w - x - pad, tsize * 1.3),
                        (T.FONT_BOLD, tsize), ink, ui.ALIGN_LEFT)
         y = top + row + 6
-        rule = ui.Path.rect(pad, y, w - 2 * pad, 1.5)
-        ui.set_color(self.edge)
-        rule.fill()
+        # the breakdown sits on a panel torn along its top (a Veilwraith Foe card's text panel)
+        veil.torn_panel(6, y - 2, w - 12, h - y - 4, ("info", self.title), T.TORN_PANEL, T.RIM, 2.5,
+                        bottom_radius=r - 6)
+        veil.hatching(10, y + 6, w - 20, h - y - 14, ("info", self.title, "h"), T.SCAR, 9, 0.6)
         y += 10
         body = "\n".join(self.lines)
         if self.middle:
@@ -948,8 +1015,9 @@ class InfoCardFace(ui.View):
 
     @staticmethod
     def draw_stamp(w: float, h: float) -> None:
-        """IMMUNITY across the card: bold red capitals in a red frame, turned up to the right."""
-        red = "#c8261f"
+        """IMMUNITY across the card: bold capitals in a stamp's double frame, turned up to
+        the right; white, as the only bright thing on the greyed card."""
+        red = T.BRIGHT
         size = max(26.0, min(48.0, w / 7.5))
         tw = text_size("IMMUNITY", 0, size, True)[0] + size * 1.0
         th = size * 1.75
@@ -1202,10 +1270,10 @@ class PileView(ui.View):
         r = max(6.0, min(w, h) * 0.12)
         if n == 0:
             edge = ui.Path.rounded_rect(x + 1, y + 1, w - 2, h - 2, r)
-            edge.line_width = 1.5
-            ui.set_color(T.PANEL_2)
+            edge.line_width = 1
+            ui.set_color(T.FRAME_QUIET)
             edge.stroke()
-            ui.draw_string("0", (x, y + h / 2.0 - 11, w, 22), (T.FONT_BOLD, 16), T.PANEL_2, ui.ALIGN_CENTER)
+            ui.draw_string("0", (x, y + h / 2.0 - 11, w, 22), (T.FONT_BOLD, 16), T.FAINT, ui.ALIGN_CENTER)
         else:
             step = 2.0
             cw, ch = w - step * (n - 1), h - step * (n - 1)
@@ -1253,7 +1321,7 @@ class CountBadge(ui.View):
 
     def draw(self) -> None:
         d = min(self.width, self.height) - 3
-        draw_count_circle(self.width / 2.0, self.height / 2.0, d, self.count, T.PANEL_2, T.TEXT, rim=T.CARD_FACE)
+        draw_count_circle(self.width / 2.0, self.height / 2.0, d, self.count, T.BG, T.TEXT, rim=T.RIM)
 
 
 class HandGrid(ui.View):
@@ -1449,8 +1517,8 @@ class TableStrip(ui.View):
             ui.draw_string(self.label, (0, 0, self.width, self.label_h), (T.FONT, min(11.0, self.label_h - 2)), T.MUTED)
         if not self.cards:
             slot = ui.Path.rounded_rect(1, y + 1, cw - 2, ch - 2, max(4.0, cw * 0.12))
-            slot.line_width = 1.5
-            ui.set_color(T.PANEL_2)
+            slot.line_width = 1
+            ui.set_color(T.FRAME_QUIET)
             slot.stroke()
         elif self.overflows():
             draw_back(0, y, cw, ch, len(self.cards))

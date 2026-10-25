@@ -20,6 +20,7 @@ from app import theme as T  # noqa: E402
 from helpers import set_enemy, set_hand, set_tavern_top  # noqa: E402
 
 TWELVE = ["7C", "AD", "2S", "5C", "3H", "4D", "6S", "8H", "9C", "2D", "3S", "6H"]
+from app.widgets import button_look  # noqa: E402
 
 
 def _app(tmp_path, monkeypatch, size):
@@ -336,11 +337,11 @@ def test_a_lone_skip_is_the_main_button_and_a_skip_beside_a_pick_is_not(app):
     g.decision = dict(g.decision, eligible=[])           # nothing may join the attack
     gs.refresh(after_action=False)
     assert not [b for b in _buttons(gs.overlay) if b.title.startswith("Add")]
-    assert ui.button(app, "Nothing to add").background_color == T.BTN
+    assert button_look(ui.button(app, "Nothing to add")) == "lit"
     ui.tap(app, *ui.root_point(app, ui.button(app, "Nothing to add")))
     assert g.decision is None or g.decision.get("kind") != "mage_peek"
 
 
 def test_discard_them_all_is_the_second_button_beside_keep(app):
     gs, g = _emblem_keep(app)
-    assert ui.button(app, "Discard them all").background_color == T.PANEL_2
+    assert button_look(ui.button(app, "Discard them all")) == "quiet"

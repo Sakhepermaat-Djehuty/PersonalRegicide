@@ -21,6 +21,7 @@ from regicide.rules import GameConfig
 
 from . import store
 from . import theme as T
+from . import veil
 from .widgets import (CardStrip, CardView, CountStepper, HandGrid, PileView, TableHeader, TableStrip, fit_label, fit_title, make_button, make_label,
                       set_enabled, text_size)
 
@@ -180,6 +181,11 @@ class Screen(ui.View):
         self.app = app
         self.background_color = T.BG
 
+    def draw(self) -> None:
+        # the fog drifting behind everything (drawn, not a subview: screens clear their
+        # subviews when they lay themselves out)
+        veil.draw_fog(0, 0, self.width, self.height, "fog.jpg")
+
     def on_show(self) -> None:
         pass
 
@@ -196,8 +202,8 @@ def apply_face_style(settings: dict) -> None:
     the "card_back" setting (``widgets.BACK_STYLE``)."""
     from . import backs, widgets
     widgets.FACE_STYLE = "classic" if settings.get("classic_faces") else "simple"
-    back = str(settings.get("card_back", "lattice"))
-    widgets.BACK_STYLE = back if back in backs.STYLES else "lattice"
+    back = str(settings.get("card_back", backs.DEFAULT))
+    widgets.BACK_STYLE = back if back in backs.STYLES else backs.DEFAULT
 
 
 class App(ui.View):
@@ -447,11 +453,15 @@ class MenuScreen(Screen):
             self.remove_subview(v)
         app = self.app
         w = self.width
-        y = T.TOP_INSET + 24
-        self.add_subview(make_label("REGICIDE", (0, y, w, 44), 36, True, T.ACCENT, ui.ALIGN_CENTER))
-        y += 46
-        self.add_subview(make_label("legacy · personal edition · %s" % VERSION, (0, y, w, 20), 13, False, T.MUTED, ui.ALIGN_CENTER))
-        y += 40
+        y = T.TOP_INSET + 4
+        logo = veil.LogoView(T.TEXT, frame=(0, y, w, 118))
+        logo.name = "logo"
+        self.add_subview(logo)
+        y += 118
+        sub = make_label("legacy · personal edition · %s" % VERSION, (0, y, w, 20), 13, False, T.MUTED, ui.ALIGN_CENTER)
+        sub.font = (T.FONT_ITALIC, 13)
+        self.add_subview(sub)
+        y += 34
         bw, bh, gap = min(300, w - 2 * T.MARGIN), 48, 12
         x = (w - bw) / 2
         items: List = []
@@ -532,7 +542,9 @@ class LoadGameScreen(Screen):
         for r in rows:
             panel = ui.View(frame=(0, yy, w - 2 * m, 92))
             panel.background_color = T.PANEL
-            panel.corner_radius = 10
+            panel.corner_radius = 4
+            panel.border_width = 1
+            panel.border_color = T.BTN_EDGE
             state = "complete" if r["finished"] else "mission %d%s" % (r["mission"], " · attempt in progress" if r["has_attempt"] else "")
             panel.add_subview(make_label(r["name"], (12, 8, w - 2 * m - 24, 24), 17, True, T.TEXT))
             panel.add_subview(make_label("%d player%s · %s · %s" % (r["players"], "" if r["players"] == 1 else "s", state, r["last_played"]),
@@ -745,8 +757,8 @@ class GameScreen(Screen):
         self.special_btn = make_button("Relics", self._special, (0, 0, 10, 10), False, 13)
         self.special_btn.hidden = True
         self.toast = make_label("", (0, 0, 10, 10), 13, True, T.BG, ui.ALIGN_CENTER)
-        self.toast.background_color = T.ACCENT
-        self.toast.corner_radius = 8
+        self.toast.background_color = T.TEXT
+        self.toast.corner_radius = 4
         self.toast.hidden = True
         for v in [self.status, self.menu_btn, self.enemy] + list(self.pile_views.values()) + [
                   self.strip, self.zone, self.hand,
@@ -1483,9 +1495,7 @@ class Overlay(ui.View):
         super().__init__(**kw)
         self.screen = screen
         self.background_color = (0, 0, 0, 0.72)
-        self.panel = ui.View()
-        self.panel.background_color = T.PANEL
-        self.panel.corner_radius = 16
+        self.panel = veil.Panel(seed=type(self).__name__)   # dark, torn along its top
         self.peek_btn = None
         self.peeking = False
         self._peek_saved: tuple = ()
@@ -1525,13 +1535,21 @@ class Overlay(ui.View):
                 v.hidden = True
             self.background_color = (0, 0, 0, 0.0)
             self.panel.background_color = None
+            self._ghost(True)
         elif self._peek_saved:
             bg, panel_bg, hidden = self._peek_saved
             self.background_color = bg
             self.panel.background_color = panel_bg
+            self._ghost(False)
             for v in hidden:
                 v.hidden = False
             self._peek_saved = ()
+
+    def _ghost(self, on: bool) -> None:
+        """The drawn panel (``veil.Panel``) fades away with the box, and comes back."""
+        if hasattr(self.panel, "ghost"):
+            self.panel.ghost = on
+            self.panel.set_needs_display()
 
     def touch_ended(self, touch) -> None:
         # a second finger on the screen while the button is held does not end the hold; a
@@ -2798,6 +2816,8 @@ class RulesOverlay(Overlay):
         for v in list(self.panel.subviews):
             self.panel.remove_subview(v)
         self.panel.background_color = None
+        if hasattr(self.panel, "ghost"):
+            self.panel.ghost = True        # the rules card is the box
         app = self.screen.app
         pw = min(330, self.width - 2 * T.MARGIN)
         head, subtitle, text, corner = rules_card(app.campaign, self.screen.game)
@@ -3737,8 +3757,10 @@ class _MapCanvas(ui.View):
     def __init__(self, screen: MapScreen, **kw) -> None:
         super().__init__(**kw)
         self.screen = screen
-        self.background_color = "#1f2a26"
-        self.corner_radius = 14
+        self.background_color = T.PANEL
+        self.corner_radius = 4
+        self.border_width = 1
+        self.border_color = T.BTN_EDGE
 
     def _points(self):
         w, h = self.width, self.height
@@ -3747,20 +3769,15 @@ class _MapCanvas(ui.View):
     def draw(self) -> None:
         camp = self.screen.app.campaign
         pts = self._points()
-        # terrain hint: a few soft shapes
-        ui.set_color("#26332e")
+        # the land in fog: a few darker shapes under it, the lake darkest
+        veil.draw_fog(0, 0, self.width, self.height, "fog.jpg")
+        ui.set_color((0, 0, 0, 0.35))
         ui.Path.oval(self.width * 0.05, self.height * 0.55, self.width * 0.5, self.height * 0.3).fill()
         ui.Path.oval(self.width * 0.45, self.height * 0.08, self.width * 0.5, self.height * 0.32).fill()
-        ui.set_color("#2b3c55")
+        ui.set_color((0, 0, 0, 0.6))
         ui.Path.oval(self.width * 0.55, self.height * 0.56, self.width * 0.42, self.height * 0.2).fill()
-        # route
-        route = ui.Path()
-        route.line_width = 3
-        route.move_to(*pts[0])
-        for p in pts[1:]:
-            route.line_to(*p)
-        ui.set_color("#6b5d3a")
-        route.stroke()
+        # the route, scored into the map
+        veil.polyline(pts, T.FRAME_QUIET, 2.0)
         for i, (x, y) in enumerate(pts):
             n = i + 1
             r = 15
@@ -3769,7 +3786,7 @@ class _MapCanvas(ui.View):
             elif camp is not None and n == camp.mission and not camp.finished:
                 fill, ring, txt = T.PANEL, T.ACCENT, T.TEXT
             else:
-                fill, ring, txt = "#2a2f3a", "#4a5060", T.MUTED
+                fill, ring, txt = T.BG, T.FRAME_QUIET, T.MUTED
             if self.screen.selected == n:
                 ui.set_color(T.TEXT)
                 ui.Path.oval(x - r - 4, y - r - 4, 2 * r + 8, 2 * r + 8).stroke()
@@ -4692,8 +4709,8 @@ class SettingsScreen(Screen):
         # the card backs: a tap on the button tries the next style; the card beside it shows it
         from . import backs
         from .widgets import BackSample
-        style = str(self.app.settings.get("card_back", "lattice"))
-        style = style if style in backs.STYLES else "lattice"
+        style = str(self.app.settings.get("card_back", backs.DEFAULT))
+        style = style if style in backs.STYLES else backs.DEFAULT
         sv.add_subview(make_label("Card backs", (m, yy + 18, w - 2 * m - 170, 30), 15, False, T.TEXT))
         btn = make_button(backs.NAMES[style] + " ›", self._next_back, (w - m - 160, yy + 14, 110, 36), False, 14)
         sv.add_subview(btn)
@@ -4777,8 +4794,8 @@ class SettingsScreen(Screen):
 
     def _next_back(self, sender) -> None:
         from . import backs
-        style = str(self.app.settings.get("card_back", "lattice"))
-        style = style if style in backs.ORDER else "lattice"     # as shown on the button
+        style = str(self.app.settings.get("card_back", backs.DEFAULT))
+        style = style if style in backs.ORDER else backs.DEFAULT     # as shown on the button
         self._set("card_back", backs.ORDER[(backs.ORDER.index(style) + 1) % len(backs.ORDER)])
         self.layout()
 
