@@ -86,15 +86,26 @@ screen they share a row with the mission zone.
 
 The lab is dressed after Veilwraith (Hall or Nothing): black and greys only, no hue
 anywhere (colour is what that world lost). What matters is told by brightness (white: a
-selection, a warning, a number that counts now), by shape (the suits and classes) and by
-marks. Fog drifts behind every screen. Cards are black with a faint frame inside the edge
-and a few scratches (the same on a card every time); a corrupted card sits in a dark
-sleeve with cracks running over its face, a restored one in a pale sleeve. Buttons are
-black tiles with a thin pale frame inside (dim on a quiet button, faint when it can't be
-pressed), as Veilwraith's number tiles. Choice boxes and the info cards' text sit on
-panels torn along their top edge. The menu and the Veil card backs carry a brushed
-"Regicide" wordmark. Type is Iowan Old Style. Everything is drawn in code (app/veil.py);
-the fog comes from tools/art/make_art.py (noise, no pictures), nothing from the game.
+selection, a warning, the main action, a number that counts now), by shape (the suits and
+classes) and by marks. Fog drifts behind every screen, glowing a little behind the enemy.
+
+The enemy is the one pale card on the table, as a Veilwraith Foe card: lit from behind,
+its letter dark in it, its rank and class small in the corner and the classes it is
+immune to on a dark panel torn along its top. The other cards are black with a thin
+edge; a selected one has a white rim and lifts; one that can't be played sinks into the
+dark. A corrupted card sits in a dark sleeve with cracks over its lower face, a restored
+one in a grey sleeve with a pale line inside. Counts (piles, the play order, the map's
+stops) sit on small black number tiles, as Veilwraith's 1/2/3 tiles.
+
+Buttons are black tiles with a pale frame inside: the main action has the heaviest frame
+and a white title, quieter ones a dim frame, one that can't be pressed a faint one, and
+the picked one of a set turns pale. The phone's own switches and segmented controls keep
+their colours whatever the app asks, so on/off settings are tick boxes and choices like
+the number of players are rows of tiles. Choice boxes, the info cards' text and the toast
+sit on panels torn along their top, lit along the tear. The menu and the Veil card backs
+carry a brushed "Regicide" wordmark; type is Iowan Old Style. Everything is drawn in code
+(app/veil.py); the fog and the Foe card's light come from tools/art/make_art.py (noise,
+no pictures), nothing from the game.
 
 ## Info pop-ups
 
