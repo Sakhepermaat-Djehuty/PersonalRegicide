@@ -31,7 +31,21 @@ def run() -> None:
     app = App()
     app.show(MenuScreen(app))
     app.present("fullscreen", hide_title_bar=True, orientations=["portrait"])
+    force_dark(app)
     return app
+
+
+def force_dark(view) -> None:
+    """The look is black: ask iOS for its dark appearance on this view and its window, so
+    the keyboard and the phone's own controls stay dark whatever the phone is set to."""
+    try:
+        obj = view.objc_instance
+        obj.setOverrideUserInterfaceStyle_(2)
+        win = obj.window()
+        if win is not None:
+            win.setOverrideUserInterfaceStyle_(2)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

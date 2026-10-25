@@ -15,6 +15,7 @@ import fakeui  # noqa: E402
 
 fakeui.install()
 import ui  # noqa: E402
+from app.widgets import Segments, Toggle  # noqa: E402
 
 from app import theme as T  # noqa: E402
 from helpers import set_enemy, set_hand, set_tavern_top  # noqa: E402
@@ -325,7 +326,7 @@ def test_the_piles_viewer_tabs_are_full_size_targets_inside_the_screen(tmp_path,
     for pile in ("reserve", "castle", "discard"):
         gs._show_piles(pile)                              # the reserve: about forty cards from the start
         assert isinstance(gs.overlay, PilesOverlay)
-        seg = ui.find(gs.overlay, lambda v: isinstance(v, ui.SegmentedControl))[0]
+        seg = ui.find(gs.overlay, lambda v: isinstance(v, Segments))[0]
         assert seg.height >= 36
         px, py = _origin(gs.overlay.panel)
         assert py >= T.TOP_INSET - 0.5 and py + gs.overlay.panel.height <= app.height - T.BOTTOM_INSET + 0.5, (size, pile)

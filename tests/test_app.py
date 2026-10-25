@@ -13,6 +13,7 @@ from regicide.campaign import party as P  # noqa: E402
 
 fakeui.install()
 import ui  # noqa: E402
+from app.widgets import Segments, Toggle  # noqa: E402
 
 from regicide.bots import greedy_policy, min_waste_discard  # noqa: E402
 from regicide.engine import PHASE_CHOOSE_NEXT, PHASE_DECIDE, PHASE_PLAY, PHASE_SUFFER  # noqa: E402
@@ -1529,7 +1530,7 @@ def test_evergreen_screen_draw_redraw_options_mercenaries_start_and_continue(app
         ui.button(app, "Start")                        # nothing drawn yet
     assert ui.render(app).size[0] > 0
     # the two options of the rules card are switches, remembered in the save
-    switches = ui.find(app, lambda v: isinstance(v, ui.Switch))
+    switches = ui.find(app, lambda v: isinstance(v, Toggle))
     assert len(switches) == 2 and not switches[0].value
     switches[0].value = True
     switches[0].action(switches[0])

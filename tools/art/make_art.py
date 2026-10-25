@@ -2,9 +2,12 @@
 
     python3 tools/art/make_art.py
 
-fog.jpg   the drifting fog behind every screen: near black, a pale ground mist low
-          down, thin wisps and a dark edge (portrait, aspect-filled on any phone)
+fog.jpg   the drifting fog behind every screen: near black, a pale glow up behind the
+          enemy, a ground mist low down, thin wisps and a dark edge (portrait,
+          aspect-filled on any phone)
 fog_l.jpg the same fog for a landscape box (the info pop-ups)
+foe.jpg   the enemy card's field: a pale billow lit from behind, dark at the edges (a
+          Veilwraith Foe card is the one pale card on the table)
 """
 from __future__ import annotations
 
@@ -65,7 +68,8 @@ def ridged(field: np.ndarray) -> np.ndarray:
     return (1.0 - np.abs(field * 2.0 - 1.0)) ** 6
 
 
-def fog(w: int, h: int, seed: int, mist_at: float = 0.8, mist: float = 1.0) -> np.ndarray:
+def fog(w: int, h: int, seed: int, mist_at: float = 0.88, mist: float = 0.6, glow_at: float = 0.22,
+        glow: float = 0.9) -> np.ndarray:
     """Luminance 0..1: drifting smoke, a pale ground mist round ``mist_at`` (0 top, 1
     bottom) and a dark edge. Mostly well below 0.35, so pale type stays readable on it."""
     rng = np.random.default_rng(seed)
@@ -78,9 +82,25 @@ def fog(w: int, h: int, seed: int, mist_at: float = 0.8, mist: float = 1.0) -> n
     ys = np.linspace(0, 1, h)[:, None]
     xs = np.linspace(-1, 1, w)[None, :]
     ground = np.exp(-((ys - mist_at) / 0.16) ** 2) * mist          # the mist lying low
+    ground = ground + np.exp(-((ys - glow_at) / 0.14) ** 2) * glow  # a glow up behind the enemy
     lum = 0.03 + 0.2 * smoke + 0.16 * wisps + 0.14 * ground * (0.45 + 0.9 * smoke)
     vignette = 1.0 - 0.6 * np.clip(xs ** 2 * 0.75 + (ys * 2 - 1) ** 2 * 0.5, 0, 1)
     return np.clip(lum * vignette, 0, 1)
+
+
+def foe(w: int, h: int, seed: int) -> np.ndarray:
+    """A pale billow lit from behind at (0.5, 0.35), about 0.55 there and 0.15 at the edges,
+    with the smoke's texture through it."""
+    rng = np.random.default_rng(seed)
+    flow_x = (fbm(w, h, w / 1.2, 3, rng) - 0.5) * w * 0.6
+    flow_y = (fbm(w, h, w / 1.2, 3, rng) - 0.5) * w * 0.3
+    smoke = warp(fbm(w, h, w / 1.6, 6, rng), flow_x, flow_y)
+    strands = ridged(warp(fbm(w, h, w / 1.1, 5, rng), flow_x * 1.4, flow_y * 0.6))
+    ys = np.linspace(0, 1, h)[:, None]
+    xs = np.linspace(0, 1, w)[None, :]
+    billow = np.exp(-(((xs - 0.5) / 0.42) ** 2 + ((ys - 0.35) / 0.38) ** 2))
+    lum = 0.13 + 0.42 * billow * (0.55 + 0.6 * smoke) + 0.06 * strands * billow
+    return np.clip(lum, 0, 1)
 
 
 def grain(img: np.ndarray, seed: int, amount: float = 0.012) -> np.ndarray:
@@ -98,7 +118,8 @@ def save(arr: np.ndarray, name: str, quality: int = 80) -> str:
 def main(argv=None) -> int:
     paths = [
         save(grain(fog(750, 1624, 7), 7), "fog.jpg"),
-        save(grain(fog(900, 600, 11, mist_at=0.9, mist=0.7), 11), "fog_l.jpg"),
+        save(grain(fog(900, 600, 11, mist_at=0.9, mist=0.7, glow=0.0), 11), "fog_l.jpg"),
+        save(grain(foe(240, 340, 13), 13), "foe.jpg"),
     ]
     for p in paths:
         print("%s  %.0f KB" % (p, os.path.getsize(p) / 1024.0))

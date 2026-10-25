@@ -163,19 +163,54 @@ _SERIF_FILES = {
 }
 
 
-class _Chain:
-    """A font with a fallback for the characters it lacks (a serif has no card suits:
-    the phone takes them from another font, and so does this, from DejaVu Sans). It
-    answers the few PIL font calls this module makes."""
+# Symbols no stand-in font has (⚝ ⛏ 𝄞...): Noto's symbol fonts when they are installed, or
+# listed in FAKEUI_SYMBOL_FONTS (paths joined with os.pathsep); the phone has its own.
+_SYMBOL_FONT_CANDIDATES = [p for p in os.environ.get("FAKEUI_SYMBOL_FONTS", "").split(os.pathsep) if p] + [
+    "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoMusic-Regular.ttf",
+]
+_cmaps = {}
 
-    def __init__(self, main, fallback) -> None:
-        self.main, self.fallback = main, fallback
-        self._has = {}
+
+def _has_glyph(path: str, font, ch: str) -> bool:
+    """Whether the font at ``path`` draws ``ch``: by its character map (TrueType/OpenType),
+    else by whether PIL draws anything for it (a Type 1 font draws nothing for a missing one)."""
+    if ch.isspace():
+        return True
+    if path.lower().endswith((".ttf", ".otf")):
+        if path not in _cmaps:
+            try:
+                from fontTools.ttLib import TTFont
+                _cmaps[path] = set(TTFont(path, lazy=True).getBestCmap() or {})
+            except Exception:
+                _cmaps[path] = None
+        cmap = _cmaps[path]
+        if cmap is not None:
+            return ord(ch) in cmap
+    return font.getmask(ch).getbbox() is not None
+
+
+class _Chain:
+    """A font with fallbacks for the characters it lacks (a serif has no card suits: the
+    phone takes them from another font, and so does this). It answers the few PIL font
+    calls this module makes."""
+
+    def __init__(self, main, main_path: str, fallbacks) -> None:
+        self.main, self.main_path = main, main_path
+        self.fallbacks = list(fallbacks)            # [(font, path)]
+        self._pick = {}
 
     def _font_for(self, ch: str):
-        if ch not in self._has:
-            self._has[ch] = ch.isspace() or self.main.getmask(ch).getbbox() is not None
-        return self.main if self._has[ch] else self.fallback
+        if ch not in self._pick:
+            f = self.main
+            if not _has_glyph(self.main_path, self.main, ch):
+                for font, path in self.fallbacks:
+                    if _has_glyph(path, font, ch):
+                        f = font
+                        break
+            self._pick[ch] = f
+        return self._pick[ch]
 
     def runs(self, text: str):
         out = []
@@ -220,15 +255,22 @@ def _pil_font(font: Any):
     serif = any(k in low for k in _SERIF_HINTS)
     key = (serif, bold, italic, int(round(size * SCALE)))
     if key not in _font_cache:
-        path = _font_file(bold)
-        sans = ImageFont.truetype(path, key[3]) if (path and ImageFont is not None) else ImageFont.load_default()
-        main = None
-        if serif and ImageFont is not None:
+        px = key[3]
+        sans_path = _font_file(bold)
+        if ImageFont is None or not sans_path:  # pragma: no cover
+            _font_cache[key] = ImageFont.load_default()
+            return _font_cache[key]
+        sans = ImageFont.truetype(sans_path, px)
+        symbols = [(ImageFont.truetype(p, px), p) for p in _SYMBOL_FONT_CANDIDATES if os.path.exists(p)]
+        main, main_path = sans, sans_path
+        fallbacks = symbols
+        if serif:
             for p in _SERIF_FILES.get((bold, italic), ()) + _SERIF_FILES[(bold, False)]:
                 if os.path.exists(p):
-                    main = _Chain(ImageFont.truetype(p, key[3]), sans)
+                    main, main_path = ImageFont.truetype(p, px), p
+                    fallbacks = [(sans, sans_path)] + symbols
                     break
-        _font_cache[key] = main or sans
+        _font_cache[key] = _Chain(main, main_path, fallbacks) if fallbacks else main
     return _font_cache[key]
 
 
@@ -456,7 +498,7 @@ class Path:
             a = start + (end - start) * i / float(n)
             self.line_to(cx + r * math.cos(a), cy + r * math.sin(a))
 
-    def append(self, other: "Path"):
+    def append_path(self, other: "Path"):
         if other.kind != "poly":
             x, y, w, h = other.box
             other = Path._outline(other)
@@ -1012,7 +1054,7 @@ def _render_view(v: View, ox: float, oy: float) -> None:
             draw_string(shown, (0, ty, v.width, v.height), v.font, v.text_color, v.alignment, LB_CLIP)
         elif isinstance(v, Button):
             tw, th = measure_string(v.title, 0, v.font)
-            col = v.tint_color if v.enabled else "#9a9a9a"
+            col = v.tint_color or ("black" if v.enabled else "#9a9a9a")
             draw_string(v.title, (0, max(0.0, (v.height - th) / 2.0), v.width, v.height), v.font, col, ALIGN_CENTER)
         elif isinstance(v, Switch):
             col = (v.tint_color or "#34c759") if v.value else "#3a3a3c"
@@ -1051,7 +1093,8 @@ def _render_view(v: View, ox: float, oy: float) -> None:
             if getattr(v, "bordered", True) and v.background_color is None:
                 _overlay_rect(c, box, (255, 255, 255, 255), radius=5 * SCALE, outline=(180, 180, 180, 255), width=SCALE)
             ink = getattr(v, "text_color", None) or "black"
-            draw_string(v.text or v.placeholder, (8, (v.height - 20) / 2, v.width - 16, 20), v.font,
+            inset = 8 if getattr(v, "bordered", True) else 0      # a field with no frame has no inset
+            draw_string(v.text or v.placeholder, (inset, (v.height - 20) / 2, v.width - 2 * inset, 20), v.font,
                         ink if v.text else "#999999")
         if hasattr(v, "draw") and callable(getattr(v, "draw")):
             v.draw()

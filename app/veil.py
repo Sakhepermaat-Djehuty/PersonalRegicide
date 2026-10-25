@@ -35,32 +35,6 @@ def image(name: str):
     return _images[name]
 
 
-def fog_view(name: str = "fog.jpg") -> ui.View:
-    """The fog, filling its superview (flex), behind everything and never touched."""
-    img = image(name)
-    if img is None:
-        v = ui.View()
-        v.background_color = T.BG
-    else:
-        v = ui.ImageView()
-        v.image = img
-        v.content_mode = ui.CONTENT_SCALE_ASPECT_FILL
-        v.background_color = T.BG
-    v.flex = "WH"
-    v.touch_enabled = False
-    v.name = "veil_fog"
-    return v
-
-
-def add_fog(view: ui.View, name: str = "fog.jpg") -> ui.View:
-    """Lay the fog at the back of ``view`` (a screen) and keep it there."""
-    f = fog_view(name)
-    f.frame = (0, 0, view.width, view.height)
-    view.add_subview(f)
-    f.send_to_back()
-    return f
-
-
 def draw_fog(x: float, y: float, w: float, h: float, name: str = "fog_l.jpg") -> None:
     """The fog filling the rect (cut to it), inside a view's draw()."""
     img = image(name)
@@ -104,24 +78,48 @@ def polyline(pts: Sequence[Point], colour, width: float = 1.0) -> None:
     p.stroke()
 
 
-def torn_edge(x0: float, x1: float, y: float, depth: float, seed, step: float = 3.0) -> List[Point]:
-    """A ragged edge from (x0, y) to (x1, y): small jagged teeth with now and then a
-    deeper bite, all within ``depth`` of y (up and down)."""
+def torn_edge(x0: float, x1: float, y: float, depth: float, seed, step: float = 5.0) -> List[Point]:
+    """A ragged edge from (x0, y) to (x1, y): a wandering line with small teeth and now
+    and then a deeper bite, all within ``depth`` of y (up and down)."""
     r = rng(seed)
     n = max(4, int(abs(x1 - x0) / step))
     pts = [(x0, y)]
     drift = 0.0
     for i in range(1, n):
-        drift = drift * 0.6 + r.uniform(-0.5, 0.5) * depth * 0.6
-        tooth = r.uniform(-1, 1) * depth * 0.45
+        drift = drift * 0.85 + r.uniform(-1, 1) * depth * 0.35
+        tooth = r.uniform(-1, 1) * depth * 0.25
         if r.random() < 0.08:
-            tooth -= depth * r.uniform(0.6, 1.0)   # a bite
+            tooth -= depth * r.uniform(0.5, 0.9)   # a bite
         pts.append((x0 + (x1 - x0) * i / float(n), y + max(-depth, min(depth, drift + tooth))))
     pts.append((x1, y))
     return pts
 
 
-def torn_panel(x: float, y: float, w: float, h: float, seed, fill, rim=None, depth: float = 3.0,
+def lit_tear(top: Sequence[Point], rim, seed) -> None:
+    """Light a tear as paper or card torn under a lamp: a dark line just under it, the
+    lit edge itself, and short fibres standing off it."""
+    polyline([(px, py + 0.8) for px, py in top], TEAR_SHADOW, 1.4)
+    polyline(top, rim, 1.6)
+    r = rng((seed, "fibres"))
+    x = top[0][0] + r.uniform(4, 10)
+    end = top[-1][0]
+    i = 0
+    while x < end - 2:
+        while i < len(top) - 2 and top[i + 1][0] < x:
+            i += 1
+        (ax, ay), (bx, by) = top[i], top[i + 1]
+        t = (x - ax) / (bx - ax) if bx != ax else 0.0
+        y = ay + (by - ay) * t
+        length = r.uniform(2.0, 6.0)
+        ang = -math.pi / 2 + r.uniform(-0.35, 0.35)
+        polyline([(x, y), (x + math.cos(ang) * length, y + math.sin(ang) * length)], rim, 0.6)
+        x += r.uniform(9, 14)
+
+
+TEAR_SHADOW = (0.0, 0.0, 0.0, 0.6)
+
+
+def torn_panel(x: float, y: float, w: float, h: float, seed, fill, rim=None, depth: float = 4.5,
                bottom_radius: float = 0.0) -> List[Point]:
     """A panel filling the rect whose top edge is torn (the text panel of a Veilwraith
     Foe card): filled with ``fill``, the tear lit along its edge with ``rim``. Returns
@@ -140,7 +138,7 @@ def torn_panel(x: float, y: float, w: float, h: float, seed, fill, rim=None, dep
         pts += [(x + w, y + h), (x, y + h)]
     fill_poly(pts, fill)
     if rim:
-        polyline(top, rim, 1.0)
+        lit_tear(top, rim, seed)
     return top
 
 
@@ -161,20 +159,18 @@ def scratches(x: float, y: float, w: float, h: float, seed, n: int, colour, widt
         polyline(pts, colour, width * r.uniform(0.6, 1.2))
 
 
-def hatching(x: float, y: float, w: float, h: float, seed, colour, n: int = 9, width: float = 0.6) -> None:
-    """Short parallel strokes in a few loose clusters, like the scored marks in the text
-    panel of a Foe card."""
+def hatching(x: float, y: float, w: float, h: float, seed, colour, n: int = 10, width: float = 0.8) -> None:
+    """Long scored strokes, roughly along one slant, cut into a panel (the marks across the
+    text panel of a Foe card)."""
     r = rng(seed)
-    for _ in range(max(1, n // 3)):
-        cx, cy = x + r.uniform(0.1, 0.9) * w, y + r.uniform(0.15, 0.85) * h
-        ang = r.uniform(0.2, 0.7)
-        size = r.uniform(0.1, 0.25) * min(w, 3 * h)
-        for k in range(3):
-            ox = (k - 1) * size * 0.18
-            dx, dy = math.cos(ang) * size / 2.0, -math.sin(ang) * size / 2.0
-            p0 = _inside((cx + ox - dx, cy - dy), x, y, w, h)
-            p1 = _inside((cx + ox + dx, cy + dy), x, y, w, h)
-            polyline([p0, p1], colour, width)
+    for _ in range(int(n)):
+        length = r.uniform(0.3, 0.7) * w
+        ang = 0.3 + r.uniform(-0.2, 0.2)
+        cx, cy = x + r.uniform(0.05, 0.95) * w, y + r.uniform(0.1, 0.9) * h
+        dx, dy = math.cos(ang) * length / 2.0, -math.sin(ang) * length / 2.0
+        p0 = _inside((cx - dx, cy - dy), x, y, w, h)
+        p1 = _inside((cx + dx, cy + dy), x, y, w, h)
+        polyline([p0, p1], colour, width * r.uniform(0.75, 1.25))
 
 
 def cracks(x: float, y: float, w: float, h: float, seed, colour, n: int = 3, width: float = 0.9) -> None:
@@ -236,22 +232,59 @@ def rough_rule(x0: float, x1: float, y: float, seed, colour, width: float = 1.0)
     fill_poly(top + bottom[::-1], colour)
 
 
+def number_tile(x: float, y: float, s: float, text: str, lit: bool = True, w: Optional[float] = None,
+                ink=None) -> None:
+    """A number on a small black tile with the pale frame inside it (Veilwraith's 1/2/3
+    tiles): a pile's count, the order a card was picked in, a stop on the map."""
+    w = s if w is None else w
+    ui.set_color(T.BTN)
+    ui.Path.rounded_rect(x, y, w, s, 2.5).fill()
+    edge = ui.Path.rounded_rect(x + 0.5, y + 0.5, w - 1, s - 1, 2.5)
+    edge.line_width = 1
+    ui.set_color(T.CARD_RIM)
+    edge.stroke()
+    fi = max(2.5, s * 0.12)
+    inset_frame(x, y, w, s, fi, T.FRAME if lit else T.FRAME_QUIET, 1.0, 1.5)
+    size = s * (0.58 if len(text) < 2 else 0.5 if len(text) < 3 else 0.4)
+    ui.draw_string(text, (x, y + (s - size * 1.3) / 2.0, w, size * 1.35), (T.FONT_BOLD, size),
+                   ink or T.BTN_TEXT, ui.ALIGN_CENTER)
+
+
+class RoughRule(ui.View):
+    """A scored rule across its width (in place of a flat line)."""
+
+    def __init__(self, colour=None, seed="rule", **kw) -> None:
+        super().__init__(**kw)
+        self.colour = colour or T.RIM
+        self.seed = seed
+        self.background_color = None
+        self.touch_enabled = False
+
+    def draw(self) -> None:
+        rough_rule(0, self.width, self.height / 2.0, self.seed, self.colour, max(1.0, min(1.6, self.height)))
+
+
 # ---------------------------------------------------------------------------- the inset frame on buttons
 class InsetFrame(ui.View):
-    """The pale hairline frame inside a button (a black tile), drawn over it; it follows
-    the button's size and never takes a touch."""
+    """The pale frame inside a button (a black tile), drawn over it; it follows the
+    button's size and never takes a touch. ``look`` is how the button is dressed: "lit",
+    "quiet", "off", "chosen" or "bare"."""
 
     def __init__(self, colour=None, inset: float = 3.0, **kw) -> None:
         super().__init__(**kw)
         self.colour = colour or T.FRAME
         self.inset = inset
+        self.line = 1.0
+        self.look = "lit"
         self.flex = "WH"
         self.touch_enabled = False
         self.background_color = None
         self.name = "veil_frame"
 
     def draw(self) -> None:
-        inset_frame(0, 0, self.width, self.height, self.inset, self.colour, 1.0, 2.0)
+        if self.colour is None:
+            return
+        inset_frame(0, 0, self.width, self.height, self.inset + (self.line - 1) * 0.5, self.colour, self.line, 2.0)
 
 
 def frame_of(button) -> Optional[InsetFrame]:
@@ -261,50 +294,67 @@ def frame_of(button) -> Optional[InsetFrame]:
     return None
 
 
-def dress_button(b, primary: bool = True, enabled: bool = True) -> None:
-    """A black tile with a dark edge and the pale inset frame (bright on a main action,
-    dim on a quiet one, faint when it can't be pressed)."""
-    b.background_color = T.BTN if enabled else T.BTN_DISABLED
-    b.border_width = 1
-    b.border_color = T.BTN_EDGE
+# how each look dresses a button: (fill, title, frame colour, frame width, edge)
+LOOKS = {
+    "lit": (lambda: (T.BTN_LIT, T.BRIGHT, T.FRAME, 2.0, T.BTN_EDGE)),
+    "quiet": (lambda: (T.BTN, T.TEXT, T.FRAME_QUIET, 1.0, T.BTN_EDGE)),
+    "off": (lambda: (T.BTN_DISABLED, T.BTN_TEXT_OFF, T.FRAME_OFF, 1.0, T.BTN_EDGE)),
+    "chosen": (lambda: (T.TEXT, T.BG, None, 1.0, T.TEXT)),
+    "bare": (lambda: (None, T.TEXT, None, 1.0, None)),
+}
+
+
+def dress_button(b, primary: bool = True, enabled: bool = True, chosen: bool = False, bare: bool = False) -> None:
+    """A black tile with a dark edge and the pale frame inside it: "lit" for the one main
+    action (a heavier frame, a white title), "quiet" (a dim frame), "off" when it can't be
+    pressed, "chosen" for the picked one of a set (pale, the title in black, as a ticked
+    box) and "bare" for a plain line of text (a menu's lesser entries)."""
+    look = "off" if not enabled else "chosen" if chosen else "bare" if bare else "lit" if primary else "quiet"
+    fill, title, frame, line, edge = LOOKS[look]()
+    b.background_color = fill
+    b.border_width = 1 if edge else 0
+    b.border_color = edge or T.BG
     b.corner_radius = 4
-    b.tint_color = (T.BTN_TEXT if primary else T.TEXT) if enabled else T.FAINT
+    b.tint_color = title
     f = frame_of(b)
     if f is None:
         f = InsetFrame()
         f.frame = (0, 0, b.width, b.height)
         b.add_subview(f)
-    f.colour = (T.FRAME if primary else T.FRAME_QUIET) if enabled else T.FRAME_OFF
+    f.colour, f.line, f.look = frame, line, look
     f.set_needs_display()
 
 
-def dress_switch(sw) -> None:
-    """A switch in greys: pale when on (the phone's knob stays white)."""
-    sw.tint_color = T.SWITCH_ON
-    sw.background_color = None
-
-
-def dress_segments(seg) -> None:
-    """A segmented control in greys: the chosen segment pale, the others framed in grey."""
-    seg.tint_color = T.SWITCH_ON
-
-
 def dress_field(tf) -> None:
-    """A text field as a black tile with a grey edge, the text in bone."""
-    tf.background_color = T.BTN
+    """A text field inside a black tile (``field_box``): the text in bone, no frame of its own."""
+    tf.background_color = None
     tf.text_color = T.TEXT
     tf.tint_color = T.TEXT
     tf.bordered = False
-    tf.border_width = 1
-    tf.border_color = T.BTN_EDGE
-    tf.corner_radius = 4
+
+
+def field_box(tf, frame) -> ui.View:
+    """A black tile with a grey edge holding the text field 8pt in from its sides (a field
+    with no frame of its own has no inset on the phone)."""
+    box = ui.View(frame=frame)
+    box.background_color = T.BTN
+    box.border_width = 1
+    box.border_color = T.BTN_EDGE
+    box.corner_radius = 4
+    tf.frame = (8, 0, frame[2] - 16, frame[3])
+    tf.flex = "WH"
+    dress_field(tf)
+    box.add_subview(tf)
+    return box
 
 
 # ---------------------------------------------------------------------------- panels
 class Panel(ui.View):
-    """A choice box: a near-black card with the fog showing faintly through, the pale
-    inset frame and a torn top edge lit along its tear. ``ghost`` hides it (the box fades
-    away while "Hold to view game" is held)."""
+    """A choice box: a near-black card with the fog showing faintly through, torn along its
+    top (the tear lit, with fibres), long dark scores across it and a dim frame inside.
+    ``ghost`` hides it (the box fades away while "Hold to view game" is held)."""
+
+    DEPTH = 4.5
 
     def __init__(self, seed="panel", **kw) -> None:
         super().__init__(**kw)
@@ -316,10 +366,10 @@ class Panel(ui.View):
         if self.ghost:
             return
         W, H = self.width, self.height
-        depth = 3.0
+        depth = self.DEPTH
+        top = torn_edge(0, W, depth, depth, self.seed)
         with ui.GState():
             p = ui.Path()
-            top = torn_edge(0, W, depth, depth, self.seed)
             p.move_to(*top[0])
             for q in top[1:]:
                 p.line_to(*q)
@@ -332,12 +382,39 @@ class Panel(ui.View):
             draw_fog(0, 0, W, H, "fog_l.jpg")
             ui.set_color(T.PANEL_VEIL)
             ui.Path.rect(0, 0, W, H).fill()
-            hatching(6, 8, W - 12, H - 16, (self.seed, "h"), T.SCAR, 10, 0.6)
-        polyline(top, T.RIM, 1.0)
+            hatching(6, 10, W - 12, H - 18, (self.seed, "h"), T.SCAR, 10, 0.8)
+        lit_tear(top, T.RIM, self.seed)
         f = ui.Path.rect(5, depth * 2 + 4, W - 10, H - depth * 2 - 9)
         f.line_width = 1.0
         ui.set_color(T.FRAME_QUIET)
         f.stroke()
+
+
+class Toast(ui.View):
+    """A short message over the table (a Hint, a refusal): bone text on a dark scrap torn
+    along its top. ``text`` as a label's."""
+
+    def __init__(self, **kw) -> None:
+        super().__init__(**kw)
+        self._text = ""
+        self.background_color = None
+        self.touch_enabled = False
+
+    @property
+    def text(self) -> str:
+        return self._text
+
+    @text.setter
+    def text(self, value: str) -> None:
+        self._text = str(value)
+        self.set_needs_display()
+
+    def draw(self) -> None:
+        W, H = self.width, self.height
+        torn_panel(0, 0, W, H, ("toast", self._text), T.TORN_PANEL, T.RIM, 3.0)
+        size = 13.0
+        ui.draw_string(self._text, (6, 3 + (H - 3 - size * 1.3) / 2.0, W - 12, size * 1.35), (T.FONT_BOLD, size),
+                       T.TEXT, ui.ALIGN_CENTER)
 
 
 # ---------------------------------------------------------------------------- the wordmark
@@ -356,17 +433,17 @@ _LETTERS: Dict[str, Tuple[float, List[List[Tuple[float, float, float]]]]] = {
         [(0.08, 0.56, 0.0), (0.42, 0.68, 0.12), (0.5, 0.92, 0.15), (0.28, 1.03, 0.19), (0.06, 0.6, 0.29),
          (0.14, 0.08, 0.22), (0.4, 0.0, 0.1), (0.66, 0.25, 0.0)],
     ]),
-    "g": (0.62, [
+    "g": (0.67, [
         [(0.55, 0.88, 0.0), (0.3, 1.03, 0.18), (0.05, 0.6, 0.29), (0.16, 0.12, 0.2), (0.45, 0.1, 0.08),
          (0.58, 0.32, 0.0)],
         [(0.7, 1.14, 0.0), (0.62, 0.82, 0.28), (0.6, 0.0, 0.3), (0.5, -0.8, 0.2), (0.2, -1.25, 0.07),
          (-0.2, -1.32, 0.0)],
     ]),
-    "i": (0.36, [
+    "i": (0.41, [
         [(0.03, 1.08, 0.0), (0.18, 0.84, 0.29), (0.17, 0.18, 0.27), (0.43, -0.16, 0.0)],
         [(0.07, 1.55, 0.0), (0.18, 1.39, 0.23), (0.27, 1.22, 0.0)],
     ]),
-    "c": (0.56, [
+    "c": (0.61, [
         [(0.6, 0.86, 0.0), (0.36, 1.03, 0.17), (0.06, 0.6, 0.29), (0.12, 0.1, 0.22), (0.38, 0.0, 0.1),
          (0.66, 0.21, 0.0)],
     ]),
@@ -453,23 +530,21 @@ def draw_logo(x: float, y: float, w: float, h: float, colour, word: str = "Regic
     if scored and unit >= 9:
         with ui.GState():
             p.add_clip()
-            chips(x, y, w, h, (word, "scored"), int(w / unit * 7), unit, LOGO_SCORE)
+            nicks(x, y, w, h, (word, "scored"), int(w / unit * 9), unit, slant)
 
 
-def chips(x: float, y: float, w: float, h: float, seed, n: int, unit: float, colour) -> None:
-    """Short dark nicks at loose angles, scattered over the rect (the wear on brushed
-    letters, cut into a stone)."""
+def nicks(x: float, y: float, w: float, h: float, seed, n: int, unit: float, slant: float) -> None:
+    """Thin black gaps running along the down strokes, as a dry brush leaves them."""
     r = rng(seed)
     for _ in range(int(n)):
         cx, cy = x + r.uniform(0, w), y + r.uniform(0, h)
-        length = unit * r.uniform(0.25, 0.9)
-        ang = r.uniform(-0.4, 0.9)
+        length = unit * r.uniform(0.2, 0.45)
+        ang = math.pi / 2 + slant + r.uniform(-0.35, 0.35)       # near the stroke direction
         dx, dy = math.cos(ang) * length / 2.0, -math.sin(ang) * length / 2.0
-        bend = (cx + r.uniform(-0.08, 0.08) * unit, cy + r.uniform(-0.08, 0.08) * unit)
-        polyline([(cx - dx, cy - dy), bend, (cx + dx, cy + dy)], colour, unit * r.uniform(0.025, 0.06))
+        polyline([(cx - dx, cy - dy), (cx + dx, cy + dy)], LOGO_SCORE, unit * r.uniform(0.012, 0.02))
 
 
-LOGO_SCORE = (0.0, 0.0, 0.0, 0.62)
+LOGO_SCORE = (0.0, 0.0, 0.0, 0.9)
 
 
 class LogoView(ui.View):

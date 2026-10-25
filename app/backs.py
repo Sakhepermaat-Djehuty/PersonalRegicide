@@ -58,33 +58,25 @@ DISC_INK = "#0a0a0a"
 
 
 # ---------------------------------------------------------------------------- Veil
-# Black, a faint frame inside the edge and the wordmark across the middle; a pile's count
-# in a black disc ringed in bone below it.
+# Black with a grey edge and the wordmark across the middle; a pile's count on a number
+# tile below it.
 VL_RIM = "#3c3b38"        # lighter than the field: the layers of a pile stay apart
 VL_FIELD = "#050505"
 VL_FRAME = "#2e2d2a"
 
 
 def veil_back(x: float, y: float, w: float, h: float, count: Optional[int] = None, plain: bool = False) -> None:
-    rad = max(6.0, min(w, h) * 0.12)
+    rad = max(3.0, min(w, h) * 0.045)
     _rr(x, y, w, h, rad, VL_RIM)
     _rr(x + 1, y + 1, w - 2, h - 2, rad - 1, VL_FIELD)
     if plain:
         return
-    fi = max(3.0, min(w, h) * 0.07)
-    veil.inset_frame(x, y, w, h, fi, VL_FRAME, 0.75, max(1.5, rad - fi))
-    if min(w, h) >= 40:
-        veil.scratches(x + fi + 2, y + fi + 2, w - 2 * fi - 4, h - 2 * fi - 4, "back", 3, T.SCAR, 0.6)
-    cx = x + w / 2.0
     if count is None:
-        veil.draw_logo(x + w * 0.08, y + h * 0.28, w * 0.84, h * 0.44, T.TEXT)
+        veil.draw_logo(x + w * 0.15, y + h * 0.27, w * 0.7, h * 0.36, T.TEXT)
         return
-    veil.draw_logo(x + w * 0.12, y + h * 0.1, w * 0.76, h * 0.36, T.TEXT)
-    d = min(w * 0.6, h * 0.42)
-    cy = y + h * 0.68
-    _oval(cx, cy, d + 3, T.TEXT)
-    _oval(cx, cy, d, VL_FIELD)
-    _count(cx, cy, d, count, T.TEXT)
+    veil.draw_logo(x + w * 0.12, y + h * 0.1, w * 0.76, h * 0.34, T.TEXT)
+    s = min(w * 0.5, h * 0.36)
+    veil.number_tile(x + (w - s) / 2.0, y + h * 0.56, s, "%d" % count, False)
 
 
 # ---------------------------------------------------------------------------- Lattice

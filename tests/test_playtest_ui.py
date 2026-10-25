@@ -12,6 +12,7 @@ import fakeui  # noqa: E402
 
 fakeui.install()
 import ui  # noqa: E402
+from app.widgets import Segments, Toggle  # noqa: E402
 
 from app import theme as T  # noqa: E402
 from app import widgets  # noqa: E402
@@ -139,7 +140,7 @@ def test_relics_are_explained_in_rewards_on_the_rules_card_and_in_the_deck_list(
     body = [v for v in labels if v.text == relic_text("flute", 1)][0]
     assert icon.y < name.y and name.text_color == T.CARD_INK and "Relic · solo side" in _texts(face)
     assert body.superview.y > name.y + name.height
-    assert face.edge == RELICS["flute"]["color"] and ui.render(app).size[0] > 0
+    assert face.edge == T.ACCENT and ui.render(app).size[0] > 0         # (no relic colours in this look)
     _tap(app, "Close")
     assert not ui.find(app, lambda v: isinstance(v, CardPopup))
     # a tap beside the card closes it too
@@ -544,7 +545,7 @@ def test_the_piles_show_the_discard_and_banished_piles_in_order_and_the_reserve_
     ui.tap(app, *ui.root_point(app, gs.pile_views["discard"]))
     ov = gs.overlay
     assert isinstance(ov, PilesOverlay) and ov.pile == "discard"
-    seg = ui.find(ov, lambda v: isinstance(v, ui.SegmentedControl))[0]
+    seg = ui.find(ov, lambda v: isinstance(v, Segments))[0]
     assert seg.segments == ["Castle", "Reserve", "Discard", "Banished"]
     shown = [v.card.id for v in sorted(ov.card_views.values(), key=lambda v: (v.y, v.x))]
     assert shown == g.discard and ov.card_views[g.discard[0]].badge == "top"
@@ -607,7 +608,7 @@ def test_the_piles_during_a_decision_and_in_the_base_game(app):
     assert isinstance(gs, GameScreen)
     assert gs.pile_views["banished"].hidden and gs.pile_views["reserve"].label == "Tavern"
     ui.tap(app, *ui.root_point(app, gs.pile_views["reserve"]))
-    seg = ui.find(gs.overlay, lambda v: isinstance(v, ui.SegmentedControl))[0]
+    seg = ui.find(gs.overlay, lambda v: isinstance(v, Segments))[0]
     assert seg.segments == ["Castle", "Tavern", "Discard"] and gs.overlay.pile == "reserve"
     seg.selected_index = 2
     seg.action(seg)
@@ -727,7 +728,7 @@ def test_with_hidden_hands_the_reserve_is_shown_with_the_other_hands(app):
     gs._show_piles("reserve")
     ov = gs.overlay
     other = [c for i, p in enumerate(g.players) if i != me for c in p.hand]
-    seg = ui.find(ov, lambda v: isinstance(v, ui.SegmentedControl))[0]
+    seg = ui.find(ov, lambda v: isinstance(v, Segments))[0]
     assert seg.segments[1] == "Unseen"
     assert any(t.startswith("%d cards you have not seen" % (len(g.tavern) + len(other))) for t in _texts(ov))
     # the reserve and the other hand, mixed and sorted: no telling which card is where
@@ -739,7 +740,7 @@ def test_with_hidden_hands_the_reserve_is_shown_with_the_other_hands(app):
     gs, g = app.current, app.game
     gs._show_piles("reserve")
     assert sorted(gs.overlay.card_views) == sorted(g.tavern)
-    assert ui.find(gs.overlay, lambda v: isinstance(v, ui.SegmentedControl))[0].segments[1] == "Tavern"
+    assert ui.find(gs.overlay, lambda v: isinstance(v, Segments))[0].segments[1] == "Tavern"
 
 
 
@@ -951,7 +952,7 @@ def test_the_classic_faces_setting(app, tmp_path):
     from app import store
     from app.screens import App, SettingsScreen
     app.show(SettingsScreen(app))
-    sw = [v for v in ui.find(app, lambda v: isinstance(v, ui.Switch))]
+    sw = [v for v in ui.find(app, lambda v: isinstance(v, Toggle))]
     labels = _texts(app)
     i = [n for n, t in enumerate(labels) if t.startswith("Classic card faces")]
     assert i and not app.settings.get("classic_faces")

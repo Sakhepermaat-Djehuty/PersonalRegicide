@@ -15,6 +15,7 @@ import fakeui  # noqa: E402
 fakeui.install()
 import sound  # noqa: E402  (the fake)
 import ui  # noqa: E402
+from app.widgets import Segments, Toggle  # noqa: E402
 
 from app import audio as AU  # noqa: E402
 from helpers import set_enemy, set_hand  # noqa: E402
@@ -223,7 +224,7 @@ def test_an_enemys_stage_is_its_rank_or_for_other_ranks_its_strength():
 def test_the_settings_turn_effects_music_and_silent_mode_on_and_off(app):
     from app.screens import SettingsScreen
     app.show(SettingsScreen(app))
-    switches = {v: v for v in ui.find(app, lambda v: isinstance(v, ui.Switch))}
+    switches = {v: v for v in ui.find(app, lambda v: isinstance(v, Toggle))}
     labels = [v.text for v in ui.find(app, lambda v: isinstance(v, ui.Label))]
     assert "Sound effects" in labels and "Music" in labels and "Play sound when the phone is on silent" in labels
     assert len(switches) == 8

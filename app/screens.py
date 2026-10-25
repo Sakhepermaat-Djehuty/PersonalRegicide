@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import functools
+import math
 import os
 import random
 import re
@@ -22,7 +23,7 @@ from regicide.rules import GameConfig
 from . import store
 from . import theme as T
 from . import veil
-from .widgets import (CardStrip, CardView, CountStepper, HandGrid, PileView, TableHeader, TableStrip, fit_label, fit_title, make_button, make_label,
+from .widgets import (CardStrip, CardView, CountStepper, HandGrid, PileView, Segments, TableHeader, TableStrip, Toggle, fit_label, fit_title, make_button, make_label,
                       set_enabled, text_size)
 
 VERSION = "alpha 5.1"
@@ -466,16 +467,14 @@ class MenuScreen(Screen):
         x = (w - bw) / 2
         items: List = []
         camp = app.campaign
-        if camp is not None and store.has_campaign(camp.slot):
+        going = camp is not None and store.has_campaign(camp.slot)
+        if going:
             items.append(("Continue: %s" % camp.name, lambda s: app.open_campaign(camp.slot), True))
+        # one lit tile: the way on (Continue, or New game when there is none)
         items += [
-            ("Load game", lambda s: app.show(LoadGameScreen(app)), bool(store.list_campaigns())),
-            ("New game", lambda s: app.show(NewGameScreen(app, 1, campaign=True)), True),
+            ("Load game", lambda s: app.show(LoadGameScreen(app)), False),
+            ("New game", lambda s: app.show(NewGameScreen(app, 1, campaign=True)), not going),
             ("Quick play (base Regicide)", lambda s: app.show(QuickPlayScreen(app)), False),
-            ("Lore", lambda s: app.show(LoreScreen(app, local=False)), False),
-            ("Settings", lambda s: app.show(SettingsScreen(app)), False),
-            ("Rules", lambda s: app.show(RulesScreen(app)), False),
-            ("Quit", lambda s: app.close(), False),
         ]
         for title, action, primary in items:
             b = make_button(title, action, (x, y, bw, bh), primary)
@@ -483,6 +482,19 @@ class MenuScreen(Screen):
                 set_enabled(b, False)
             self.add_subview(b)
             y += bh + gap
+        # the rest as plain lines of text, a scored rule between them
+        y += 4
+        rest = [("Lore", lambda s: app.show(LoreScreen(app, local=False))),
+                ("Settings", lambda s: app.show(SettingsScreen(app))),
+                ("Rules", lambda s: app.show(RulesScreen(app))),
+                ("Quit", lambda s: app.close())]
+        for i, (title, action) in enumerate(rest):
+            if i:
+                self.add_subview(veil.RoughRule(T.FRAME_QUIET, ("menu", i), frame=(x + bw * 0.2, y - 2, bw * 0.6, 3)))
+            b = make_button(title, action, (x, y, bw, 44), False)
+            veil.dress_button(b, False, True, bare=True)
+            self.add_subview(b)
+            y += 46
 
 
 class QuickPlayScreen(Screen):
@@ -540,11 +552,7 @@ class LoadGameScreen(Screen):
         if not rows:
             sv.add_subview(make_label("No saved games yet.", (0, 0, w - 2 * m, 30), 14, False, T.MUTED))
         for r in rows:
-            panel = ui.View(frame=(0, yy, w - 2 * m, 92))
-            panel.background_color = T.PANEL
-            panel.corner_radius = 4
-            panel.border_width = 1
-            panel.border_color = T.BTN_EDGE
+            panel = veil.Panel(seed=("load", r["slot"]), frame=(0, yy, w - 2 * m, 92))
             state = "complete" if r["finished"] else "mission %d%s" % (r["mission"], " · attempt in progress" if r["has_attempt"] else "")
             panel.add_subview(make_label(r["name"], (12, 8, w - 2 * m - 24, 24), 17, True, T.TEXT))
             panel.add_subview(make_label("%d player%s · %s · %s" % (r["players"], "" if r["players"] == 1 else "s", state, r["last_played"]),
@@ -590,16 +598,14 @@ class NewGameScreen(Screen):
         y += 56
         if self.campaign:
             self.add_subview(make_label("Game name", (m, y, 120, 36), 15, False, T.MUTED))
-            tf = ui.TextField(frame=(m + 120, y, w - 2 * m - 120, 36))
-            veil.dress_field(tf)
+            tf = ui.TextField()
             tf.text = self.game_name_field.text if self.game_name_field is not None else "Campaign %d" % (len(store.list_campaigns()) + 1)
             tf.font = (T.FONT, 16)
             self.game_name_field = tf
-            self.add_subview(tf)
+            self.add_subview(veil.field_box(tf, (m + 120, y, w - 2 * m - 120, 36)))
             y += 48
         self.add_subview(make_label("Players", (m, y, 120, 32), 16, True))
-        seg = ui.SegmentedControl(frame=(m + 120, y, w - 2 * m - 120, 32))
-        veil.dress_segments(seg)
+        seg = Segments(frame=(m + 120, y, w - 2 * m - 120, 32))
         seg.segments = ["1", "2", "3", "4"]
         seg.selected_index = self.players - 1
         seg.action = self._players_changed
@@ -608,12 +614,11 @@ class NewGameScreen(Screen):
         names = self.app.settings.get("names", ["Player 1", "Player 2", "Player 3", "Player 4"])
         for i in range(self.players):
             self.add_subview(make_label("Name %d" % (i + 1), (m, y, 90, 36), 15, False, T.MUTED))
-            tf = ui.TextField(frame=(m + 90, y, w - 2 * m - 90, 36))
-            veil.dress_field(tf)
+            tf = ui.TextField()
             tf.text = names[i] if i < len(names) else "Player %d" % (i + 1)
             tf.font = (T.FONT, 16)
             self.name_fields.append(tf)
-            self.add_subview(tf)
+            self.add_subview(veil.field_box(tf, (m + 90, y, w - 2 * m - 90, 36)))
             y += 44
         y += 8
         hand = {1: 8, 2: 7, 3: 6, 4: 5}[self.players]
@@ -622,8 +627,7 @@ class NewGameScreen(Screen):
         y += 34
         if self.players > 1:
             self.add_subview(make_label("Open hands (one person plays every seat)", (m, y, w - 2 * m - 60, 32), 14, False, T.TEXT, lines=2))
-            sw = ui.Switch(frame=(w - m - 51, y, 51, 31))
-            veil.dress_switch(sw)
+            sw = Toggle(frame=(w - m - 51, y, 51, 31))
             sw.value = bool(self.app.settings.get("open_hands", False))
             sw.action = self._open_hands
             self.add_subview(sw)
@@ -760,9 +764,7 @@ class GameScreen(Screen):
         self.right_btn = make_button("Play", self._right, (0, 0, 10, 10), True)
         self.special_btn = make_button("Relics", self._special, (0, 0, 10, 10), False, 13)
         self.special_btn.hidden = True
-        self.toast = make_label("", (0, 0, 10, 10), 13, True, T.BG, ui.ALIGN_CENTER)
-        self.toast.background_color = T.TEXT
-        self.toast.corner_radius = 4
+        self.toast = veil.Toast(frame=(0, 0, 10, 10))
         self.toast.hidden = True
         for v in [self.status, self.menu_btn, self.enemy] + list(self.pile_views.values()) + [
                   self.strip, self.zone, self.hand,
@@ -813,7 +815,7 @@ class GameScreen(Screen):
         self.left_btn.frame = (m, bar_y, bw, bar_h)
         self.mid_btn.frame = (m + bw + 8, bar_y, bw, bar_h)
         self.right_btn.frame = (m + 2 * (bw + 8), bar_y, bw, bar_h)
-        self.toast.frame = (m + 20, bar_y - 40, w - 2 * m - 40, 32)
+        self.toast.frame = (m + 20, bar_y - 42, w - 2 * m - 40, 36)
         if self.overlay is not None:
             self.overlay.frame = (0, 0, w, h)
             if hasattr(self.overlay, "layout"):
@@ -2239,7 +2241,8 @@ class DruidOverlay(CardGridOverlay):
             cid = self.assign.get(slot)
             label = "%s: %s" % (title, g.card(cid).label() if cid else "—")
             b = make_button(label, (lambda sl: lambda s: self.set_slot(sl))(slot),
-                            ((i % 2) * (bw + 8), (i // 2) * 48, bw, 40), bool(cid), 13)
+                            ((i % 2) * (bw + 8), (i // 2) * 48, bw, 40), False, 13)
+            set_enabled(b, True, False, chosen=bool(cid))
             fit_title(b)
             row.add_subview(b)
         confirm = make_button("Confirm", lambda s: self.confirm(), (0, 0, 10, 46))
@@ -2869,12 +2872,12 @@ def choice_icon(step: dict) -> list:
     kind = step.get("kind")
     if kind == "choice_suit":
         suit = str(step.get("suit", ""))
-        return [(SUIT_SYMBOL.get(suit, "★"), T.SUIT_COLOR.get(suit, T.ACCENT))]
+        return [(SUIT_SYMBOL.get(suit, "★"), T.CARD_INK)]
     if kind == "choice_mage_student":
-        return [(SUIT_SYMBOL["M"], T.SUIT_COLOR["M"])]
+        return [(SUIT_SYMBOL["M"], T.CARD_INK)]
     if kind == "choice_corrupt" or kind == "choice_rip":
-        return [("◆", T.CORRUPTED)]
-    return [("★", T.ACCENT)]
+        return [("◆", T.CARD_INK)]
+    return [("★", T.CARD_INK)]
 
 
 def choice_text(camp, step: dict) -> str:
@@ -2940,9 +2943,7 @@ def card_face(title: str, body: str, width: float, max_height: float, icon=None,
         sub.frame = (42, y, inner, sub.height)
         face.add_subview(sub)
         y += sub.height + 2
-    rule = ui.View(frame=(30, y + 6, width - 60, 1.5))
-    rule.background_color = edge
-    face.add_subview(rule)
+    face.add_subview(veil.RoughRule(T.RIM, ("rule", title), frame=(30, y + 5, width - 60, 3)))
     y += 16
     bw = width - 44
     _, th = text_size(body, bw, body_size)        # wrapped at the label's own width
@@ -3070,9 +3071,7 @@ def attack_face(g: Game, pv: Optional[dict], width: float, max_height: float):
     face.add_subview(fit_label(e.name, width - 84, 12, False, muted, ui.ALIGN_CENTER))
     face.subviews[-1].frame = (42, y, width - 84, 18)
     y += 22
-    rule = ui.View(frame=(30, y, width - 60, 1.5))
-    rule.background_color = col
-    face.add_subview(rule)
+    face.add_subview(veil.RoughRule(T.RIM, "attack", frame=(30, y - 1, width - 60, 3)))
     y += 10
     gap = 14.0
     cw = (width - 44 - gap) / 2.0
@@ -3126,9 +3125,7 @@ def attack_face(g: Game, pv: Optional[dict], width: float, max_height: float):
     face.add_subview(make_label(owed, (22, y, width - 44, 30), 22, True, T.DANGER, ui.ALIGN_CENTER))
     y += 34
     if pv:
-        rule2 = ui.View(frame=(30, y, width - 60, 1.5))
-        rule2.background_color = col
-        face.add_subview(rule2)
+        face.add_subview(veil.RoughRule(T.RIM, "attack2", frame=(30, y - 1, width - 60, 3)))
         y += 8
         face.add_subview(make_label("THIS PLAY", (22, y, width - 44, 18), 12, True, muted, ui.ALIGN_CENTER))
         y += 22
@@ -3386,8 +3383,7 @@ class PilesOverlay(Overlay):
         keys = [k for k, _ in piles]
         if self.pile not in keys:
             self.pile = "discard"
-        seg = ui.SegmentedControl(frame=(0, 0, 10, 36))
-        veil.dress_segments(seg)
+        seg = Segments(frame=(0, 0, 10, 36))
         seg.segments = [t for _, t in piles]
         seg.selected_index = keys.index(self.pile)
         seg.action = lambda s: self._switch(keys[s.selected_index])
@@ -3479,7 +3475,7 @@ class ClassChoiceOverlay(Overlay):
         ]
         for s in BASIC_SUITS:
             title = "%s %s" % (SUIT_SYMBOL[s], CLASS_NAME[s])
-            items.append(make_button(title, (lambda suit: lambda b: self.screen._act(lambda: self.screen.game.use_solo_jester({"suit": suit})))(s), (0, 0, 10, 46)))
+            items.append(make_button(title, (lambda suit: lambda b: self.screen._act(lambda: self.screen.game.use_solo_jester({"suit": suit})))(s), (0, 0, 10, 46), False))
         items.append(make_button("Cancel", lambda b: self.screen.refresh(after_action=False), (0, 0, 10, 44), False))
         return items
 
@@ -3615,7 +3611,7 @@ class CampaignScreen(Screen):
         bw = min(320, w - 2 * m)
         x = (w - bw) / 2
         if camp.finished:
-            self.add_subview(make_label("Campaign complete!", (m, y, w - 2 * m, 30), 18, True, T.OK, ui.ALIGN_CENTER))
+            self.add_subview(make_label("Campaign complete!", (m, y, w - 2 * m, 30), 18, True, T.BRIGHT, ui.ALIGN_CENTER))
             y += 34
             record = camp.evergreen or {}
             self.add_subview(make_label("Evergreen mode (pack E): %d mission%s played, %d won." % (
@@ -3762,10 +3758,7 @@ class _MapCanvas(ui.View):
     def __init__(self, screen: MapScreen, **kw) -> None:
         super().__init__(**kw)
         self.screen = screen
-        self.background_color = T.PANEL
-        self.corner_radius = 4
-        self.border_width = 1
-        self.border_color = T.BTN_EDGE
+        self.background_color = None
 
     def _points(self):
         w, h = self.width, self.height
@@ -3774,38 +3767,31 @@ class _MapCanvas(ui.View):
     def draw(self) -> None:
         camp = self.screen.app.campaign
         pts = self._points()
-        # the land in fog: a few darker shapes under it, the lake darkest
-        veil.draw_fog(0, 0, self.width, self.height, "fog.jpg")
-        ui.set_color((0, 0, 0, 0.35))
-        ui.Path.oval(self.width * 0.05, self.height * 0.55, self.width * 0.5, self.height * 0.3).fill()
-        ui.Path.oval(self.width * 0.45, self.height * 0.08, self.width * 0.5, self.height * 0.32).fill()
-        ui.set_color((0, 0, 0, 0.6))
-        ui.Path.oval(self.width * 0.55, self.height * 0.56, self.width * 0.42, self.height * 0.2).fill()
-        # the route, scored into the map
-        veil.polyline(pts, T.FRAME_QUIET, 2.0)
+        # the route scored across the fog, each stop a number tile: lit where the mission is
+        # won, lit with a white numeral where it is now, quiet ahead
+        for i in range(len(pts) - 1):
+            (x0, y0), (x1, y1) = pts[i], pts[i + 1]
+            n = max(2, int(math.hypot(x1 - x0, y1 - y0) / 6.0))
+            r = veil.rng(("route", i))
+            line = [(x0 + (x1 - x0) * k / float(n) + r.uniform(-0.6, 0.6),
+                     y0 + (y1 - y0) * k / float(n) + r.uniform(-0.6, 0.6)) for k in range(n + 1)]
+            veil.polyline(line, T.FRAME_QUIET, 1.6)
         for i, (x, y) in enumerate(pts):
             n = i + 1
-            r = 15
-            if camp is not None and n in camp.completed:
-                fill, ring, txt = T.ACCENT, T.ACCENT, T.BG
-            elif camp is not None and n == camp.mission and not camp.finished:
-                fill, ring, txt = T.PANEL, T.ACCENT, T.TEXT
-            else:
-                fill, ring, txt = T.BG, T.FRAME_QUIET, T.MUTED
+            s = 28
+            done = camp is not None and n in camp.completed
+            now = camp is not None and n == camp.mission and not camp.finished
             if self.screen.selected == n:
-                ui.set_color(T.TEXT)
-                ui.Path.oval(x - r - 4, y - r - 4, 2 * r + 8, 2 * r + 8).stroke()
-            ui.set_color(fill)
-            ui.Path.oval(x - r, y - r, 2 * r, 2 * r).fill()
-            ring_path = ui.Path.oval(x - r, y - r, 2 * r, 2 * r)
-            ring_path.line_width = 2
-            ui.set_color(ring)
-            ring_path.stroke()
-            ui.draw_string(str(n), (x - r, y - 9, 2 * r, 18), (T.FONT_BOLD, 13), txt, ui.ALIGN_CENTER)
+                sel = ui.Path.rect(x - s / 2.0 - 4, y - s / 2.0 - 4, s + 8, s + 8)
+                sel.line_width = 1.5
+                ui.set_color(T.BRIGHT)
+                sel.stroke()
+            veil.number_tile(x - s / 2.0, y - s / 2.0, s, str(n), done or now,
+                             ink=T.BRIGHT if now else (T.BTN_TEXT if done else T.MUTED))
             if camp is not None and camp.revealed(n):
                 title = mission_info(n)["title"]
-                ty = y + r + 2 if i % 2 == 0 else y - r - 16
-                ui.draw_string(title, (x - 60, ty, 120, 16), (T.FONT, 10), T.MUTED, ui.ALIGN_CENTER)
+                ty = y + s / 2.0 + 2 if i % 2 == 0 else y - s / 2.0 - 17
+                ui.draw_string(title, (x - 60, ty, 120, 16), (T.FONT_ITALIC, 11), T.TEXT, ui.ALIGN_CENTER)
 
     def touch_ended(self, touch) -> None:
         x, y = touch.location
@@ -3920,8 +3906,8 @@ class MercenaryScreen(Screen):
         if self.swapping is not None and self.swapping in hired and not self.evergreen:
             cur = by_id(self.swapping)
             candidates = [o["id"] for o in camp.swappable(self.swapping)]
-            lab = fit_label("Swap %s: tap a mercenary of the same cost (gold border)." % cur["name"], tw - 96, 13, True,
-                            T.OK, ui.ALIGN_LEFT)
+            lab = fit_label("Swap %s: tap a mercenary of the same cost (white border)." % cur["name"], tw - 96, 13, True,
+                            T.TEXT, ui.ALIGN_LEFT)
             lab.frame = (m, y, tw - 96, max(36, lab.height))
             self.add_subview(lab)
             self.add_subview(make_button("Cancel", lambda s: self._cancel_swap(), (w - m - 86, y + 2, 86, 32), False, 13))
@@ -3940,7 +3926,7 @@ class MercenaryScreen(Screen):
             v.frame = (col * (cw + gap), r * (ch + gap), cw, ch)
             v.coins = int(merc["cost"])
             v.shaded = mid not in hired
-            # gold border: the hired mercenaries, or while swapping only the ones that can be taken
+            # white border: the hired mercenaries, or while swapping only the ones that can be taken
             v.selected = (mid in candidates) if self.swapping is not None else (mid in hired)
             if self.swapping is not None and mid != self.swapping and mid not in candidates:
                 v.alpha = 0.4
@@ -4091,8 +4077,7 @@ class EvergreenScreen(Screen):
             options = record.get("options") or {}
             for key, label in (("extra_red", "Swap a grey bane for a second red bane"), ("extra_bane", "Add another bane")):
                 self.add_subview(make_label(label, (m, y + 4, w - 2 * m - 60, 24), 13, False, T.TEXT))
-                sw = ui.Switch(frame=(w - m - 51, y, 51, 31))
-                veil.dress_switch(sw)
+                sw = Toggle(frame=(w - m - 51, y, 51, 31))
                 sw.value = bool(options.get(key, False))
                 sw.action = (lambda k: lambda s: self._set_option(k, s.value))(key)
                 self.add_subview(sw)
@@ -4119,11 +4104,11 @@ class EvergreenScreen(Screen):
         yy = 0
         tw = w - 2 * m - 8
         loc = setup["location"]
-        yy = self._card_block(sv, yy, tw, "Location %s: the %s" % (loc["id"], loc["name"]), self._location_text(loc), T.ACCENT)
+        yy = self._card_block(sv, yy, tw, "Location %s: the %s" % (loc["id"], loc["name"]), self._location_text(loc), T.BRIGHT)
         for b in setup["banes"]:
-            yy = self._card_block(sv, yy, tw, "Bane %d: %s (%s)" % (b["n"], b["name"], self.TIER_LABEL.get(b["tier"], b["tier"])), b["text"], T.DANGER)
+            yy = self._card_block(sv, yy, tw, "☠ Bane %d: %s (%s)" % (b["n"], b["name"], self.TIER_LABEL.get(b["tier"], b["tier"])), b["text"], T.TEXT)
         for b in setup["boons"]:
-            yy = self._card_block(sv, yy, tw, "Boon %d: %s (%s)" % (b["n"], b["name"], self.TIER_LABEL.get(b["tier"], b["tier"])), b["text"], T.OK)
+            yy = self._card_block(sv, yy, tw, "✦ Boon %d: %s (%s)" % (b["n"], b["name"], self.TIER_LABEL.get(b["tier"], b["tier"])), b["text"], T.TEXT)
         sv.content_size = (w - 2 * m, yy + 20)
         self.add_subview(sv)
 
@@ -4198,7 +4183,9 @@ class ChoiceScreen(Screen):
         y += 60
         options = [str(o) for o in step.get("options", [])]
         for o in options:
-            b = make_button(titles.get(o, o), (lambda opt: lambda s: self._pick_option(opt))(o), (m, y, w - 2 * m, 44), self.chosen == o)
+            b = make_button(titles.get(o, o), (lambda opt: lambda s: self._pick_option(opt))(o), (m, y, w - 2 * m, 44), False)
+            if self.chosen == o:
+                set_enabled(b, True, False, chosen=True)
             self.add_subview(b)
             y += 52
         set_enabled(self.confirm_btn, self.chosen in options)
@@ -4287,7 +4274,7 @@ class ChoiceScreen(Screen):
                 b = make_button(CLASS_NAME[s], (lambda c, k: lambda btn: self._set_class(c, k))(cid, s),
                                 (x, y + (row_h - 40) / 2, bw, 40), picked, 12)
                 blocked = s in d.get("suits", []) or (s in used and used[s] != cid)
-                set_enabled(b, not blocked)
+                set_enabled(b, not blocked, False, chosen=picked)
                 self.add_subview(b)
                 x += bw + 6
             y += row_h + 10
@@ -4511,12 +4498,13 @@ class PartyScreen(Screen):
         from regicide.campaign.relics import RELICS
         camp = self.app.campaign
         r = RELICS.get(relic_id, {})
-        color = str(r.get("color", T.ACCENT))
         side = "solo side" if camp.players == 1 else "side for two or more players"
+        # (the two Mothers, once told apart by colour, are named in the subtitle)
+        state = {"mother": " (corrupt)", "mother_restored": " (restored)"}.get(relic_id, "")
         popup = CardPopup(relic_name(relic_id), relic_text(relic_id, camp.players),
                           [("Close", lambda s: popup.close(), False)],
-                          icon=[(str(r.get("symbol", "?")), color)], edge=color, subtitle="Relic · %s" % side,
-                          dismissable=True)
+                          icon=[(str(r.get("symbol", "?")), T.CARD_INK)], edge=T.ACCENT,
+                          subtitle="Relic%s · %s" % (state, side), dismissable=True)
         show_card_popup(self, popup)
 
 
@@ -4704,8 +4692,7 @@ class SettingsScreen(Screen):
 
         def switch_row(key: str, label: str, default: bool, yy: float) -> float:
             sv.add_subview(make_label(label, (m, yy, w - 2 * m - 60, 44), 15, False, T.TEXT, lines=2))
-            sw = ui.Switch(frame=(w - m - 51, yy + 6, 51, 31))
-            veil.dress_switch(sw)
+            sw = Toggle(frame=(w - m - 51, yy + 6, 51, 31))
             sw.value = bool(self.app.settings.get(key, default))
             sw.action = (lambda k: lambda s: self._toggle(k, s.value))(key)
             sv.add_subview(sw)
@@ -4771,7 +4758,7 @@ class SettingsScreen(Screen):
                 icon = info.icon_for(settings, rid)
                 glyph = SUIT_SYMBOL.get(icon, icon) if icon != info.TREE else "\u2663"
                 sv.add_subview(make_label(glyph, (m + 14, yy, 30, 40), 18, True,
-                                          T.SUIT_COLOR.get(icon, T.MUTED if not master else T.TEXT), ui.ALIGN_CENTER))
+                                          T.TEXT if master else T.MUTED, ui.ALIGN_CENTER))
                 sv.add_subview(make_label(label, (m + 50, yy, w - 2 * m - 110, 40), 14, False,
                                           T.TEXT if master else T.MUTED))
                 sv.add_subview(TickBox(rid not in off, (lambda r: lambda v: self._set_info_row(r, v))(rid),

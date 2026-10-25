@@ -64,7 +64,7 @@ def _header_strings(gs, monkeypatch):
     return calls
 
 
-def test_the_suffer_step_counts_down_in_red_to_covered(app, monkeypatch):
+def test_the_suffer_step_counts_down_bright_to_covered(app, monkeypatch):
     gs, g = _mission(app, 4)
     set_mission_enemy(g, "LABJD", hp=30)
     set_hand(g, ["3S", "AS", "9C", "10C", "8S", "2H"])
@@ -76,15 +76,16 @@ def test_the_suffer_step_counts_down_in_red_to_covered(app, monkeypatch):
         gs.refresh(after_action=False)
     assert g.phase == PHASE_SUFFER and g.pending_damage == 7
     shown = _header_strings(gs, monkeypatch)
-    assert ("SUFFER", T.DANGER) in shown and ("7", T.DANGER) in shown and ("of 7", T.MUTED) in shown
+    # black on a pale plate, the number white
+    assert ("SUFFER", T.BG) in shown and ("7", T.BRIGHT) in shown and ("of 7", T.MUTED) in shown
     gs.hand.set_selection(["2H"])
     shown = _header_strings(gs, monkeypatch)
-    assert ("5", T.DANGER) in shown and not any(t == "covered" for t, _ in shown)
+    assert ("5", T.BRIGHT) in shown and not any(t == "covered" for t, _ in shown)
     gs.hand.set_selection(["2H", "AS"])
-    assert ("4", T.DANGER) in _header_strings(gs, monkeypatch)
+    assert ("4", T.BRIGHT) in _header_strings(gs, monkeypatch)
     gs.hand.set_selection(["2H", "AS", "9C"])                # 12 covers 7
     shown = _header_strings(gs, monkeypatch)
-    assert ("0", T.OK) in shown and ("covered", T.OK) in shown
+    assert ("0", T.BRIGHT) in shown and ("covered", T.BRIGHT) in shown
     assert not any(t.endswith("to go") for t, _ in shown)
 
 

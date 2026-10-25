@@ -53,7 +53,7 @@ ROWS: List[tuple] = [
     ("jester_claim", "Jester", "Jester claim", "J", T.JESTER_COLOR),
     ("solo_jester_refresh", "Jester", "Solo Jester: new hand", "J", T.JESTER_COLOR),
     ("solo_jester_attack", "Jester", "Solo Jester: attack", "J", T.JESTER_COLOR),
-    ("immunity", "Classes", "IMMUNITY", "", "#c8261f"),
+    ("immunity", "Classes", "IMMUNITY", "", T.BRIGHT),
     ("mage", "Classes", "Mage", "M", ""),
     ("druid", "Classes", "Druid", "U", ""),
     ("cleric", "Classes", "Cleric", "H", ""),
