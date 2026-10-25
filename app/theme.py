@@ -22,6 +22,7 @@ FRAME_QUIET = "#4e4d4a"   # the frame of a quieter button, and of a panel
 FRAME_OFF = "#262625"
 BTN_TEXT = "#f1eee8"
 BTN_DISABLED = "#0b0b0b"
+SWITCH_ON = "#8f8c86"     # an on switch, a chosen segment
 RIM = "#9d9a94"           # the lit edge along a tear
 SCAR = (1.0, 1.0, 1.0, 0.07)   # the faint scratches scored into a card or a panel
 CARD_FACE = "#0e0e0e"     # a black card...

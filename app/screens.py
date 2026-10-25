@@ -591,6 +591,7 @@ class NewGameScreen(Screen):
         if self.campaign:
             self.add_subview(make_label("Game name", (m, y, 120, 36), 15, False, T.MUTED))
             tf = ui.TextField(frame=(m + 120, y, w - 2 * m - 120, 36))
+            veil.dress_field(tf)
             tf.text = self.game_name_field.text if self.game_name_field is not None else "Campaign %d" % (len(store.list_campaigns()) + 1)
             tf.font = (T.FONT, 16)
             self.game_name_field = tf
@@ -598,6 +599,7 @@ class NewGameScreen(Screen):
             y += 48
         self.add_subview(make_label("Players", (m, y, 120, 32), 16, True))
         seg = ui.SegmentedControl(frame=(m + 120, y, w - 2 * m - 120, 32))
+        veil.dress_segments(seg)
         seg.segments = ["1", "2", "3", "4"]
         seg.selected_index = self.players - 1
         seg.action = self._players_changed
@@ -607,6 +609,7 @@ class NewGameScreen(Screen):
         for i in range(self.players):
             self.add_subview(make_label("Name %d" % (i + 1), (m, y, 90, 36), 15, False, T.MUTED))
             tf = ui.TextField(frame=(m + 90, y, w - 2 * m - 90, 36))
+            veil.dress_field(tf)
             tf.text = names[i] if i < len(names) else "Player %d" % (i + 1)
             tf.font = (T.FONT, 16)
             self.name_fields.append(tf)
@@ -620,6 +623,7 @@ class NewGameScreen(Screen):
         if self.players > 1:
             self.add_subview(make_label("Open hands (one person plays every seat)", (m, y, w - 2 * m - 60, 32), 14, False, T.TEXT, lines=2))
             sw = ui.Switch(frame=(w - m - 51, y, 51, 31))
+            veil.dress_switch(sw)
             sw.value = bool(self.app.settings.get("open_hands", False))
             sw.action = self._open_hands
             self.add_subview(sw)
@@ -3383,6 +3387,7 @@ class PilesOverlay(Overlay):
         if self.pile not in keys:
             self.pile = "discard"
         seg = ui.SegmentedControl(frame=(0, 0, 10, 36))
+        veil.dress_segments(seg)
         seg.segments = [t for _, t in piles]
         seg.selected_index = keys.index(self.pile)
         seg.action = lambda s: self._switch(keys[s.selected_index])
@@ -4087,6 +4092,7 @@ class EvergreenScreen(Screen):
             for key, label in (("extra_red", "Swap a grey bane for a second red bane"), ("extra_bane", "Add another bane")):
                 self.add_subview(make_label(label, (m, y + 4, w - 2 * m - 60, 24), 13, False, T.TEXT))
                 sw = ui.Switch(frame=(w - m - 51, y, 51, 31))
+                veil.dress_switch(sw)
                 sw.value = bool(options.get(key, False))
                 sw.action = (lambda k: lambda s: self._set_option(k, s.value))(key)
                 self.add_subview(sw)
@@ -4699,6 +4705,7 @@ class SettingsScreen(Screen):
         def switch_row(key: str, label: str, default: bool, yy: float) -> float:
             sv.add_subview(make_label(label, (m, yy, w - 2 * m - 60, 44), 15, False, T.TEXT, lines=2))
             sw = ui.Switch(frame=(w - m - 51, yy + 6, 51, 31))
+            veil.dress_switch(sw)
             sw.value = bool(self.app.settings.get(key, default))
             sw.action = (lambda k: lambda s: self._toggle(k, s.value))(key)
             sv.add_subview(sw)

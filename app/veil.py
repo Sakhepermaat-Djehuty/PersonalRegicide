@@ -278,6 +278,28 @@ def dress_button(b, primary: bool = True, enabled: bool = True) -> None:
     f.set_needs_display()
 
 
+def dress_switch(sw) -> None:
+    """A switch in greys: pale when on (the phone's knob stays white)."""
+    sw.tint_color = T.SWITCH_ON
+    sw.background_color = None
+
+
+def dress_segments(seg) -> None:
+    """A segmented control in greys: the chosen segment pale, the others framed in grey."""
+    seg.tint_color = T.SWITCH_ON
+
+
+def dress_field(tf) -> None:
+    """A text field as a black tile with a grey edge, the text in bone."""
+    tf.background_color = T.BTN
+    tf.text_color = T.TEXT
+    tf.tint_color = T.TEXT
+    tf.bordered = False
+    tf.border_width = 1
+    tf.border_color = T.BTN_EDGE
+    tf.corner_radius = 4
+
+
 # ---------------------------------------------------------------------------- panels
 class Panel(ui.View):
     """A choice box: a near-black card with the fog showing faintly through, the pale

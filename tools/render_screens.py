@@ -264,6 +264,22 @@ def main(argv):
     shot(app, "54_load_game")
     app.show(MenuScreen(app))
     shot(app, "55_menu_with_games")
+
+    # info pop-ups over a game: a damage card, a class card stamped IMMUNITY, a plain one
+    from app import info
+    app.start_game(GameConfig(players=1), seed=11)
+    app.show_info([info.InfoCard("damage", "Damage", 9, "D", ["9 from the 9♦", "Jack of Hearts: 20 → 11"],
+                                 middle="11", caption="health left")])
+    shot(app, "60_info_damage")
+    for q in ui.find(app, lambda v: v.__class__.__name__ == "InfoQueue"):
+        q.remove_from_superview()
+    app.show_info([info.InfoCard("bard", "Bard", 7, "D", ["Draw 7 cards", "from the tavern deck"], immune=True)])
+    shot(app, "61_info_immune")
+    for q in ui.find(app, lambda v: v.__class__.__name__ == "InfoQueue"):
+        q.remove_from_superview()
+    app.show_info([info.InfoCard("turn", "Your turn", "", None, ["Play a card, a combo or yield",
+                                                                 "Jack of Hearts · 20 health · attack 10"])])
+    shot(app, "62_info_turn")
     print("done")
 
 

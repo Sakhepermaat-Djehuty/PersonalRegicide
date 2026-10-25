@@ -1015,19 +1015,20 @@ def _render_view(v: View, ox: float, oy: float) -> None:
             col = v.tint_color if v.enabled else "#9a9a9a"
             draw_string(v.title, (0, max(0.0, (v.height - th) / 2.0), v.width, v.height), v.font, col, ALIGN_CENTER)
         elif isinstance(v, Switch):
-            col = "#34c759" if v.value else "#c8c8cc"
+            col = (v.tint_color or "#34c759") if v.value else "#3a3a3c"
             _overlay_rect(c, (box[0], box[1], box[0] + 51 * SCALE, box[1] + 31 * SCALE), _rgba255(col), radius=15 * SCALE)
             kx = box[0] + (22 if v.value else 2) * SCALE
             _overlay_rect(c, (kx, box[1] + 2 * SCALE, kx + 27 * SCALE, box[1] + 29 * SCALE), (255, 255, 255, 255), radius=13 * SCALE)
         elif isinstance(v, SegmentedControl):
             n = max(1, len(v.segments))
             sw = v.width / n
+            tint = _rgba255(v.tint_color) if v.tint_color else (0, 122, 255, 255)
             for i, seg in enumerate(v.segments):
-                col = (0, 122, 255, 255) if i == v.selected_index else (0, 0, 0, 0)
+                col = tint if i == v.selected_index else (0, 0, 0, 0)
                 _overlay_rect(c, ((x0 + i * sw) * SCALE, y0 * SCALE, (x0 + (i + 1) * sw) * SCALE - 1, (y0 + v.height) * SCALE - 1),
-                              col, radius=6 * SCALE, outline=(0, 122, 255, 255), width=SCALE)
+                              col, radius=6 * SCALE, outline=tint, width=SCALE)
                 draw_string(seg, (i * sw, (v.height - 20) / 2, sw, 20), ("<system>", 14),
-                            "white" if i == v.selected_index else "#007aff", ALIGN_CENTER)
+                            "white" if i == v.selected_index else tint, ALIGN_CENTER)
         elif isinstance(v, ImageView) and getattr(v.image, "_pil", None) is not None:
             pil = v.image._pil
             iw, ih = pil.size
@@ -1047,9 +1048,11 @@ def _render_view(v: View, ox: float, oy: float) -> None:
                 else:
                     _paste_image(c, pil, box[0] + (bw - dw) / 2.0, box[1] + (bh - dh) / 2.0, dw, dh, v.alpha)
         elif isinstance(v, TextField):
-            _overlay_rect(c, box, (255, 255, 255, 255), radius=5 * SCALE, outline=(180, 180, 180, 255), width=SCALE)
+            if getattr(v, "bordered", True) and v.background_color is None:
+                _overlay_rect(c, box, (255, 255, 255, 255), radius=5 * SCALE, outline=(180, 180, 180, 255), width=SCALE)
+            ink = getattr(v, "text_color", None) or "black"
             draw_string(v.text or v.placeholder, (8, (v.height - 20) / 2, v.width - 16, 20), v.font,
-                        "black" if v.text else "#999999")
+                        ink if v.text else "#999999")
         if hasattr(v, "draw") and callable(getattr(v, "draw")):
             v.draw()
         sub_ox, sub_oy = x0, y0
