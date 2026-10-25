@@ -39,6 +39,7 @@ def main(argv):
 
     app = App()
     app.settings["rules_card"] = False   # straight to the hands (the rules card is checked in tests)
+    app.settings["info_popups"] = False  # the info pop-ups would cover each screen (rendered on their own below)
     app.show(MenuScreen(app))
     shot(app, "01_menu")
     app.show(NewGameScreen(app, 3))
