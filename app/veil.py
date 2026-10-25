@@ -341,44 +341,45 @@ class Panel(ui.View):
 
 
 # ---------------------------------------------------------------------------- the wordmark
-# "Regicide" in tall brush strokes. Each stroke is a list of (x, y, width) in letter
-# units: the x-height is 1, the baseline 0, y up. Strokes taper to points at both ends,
-# the stems shoot up as spikes and some tails run on below the line.
+# "Regicide" in heavy brush strokes, cut rather than written: each stroke is a list of
+# (x, y, width) in letter units (the x-height is 1, the baseline 0, y up), tapering to a
+# point at both ends; the stems rise as horns, the tails run on below the line, and a few
+# dark scratches are scored through the letters (the same ones every time).
 _LETTERS: Dict[str, Tuple[float, List[List[Tuple[float, float, float]]]]] = {
-    "R": (0.95, [
-        [(0.10, 2.75, 0.0), (0.16, 2.05, 0.2), (0.15, 1.0, 0.22), (0.12, 0.15, 0.2), (0.0, -0.55, 0.0)],
-        [(0.14, 1.95, 0.02), (0.45, 2.15, 0.12), (0.74, 1.88, 0.17), (0.66, 1.4, 0.13), (0.32, 1.16, 0.06),
-         (0.17, 1.12, 0.0)],
-        [(0.3, 1.16, 0.04), (0.5, 0.75, 0.15), (0.66, 0.25, 0.15), (0.98, -0.2, 0.0)],
+    "R": (0.98, [
+        [(0.06, 2.65, 0.0), (0.17, 1.95, 0.3), (0.2, 0.95, 0.3), (0.13, 0.12, 0.26), (-0.06, -0.62, 0.0)],
+        [(0.2, 1.92, 0.03), (0.56, 2.22, 0.18), (0.9, 1.9, 0.28), (0.74, 1.3, 0.22), (0.4, 1.06, 0.08),
+         (0.22, 1.02, 0.0)],
+        [(0.4, 1.08, 0.05), (0.64, 0.58, 0.27), (0.8, 0.06, 0.21), (1.08, -0.32, 0.0)],
     ]),
-    "e": (0.62, [
-        [(0.05, 0.52, 0.02), (0.36, 0.6, 0.08), (0.48, 0.86, 0.1), (0.27, 1.0, 0.1), (0.06, 0.62, 0.17),
-         (0.1, 0.12, 0.15), (0.36, 0.02, 0.08), (0.62, 0.2, 0.0)],
+    "e": (0.6, [
+        [(0.08, 0.56, 0.0), (0.42, 0.68, 0.12), (0.5, 0.92, 0.15), (0.28, 1.03, 0.19), (0.06, 0.6, 0.29),
+         (0.14, 0.08, 0.22), (0.4, 0.0, 0.1), (0.66, 0.25, 0.0)],
     ]),
-    "g": (0.66, [
-        [(0.52, 0.86, 0.02), (0.3, 1.0, 0.12), (0.06, 0.62, 0.17), (0.12, 0.14, 0.14), (0.42, 0.08, 0.07),
-         (0.55, 0.3, 0.02)],
-        [(0.62, 1.08, 0.0), (0.58, 0.8, 0.17), (0.57, 0.0, 0.19), (0.5, -0.75, 0.13), (0.24, -1.2, 0.05),
-         (-0.12, -1.3, 0.0)],
+    "g": (0.62, [
+        [(0.55, 0.88, 0.0), (0.3, 1.03, 0.18), (0.05, 0.6, 0.29), (0.16, 0.12, 0.2), (0.45, 0.1, 0.08),
+         (0.58, 0.32, 0.0)],
+        [(0.7, 1.14, 0.0), (0.62, 0.82, 0.28), (0.6, 0.0, 0.3), (0.5, -0.8, 0.2), (0.2, -1.25, 0.07),
+         (-0.2, -1.32, 0.0)],
     ]),
     "i": (0.36, [
-        [(0.08, 1.02, 0.0), (0.16, 0.82, 0.19), (0.15, 0.18, 0.18), (0.38, -0.12, 0.0)],
-        [(0.1, 1.5, 0.0), (0.17, 1.36, 0.15), (0.22, 1.24, 0.0)],
+        [(0.03, 1.08, 0.0), (0.18, 0.84, 0.29), (0.17, 0.18, 0.27), (0.43, -0.16, 0.0)],
+        [(0.07, 1.55, 0.0), (0.18, 1.39, 0.23), (0.27, 1.22, 0.0)],
     ]),
-    "c": (0.58, [
-        [(0.56, 0.84, 0.0), (0.34, 1.0, 0.1), (0.06, 0.6, 0.18), (0.1, 0.12, 0.15), (0.36, 0.0, 0.08),
-         (0.62, 0.18, 0.0)],
+    "c": (0.56, [
+        [(0.6, 0.86, 0.0), (0.36, 1.03, 0.17), (0.06, 0.6, 0.29), (0.12, 0.1, 0.22), (0.38, 0.0, 0.1),
+         (0.66, 0.21, 0.0)],
     ]),
-    "d": (0.74, [
-        [(0.5, 0.84, 0.02), (0.28, 1.0, 0.12), (0.05, 0.6, 0.17), (0.1, 0.12, 0.14), (0.4, 0.06, 0.07),
-         (0.55, 0.3, 0.02)],
-        [(0.7, 2.7, 0.0), (0.64, 1.9, 0.17), (0.62, 0.9, 0.19), (0.6, 0.15, 0.18), (0.84, -0.18, 0.0)],
+    "d": (0.8, [
+        [(0.52, 0.86, 0.0), (0.28, 1.03, 0.18), (0.04, 0.6, 0.29), (0.13, 0.12, 0.2), (0.42, 0.08, 0.08),
+         (0.58, 0.3, 0.0)],
+        [(0.98, 2.78, 0.0), (0.74, 2.02, 0.24), (0.67, 1.0, 0.3), (0.65, 0.15, 0.28), (0.92, -0.22, 0.0)],
     ]),
 }
-LOGO_ASCENT, LOGO_DESCENT = 2.75, 1.3     # the wordmark's height above and below the line, in x-heights
+LOGO_ASCENT, LOGO_DESCENT = 2.8, 1.35     # the wordmark's height above and below the line, in x-heights
 
 
-def _catmull(points: Sequence[Tuple[float, float, float]], steps: int = 7) -> List[Tuple[float, float, float]]:
+def _catmull(points: Sequence[Tuple[float, float, float]], steps: int = 5) -> List[Tuple[float, float, float]]:
     pts = [points[0]] + list(points) + [points[-1]]
     out = []
     for i in range(1, len(pts) - 2):
@@ -392,9 +393,10 @@ def _catmull(points: Sequence[Tuple[float, float, float]], steps: int = 7) -> Li
     return out
 
 
-def _stroke_poly(stroke, ox: float, base: float, unit: float, slant: float) -> List[Point]:
-    """One brush stroke as a filled outline: the centre line smoothed, each side offset
-    by half its width (a broad nib held at an angle thickens the down strokes)."""
+def _stroke_poly(stroke, ox: float, base: float, unit: float, slant: float, r: random.Random) -> List[Point]:
+    """One brush stroke as a filled outline: the centre line smoothed a little (it stays
+    angular), each side offset by half its width (a broad nib held at an angle thickens
+    the down strokes), the edges roughened as a dry brush leaves them."""
     pts = _catmull(stroke)
     left, right = [], []
     nib = math.radians(35)
@@ -404,40 +406,70 @@ def _stroke_poly(stroke, ox: float, base: float, unit: float, slant: float) -> L
         dx, dy = b[0] - a[0], b[1] - a[1]
         n = math.hypot(dx, dy) or 1.0
         ang = math.atan2(dy, dx)
-        k = 0.45 + 0.55 * abs(math.sin(ang - nib))
+        k = 0.4 + 0.6 * abs(math.sin(ang - nib))
         half = max(0.0, wd) * k * 0.5
-        nx, ny = -dy / n * half, dx / n * half
+        rough = 0.018 if half > 0.02 else 0.0
+        hl = half + r.uniform(-rough, rough)
+        hr = half + r.uniform(-rough, rough)
         sx = x + y * slant
-        left.append((ox + (sx + nx) * unit, base - (y + ny) * unit))
-        right.append((ox + (sx - nx) * unit, base - (y - ny) * unit))
+        left.append((ox + (sx - dy / n * hl) * unit, base - (y + dx / n * hl) * unit))
+        right.append((ox + (sx + dy / n * hr) * unit, base - (y - dx / n * hr) * unit))
     return left + right[::-1]
 
 
 def logo_size(unit: float, word: str = "Regicide") -> Tuple[float, float]:
     """(width, height) of the wordmark at an x-height of ``unit`` points."""
     w = sum(_LETTERS[ch][0] for ch in word) * unit
-    return (w + unit * 0.6, (LOGO_ASCENT + LOGO_DESCENT) * unit)
+    return (w + unit * 0.7, (LOGO_ASCENT + LOGO_DESCENT) * unit)
 
 
-def draw_logo(x: float, y: float, w: float, h: float, colour, word: str = "Regicide", slant: float = 0.08) -> None:
-    """The wordmark fitted in the rect and centred."""
+def logo_path(x: float, y: float, w: float, h: float, word: str = "Regicide", slant: float = 0.1):
+    """The wordmark fitted in the rect and centred: (one Path of every stroke, x-height)."""
     lw, lh = logo_size(1.0, word)
     unit = min(w / lw, h / lh)
-    total = lw * unit
-    ox = x + (w - total) / 2.0 + unit * 0.3
+    ox = x + (w - lw * unit) / 2.0 + unit * 0.35
     base = y + (h - lh * unit) / 2.0 + LOGO_ASCENT * unit
-    ui.set_color(colour)
+    r = rng(word)
+    p = ui.Path()
     for ch in word:
         adv, strokes = _LETTERS[ch]
         for s in strokes:
-            pts = _stroke_poly(s, ox, base, unit, slant)
-            p = ui.Path()
+            pts = _stroke_poly(s, ox, base, unit, slant, r)
             p.move_to(*pts[0])
             for q in pts[1:]:
                 p.line_to(*q)
             p.close()
-            p.fill()
         ox += adv * unit
+    return p, unit
+
+
+def draw_logo(x: float, y: float, w: float, h: float, colour, word: str = "Regicide", slant: float = 0.1,
+              scored: bool = True) -> None:
+    """The wordmark; ``scored``: with dark scratches through the letters (left out when it
+    is small, where they would only muddy it)."""
+    p, unit = logo_path(x, y, w, h, word, slant)
+    ui.set_color(colour)
+    p.fill()
+    if scored and unit >= 9:
+        with ui.GState():
+            p.add_clip()
+            chips(x, y, w, h, (word, "scored"), int(w / unit * 7), unit, LOGO_SCORE)
+
+
+def chips(x: float, y: float, w: float, h: float, seed, n: int, unit: float, colour) -> None:
+    """Short dark nicks at loose angles, scattered over the rect (the wear on brushed
+    letters, cut into a stone)."""
+    r = rng(seed)
+    for _ in range(int(n)):
+        cx, cy = x + r.uniform(0, w), y + r.uniform(0, h)
+        length = unit * r.uniform(0.25, 0.9)
+        ang = r.uniform(-0.4, 0.9)
+        dx, dy = math.cos(ang) * length / 2.0, -math.sin(ang) * length / 2.0
+        bend = (cx + r.uniform(-0.08, 0.08) * unit, cy + r.uniform(-0.08, 0.08) * unit)
+        polyline([(cx - dx, cy - dy), bend, (cx + dx, cy + dy)], colour, unit * r.uniform(0.025, 0.06))
+
+
+LOGO_SCORE = (0.0, 0.0, 0.0, 0.62)
 
 
 class LogoView(ui.View):
