@@ -96,12 +96,17 @@ def torn_edge(x0: float, x1: float, y: float, depth: float, seed, step: float = 
 
 
 def lit_tear(top: Sequence[Point], rim, seed) -> None:
-    """Light a tear as paper or card torn under a lamp: a dark line just under it, the
-    lit edge itself, and short fibres standing off it."""
+    """Light a tear as card torn under a lamp: a dark line just under it, the lit edge as a
+    ragged band (now thin, now thick) and tufts of short fibres standing off it."""
     polyline([(px, py + 0.8) for px, py in top], TEAR_SHADOW, 1.4)
-    polyline(top, rim, 1.6)
     r = rng((seed, "fibres"))
-    x = top[0][0] + r.uniform(4, 10)
+    upper, lower = [], []
+    for px, py in top:
+        wd = r.uniform(0.8, 2.2)
+        upper.append((px, py - wd * 0.55))
+        lower.append((px, py + wd * 0.45))
+    fill_poly(upper + lower[::-1], rim)
+    x = top[0][0] + r.uniform(2, 6)
     end = top[-1][0]
     i = 0
     while x < end - 2:
@@ -109,11 +114,13 @@ def lit_tear(top: Sequence[Point], rim, seed) -> None:
             i += 1
         (ax, ay), (bx, by) = top[i], top[i + 1]
         t = (x - ax) / (bx - ax) if bx != ax else 0.0
-        y = ay + (by - ay) * t
-        length = r.uniform(2.0, 6.0)
-        ang = -math.pi / 2 + r.uniform(-0.35, 0.35)
-        polyline([(x, y), (x + math.cos(ang) * length, y + math.sin(ang) * length)], rim, 0.6)
-        x += r.uniform(9, 14)
+        y = ay + (by - ay) * t - 0.6
+        for _ in range(r.randint(1, 3)):
+            length = r.uniform(3.0, 4.5) if r.random() < 0.15 else r.uniform(0.8, 2.4)
+            ang = -math.pi / 2 + r.uniform(-1.1, 1.1)
+            fx = x + r.uniform(-1.5, 1.5)
+            polyline([(fx, y), (fx + math.cos(ang) * length, y + math.sin(ang) * length)], rim, r.uniform(0.4, 0.7))
+        x += r.uniform(3, 12)
 
 
 TEAR_SHADOW = (0.0, 0.0, 0.0, 0.6)
@@ -348,6 +355,34 @@ def field_box(tf, frame) -> ui.View:
     return box
 
 
+def force_dark(view) -> None:
+    """The look is black: ask iOS for its dark appearance on this view and on the view
+    controller that shows it (so the keyboard, the status bar and the phone's own controls
+    stay dark whatever the phone is set to), on the main thread. Pythonista's own window is
+    left alone. Off the phone (no objc_util) it does nothing."""
+    try:
+        from objc_util import ObjCClass, ObjCInstance, on_main_thread
+    except ImportError:
+        return
+
+    @on_main_thread
+    def apply():
+        o = ObjCInstance(view)
+        o.setOverrideUserInterfaceStyle_(2)
+        vc = ObjCClass("UIViewController")
+        r = o.nextResponder()
+        while r is not None and not r.isKindOfClass_(vc):
+            r = r.nextResponder()
+        if r is not None:
+            r.setOverrideUserInterfaceStyle_(2)
+            r.setNeedsStatusBarAppearanceUpdate()
+
+    try:
+        apply()
+    except Exception as e:      # an older iOS: the look still works, only the phone's own bits stay light
+        print("force_dark:", e)
+
+
 # ---------------------------------------------------------------------------- panels
 class Panel(ui.View):
     """A choice box: a near-black card with the fog showing faintly through, torn along its
@@ -412,9 +447,15 @@ class Toast(ui.View):
     def draw(self) -> None:
         W, H = self.width, self.height
         torn_panel(0, 0, W, H, ("toast", self._text), T.TORN_PANEL, T.RIM, 3.0)
+        # two lines if it needs them, smaller type before anything is lost
         size = 13.0
-        ui.draw_string(self._text, (6, 3 + (H - 3 - size * 1.3) / 2.0, W - 12, size * 1.35), (T.FONT_BOLD, size),
-                       T.TEXT, ui.ALIGN_CENTER)
+        while True:
+            tw, th = ui.measure_string(self._text, W - 12, (T.FONT_BOLD, size))
+            if th <= H - 8 or size <= 10:
+                break
+            size -= 0.5
+        ui.draw_string(self._text, (6, 3 + (H - 3 - th) / 2.0, W - 12, th + 2), (T.FONT_BOLD, size), T.TEXT,
+                       ui.ALIGN_CENTER)
 
 
 # ---------------------------------------------------------------------------- the wordmark
@@ -494,9 +535,14 @@ def _stroke_poly(stroke, ox: float, base: float, unit: float, slant: float, r: r
     return left + right[::-1]
 
 
-def logo_size(unit: float, word: str = "Regicide") -> Tuple[float, float]:
+def _adv(ch: str, small: bool) -> float:
+    """A letter's advance; small (a pile's back), the round letters stand further apart."""
+    return _LETTERS[ch][0] + (0.08 if small and ch in "gic" else 0.0)
+
+
+def logo_size(unit: float, word: str = "Regicide", small: bool = False) -> Tuple[float, float]:
     """(width, height) of the wordmark at an x-height of ``unit`` points."""
-    w = sum(_LETTERS[ch][0] for ch in word) * unit
+    w = sum(_adv(ch, small) for ch in word) * unit
     return (w + unit * 0.7, (LOGO_ASCENT + LOGO_DESCENT) * unit)
 
 
@@ -504,6 +550,10 @@ def logo_path(x: float, y: float, w: float, h: float, word: str = "Regicide", sl
     """The wordmark fitted in the rect and centred: (one Path of every stroke, x-height)."""
     lw, lh = logo_size(1.0, word)
     unit = min(w / lw, h / lh)
+    small = unit < 12
+    if small:
+        lw, lh = logo_size(1.0, word, True)
+        unit = min(w / lw, h / lh)
     ox = x + (w - lw * unit) / 2.0 + unit * 0.35
     base = y + (h - lh * unit) / 2.0 + LOGO_ASCENT * unit
     r = rng(word)
@@ -516,7 +566,7 @@ def logo_path(x: float, y: float, w: float, h: float, word: str = "Regicide", sl
             for q in pts[1:]:
                 p.line_to(*q)
             p.close()
-        ox += adv * unit
+        ox += _adv(ch, small) * unit
     return p, unit
 
 

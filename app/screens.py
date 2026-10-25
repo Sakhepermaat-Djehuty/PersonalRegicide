@@ -247,6 +247,9 @@ class App(ui.View):
         self.audio.music(screen.music_slot())
 
     def layout(self) -> None:
+        if not getattr(self, "_dark", False):
+            self._dark = True
+            veil.force_dark(self)
         cur = getattr(self, "current", None)
         if cur is not None:
             T.apply_safe_area(self)
@@ -522,8 +525,9 @@ class QuickPlayScreen(Screen):
             ("Pass and play (2–4)", lambda s: app.show(NewGameScreen(app, max(2, app.settings.get("last_players", 2)))), True),
             ("History", lambda s: app.show(HistoryScreen(app)), False),
         ]
-        for title, action, primary in items:
-            self.add_subview(make_button(title, action, (x, y, bw, bh), primary))
+        for i, (title, action, _primary) in enumerate(items):
+            # one lit tile: the first way on
+            self.add_subview(make_button(title, action, (x, y, bw, bh), i == 0))
             y += bh + gap
 
     def _continue(self, sender) -> None:
@@ -551,16 +555,19 @@ class LoadGameScreen(Screen):
         rows = store.list_campaigns()
         if not rows:
             sv.add_subview(make_label("No saved games yet.", (0, 0, w - 2 * m, 30), 14, False, T.MUTED))
-        for r in rows:
-            panel = veil.Panel(seed=("load", r["slot"]), frame=(0, yy, w - 2 * m, 92))
+        for k, r in enumerate(rows):
+            panel = veil.Panel(seed=("load", r["slot"]), frame=(0, yy, w - 2 * m, 104))
             state = "complete" if r["finished"] else "mission %d%s" % (r["mission"], " · attempt in progress" if r["has_attempt"] else "")
-            panel.add_subview(make_label(r["name"], (12, 8, w - 2 * m - 24, 24), 17, True, T.TEXT))
-            panel.add_subview(make_label("%d player%s · %s · %s" % (r["players"], "" if r["players"] == 1 else "s", state, r["last_played"]),
-                                         (12, 32, w - 2 * m - 24, 20), 12, False, T.MUTED))
-            panel.add_subview(make_button("Open", (lambda slot: lambda s: app.open_campaign(slot))(r["slot"]), (12, 54, 110, 32), True, 14))
-            panel.add_subview(make_button("Delete", (lambda slot, name: lambda s: self._delete(slot, name))(r["slot"], r["name"]), (w - 2 * m - 12 - 90, 54, 90, 32), False, 14))
+            panel.add_subview(make_label(r["name"], (14, 16, w - 2 * m - 28, 24), 17, True, T.TEXT))
+            info_line = make_label("%d player%s · %s · %s" % (r["players"], "" if r["players"] == 1 else "s", state, r["last_played"]),
+                                   (14, 40, w - 2 * m - 28, 20), 12, False, T.MUTED)
+            info_line.font = (T.FONT_ITALIC, 12)
+            panel.add_subview(info_line)
+            # the most recent game (the list's first) is the lit one
+            panel.add_subview(make_button("Open", (lambda slot: lambda s: app.open_campaign(slot))(r["slot"]), (14, 62, 110, 32), k == 0, 14))
+            panel.add_subview(make_button("Delete", (lambda slot, name: lambda s: self._delete(slot, name))(r["slot"], r["name"]), (w - 2 * m - 14 - 90, 62, 90, 32), False, 14))
             sv.add_subview(panel)
-            yy += 100
+            yy += 112
         sv.content_size = (w - 2 * m, yy + 20)
         self.add_subview(sv)
 
@@ -815,7 +822,7 @@ class GameScreen(Screen):
         self.left_btn.frame = (m, bar_y, bw, bar_h)
         self.mid_btn.frame = (m + bw + 8, bar_y, bw, bar_h)
         self.right_btn.frame = (m + 2 * (bw + 8), bar_y, bw, bar_h)
-        self.toast.frame = (m + 20, bar_y - 42, w - 2 * m - 40, 36)
+        self.toast.frame = (m + 20, bar_y - 52, w - 2 * m - 40, 46)
         if self.overlay is not None:
             self.overlay.frame = (0, 0, w, h)
             if hasattr(self.overlay, "layout"):
@@ -1082,7 +1089,7 @@ class GameScreen(Screen):
                 pv = g.preview_play(sel) if ok else {}
                 if pv.get("ok"):
                     # what the play would do shows on the header (and in full on a tap on the
-                    # attack); a class power the enemy blocks puts a red edge on the card
+                    # attack); a class power the enemy blocks puts a jagged white edge on the card
                     # and on the enemy
                     projection = pv
                     warn = self._clash(pv, sel)
@@ -1266,7 +1273,7 @@ class GameScreen(Screen):
             self.layout()     # the played cards make room for the button beside them, or take it back
 
     def _clash(self, pv: dict, sel: List[str]) -> bool:
-        """Mark the selected cards whose class power the enemy blocks (a red edge on them and
+        """Mark the selected cards whose class power the enemy blocks (a jagged white edge on them and
         on the enemy), by the classes they have in play. A power whose immunity hangs on a
         card still face down is not marked (the forecast does not know it)."""
         g = self.game
@@ -1587,11 +1594,15 @@ class Overlay(ui.View):
         items = self.build()
         y = 20
         for v in items:
-            v.frame = (20, y, pw - 40, v.height)
+            if isinstance(v, veil.RoughRule):
+                # a rule between plain rows: short and centred
+                v.frame = (20 + (pw - 40) * 0.2, y - 1, (pw - 40) * 0.6, v.height)
+            else:
+                v.frame = (20, y, pw - 40, v.height)
             if isinstance(v, ui.Button):
                 fit_title(v)
             self.panel.add_subview(v)
-            y += v.height + 12
+            y += v.height + getattr(self, "gaps", {}).get(id(v), 12)
         y = self._add_peek(pw, y)
         ph = y + 8
         self.panel.frame = ((self.width - pw) / 2, max(T.TOP_INSET, (self.height - ph) / 2), pw, ph)
@@ -1761,7 +1772,7 @@ class PickOverlay(Overlay):
         options: List[ui.View] = []
         for a in cards:
             options.append(make_button(self.option_title(g, a, short),
-                                       (lambda act: lambda s: self.screen.decide(act))(a), (0, 0, 10, 44)))
+                                       (lambda act: lambda s: self.screen.decide(act))(a), (0, 0, 10, 44), False))
         tail: List[ui.View] = []
         for a in acts:
             if not self.is_option(a):
@@ -2682,7 +2693,7 @@ class TeamDamageOverlay(Overlay):
             if not p.hand:
                 continue
             title = "%s (%d card%s)" % (p.name, len(p.hand), "" if len(p.hand) == 1 else "s")
-            items.append(make_button(title, (lambda idx: lambda s: self.screen.pick_team_seat(idx))(i), (0, 0, 10, 46)))
+            items.append(make_button(title, (lambda idx: lambda s: self.screen.pick_team_seat(idx))(i), (0, 0, 10, 46), False))
         items.append(make_button("Game menu", lambda s: self.screen._menu(s), (0, 0, 10, 36), False, 13))
         return items
 
@@ -2702,7 +2713,7 @@ class ChooseNextOverlay(Overlay):
             if a["type"] == "choose_next":
                 i = a["player"]
                 title = "%s (%s)" % (g.players[i].name, cards_n(len(g.players[i].hand)))
-                items.append(make_button(title, (lambda idx: lambda s: self.screen.choose_next(idx))(i), (0, 0, 10, 46)))
+                items.append(make_button(title, (lambda idx: lambda s: self.screen.choose_next(idx))(i), (0, 0, 10, 46), False))
         return items
 
 
@@ -2739,18 +2750,30 @@ class GameMenuOverlay(Overlay):
             make_label("Game menu", (0, 0, 10, 32), 20, True, T.TEXT, ui.ALIGN_CENTER),
             make_button("Resume", lambda s: self.screen._back_to_game(), (0, 0, 10, 46)),
         ]
+        rows = []
+        self.gaps = {}               # the space under a view (by id), where it is not the usual 12pt
         if app.undo_stack:
-            items.append(make_button("Undo last action", self._undo, (0, 0, 10, 46), False))
+            rows.append(("Undo last action", self._undo, 16))
         if app.in_campaign:
-            items.append(make_button("Mission rules", lambda s: self.screen._show_overlay(RulesOverlay(self.screen)),
-                                     (0, 0, 10, 46), False))
-        items.append(make_button("Discard and reserve piles", lambda s: self.screen._show_piles(), (0, 0, 10, 46), False))
-        items.append(make_button("Game log", lambda s: self.screen._show_overlay(LogOverlay(self.screen)), (0, 0, 10, 46), False))
-        items.append(make_button("Save and go to menu", lambda s: (app.autosave(), app.show(MenuScreen(app))), (0, 0, 10, 46), False))
+            rows.append(("Mission rules", lambda s: self.screen._show_overlay(RulesOverlay(self.screen)), 16))
+        rows.append(("Discard and reserve piles", lambda s: self.screen._show_piles(), 16))
+        rows.append(("Game log", lambda s: self.screen._show_overlay(LogOverlay(self.screen)), 16))
+        rows.append(("Save and go to menu", lambda s: (app.autosave(), app.show(MenuScreen(app))), 16))
+        # the lesser entries as plain lines between scored rules
+        for i, (title, action, size) in enumerate(rows):
+            if i:
+                rule = veil.RoughRule(T.FRAME_QUIET, ("gm", i), frame=(0, 0, 10, 3))
+                self.gaps[id(rule)] = 2
+                items.append(rule)
+            b = make_button(title, action, (0, 0, 10, 40), False, size)
+            veil.dress_button(b, False, True, bare=True)
+            self.gaps[id(b)] = 2
+            items.append(b)
         if app.in_campaign:
             items.append(make_button("Abandon attempt (counts as a loss)", self._abandon_attempt, (0, 0, 10, 46), False, 14))
         else:
             items.append(make_button("Abandon game", self._abandon, (0, 0, 10, 46), False))
+        self.gaps[id(items[-2])] = 14
         return items
 
     def _undo(self, sender) -> None:
@@ -2943,7 +2966,7 @@ def card_face(title: str, body: str, width: float, max_height: float, icon=None,
         sub.frame = (42, y, inner, sub.height)
         face.add_subview(sub)
         y += sub.height + 2
-    face.add_subview(veil.RoughRule(T.RIM, ("rule", title), frame=(30, y + 5, width - 60, 3)))
+    face.panel_y = y + 3          # the text sits on a panel torn along its top
     y += 16
     bw = width - 44
     _, th = text_size(body, bw, body_size)        # wrapped at the label's own width
@@ -3071,7 +3094,7 @@ def attack_face(g: Game, pv: Optional[dict], width: float, max_height: float):
     face.add_subview(fit_label(e.name, width - 84, 12, False, muted, ui.ALIGN_CENTER))
     face.subviews[-1].frame = (42, y, width - 84, 18)
     y += 22
-    face.add_subview(veil.RoughRule(T.RIM, "attack", frame=(30, y - 1, width - 60, 3)))
+    face.panel_y = y - 1
     y += 10
     gap = 14.0
     cw = (width - 44 - gap) / 2.0
@@ -3622,7 +3645,8 @@ class CampaignScreen(Screen):
                 self.add_subview(make_button("Continue attempt", lambda s: app.resume_attempt(), (x, y, bw, 46)))
                 y += 54
             # Pack E: Evergreen mode, generated missions with the finished party deck
-            self.add_subview(make_button("Evergreen mission", lambda s: app.show(EvergreenScreen(app)), (x, y, bw, 46)))
+            self.add_subview(make_button("Evergreen mission", lambda s: app.show(EvergreenScreen(app)), (x, y, bw, 46),
+                                         not store.has_attempt(camp.slot)))
             y += 54
         else:
             self.add_subview(make_label("Mission %d · %s" % (camp.mission, info["title"]), (m, y, w - 2 * m, 28), 18, True, T.ACCENT))
@@ -3675,9 +3699,14 @@ class CampaignScreen(Screen):
             ("Progress", lambda s: app.show(ProgressScreen(app))),
             ("Lore", lambda s: app.show(LoreScreen(app, local=True))),
         ]
-        for title, action in buttons:
-            self.add_subview(make_button(title, action, (x, y, bw, row_h), False))
-            y += row_h + gap
+        # the hub's lesser entries as plain lines between scored rules, as on the menu
+        for i, (title, action) in enumerate(buttons):
+            if i:
+                self.add_subview(veil.RoughRule(T.FRAME_QUIET, ("hub", i), frame=(x + bw * 0.2, y - 2, bw * 0.6, 3)))
+            b = make_button(title, action, (x, y, bw, row_h), False)
+            veil.dress_button(b, False, True, bare=True)
+            self.add_subview(b)
+            y += row_h + 2
 
 
     @shows_errors("Opening the reward")
@@ -3767,15 +3796,16 @@ class _MapCanvas(ui.View):
     def draw(self) -> None:
         camp = self.screen.app.campaign
         pts = self._points()
-        # the route scored across the fog, each stop a number tile: lit where the mission is
-        # won, lit with a white numeral where it is now, quiet ahead
+        # the route scored across the fog (paler where it has been walked), each stop a number
+        # tile: lit where the mission is won, a pale tile where it is now, quiet ahead
         for i in range(len(pts) - 1):
             (x0, y0), (x1, y1) = pts[i], pts[i + 1]
             n = max(2, int(math.hypot(x1 - x0, y1 - y0) / 6.0))
             r = veil.rng(("route", i))
             line = [(x0 + (x1 - x0) * k / float(n) + r.uniform(-0.6, 0.6),
                      y0 + (y1 - y0) * k / float(n) + r.uniform(-0.6, 0.6)) for k in range(n + 1)]
-            veil.polyline(line, T.FRAME_QUIET, 1.6)
+            walked = camp is not None and (i + 2 in camp.completed or i + 2 == camp.mission)
+            veil.polyline(line, T.RIM if walked else T.FRAME_QUIET, 1.6)
         for i, (x, y) in enumerate(pts):
             n = i + 1
             s = 28
@@ -3786,8 +3816,13 @@ class _MapCanvas(ui.View):
                 sel.line_width = 1.5
                 ui.set_color(T.BRIGHT)
                 sel.stroke()
-            veil.number_tile(x - s / 2.0, y - s / 2.0, s, str(n), done or now,
-                             ink=T.BRIGHT if now else (T.BTN_TEXT if done else T.MUTED))
+            if now:
+                ui.set_color(T.TEXT)
+                ui.Path.rounded_rect(x - s / 2.0 - 2, y - s / 2.0 - 2, s + 4, s + 4, 3).fill()
+                ui.draw_string(str(n), (x - s / 2.0, y - s * 0.4, s, s * 0.8), (T.FONT_BOLD, s * 0.58), T.BG,
+                               ui.ALIGN_CENTER)
+            else:
+                veil.number_tile(x - s / 2.0, y - s / 2.0, s, str(n), done, ink=T.BTN_TEXT if done else T.MUTED)
             if camp is not None and camp.revealed(n):
                 title = mission_info(n)["title"]
                 ty = y + s / 2.0 + 2 if i % 2 == 0 else y - s / 2.0 - 17
@@ -3844,8 +3879,8 @@ def mercenary_text(merc: dict, card: Card, evergreen: bool) -> str:
 
 class MercenaryScreen(Screen):
     """The mercenary camp: every mercenary as a playing card, shaded while it waits in the
-    box, its cost in bright gold coins down the right side; the hired ones are bright with
-    the gold selection border. A tap opens the mercenary's card (``CardPopup``) to hire it,
+    box, its cost in silver coins down the right side; the hired ones are bright with
+    the white selection border. A tap opens the mercenary's card (``CardPopup``) to hire it,
     or, after a failure, to swap a hired one for another of the same cost. ``evergreen``:
     Evergreen boon 24's five coins for the drawn setup (no swaps). ``back``: where Back
     goes: the deck list (default), the game menu or the Evergreen screen."""
@@ -4318,7 +4353,7 @@ class ChoiceScreen(Screen):
 class PartyScreen(Screen):
     """The deck list: the relics (a row of cards; a tap opens the relic's card), the
     mercenaries hired and the mercenary camp, Gøran's beasts (all four; a tap chooses the
-    one the next attempt takes, shown with the gold selection border), then the party."""
+    one the next attempt takes, shown with the white selection border), then the party."""
 
     def layout(self) -> None:
         if not hasattr(self, "app"):
@@ -4479,7 +4514,7 @@ class PartyScreen(Screen):
     @shows_errors("Choosing the beast")
     def _toggle_beast(self, beast_id: str) -> None:
         """Choose (or, tapped again, drop) the beast the next attempt takes; the cards show
-        the choice with the gold selection border."""
+        the choice with the white selection border."""
         camp = self.app.campaign
         if camp is None or store.has_attempt(camp.slot):
             return
@@ -4499,12 +4534,10 @@ class PartyScreen(Screen):
         camp = self.app.campaign
         r = RELICS.get(relic_id, {})
         side = "solo side" if camp.players == 1 else "side for two or more players"
-        # (the two Mothers, once told apart by colour, are named in the subtitle)
-        state = {"mother": " (corrupt)", "mother_restored": " (restored)"}.get(relic_id, "")
         popup = CardPopup(relic_name(relic_id), relic_text(relic_id, camp.players),
                           [("Close", lambda s: popup.close(), False)],
                           icon=[(str(r.get("symbol", "?")), T.CARD_INK)], edge=T.ACCENT,
-                          subtitle="Relic%s · %s" % (state, side), dismissable=True)
+                          subtitle="Relic · %s" % side, dismissable=True)
         show_card_popup(self, popup)
 
 

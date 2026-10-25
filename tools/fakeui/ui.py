@@ -215,6 +215,8 @@ class _Chain:
     def runs(self, text: str):
         out = []
         for ch in text:
+            if 0xFE00 <= ord(ch) <= 0xFE0F:
+                continue                    # a variation selector: draws nothing on the phone
             f = self._font_for(ch)
             if out and out[-1][0] is f:
                 out[-1][1] += ch

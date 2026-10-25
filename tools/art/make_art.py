@@ -89,8 +89,8 @@ def fog(w: int, h: int, seed: int, mist_at: float = 0.88, mist: float = 0.6, glo
 
 
 def foe(w: int, h: int, seed: int) -> np.ndarray:
-    """A pale billow lit from behind at (0.5, 0.35), about 0.55 there and 0.15 at the edges,
-    with the smoke's texture through it."""
+    """A pale billow lit from behind at (0.5, 0.35), about 0.6 there and 0.3 at the edges,
+    with the smoke's texture through it (dark ink on it stays readable everywhere)."""
     rng = np.random.default_rng(seed)
     flow_x = (fbm(w, h, w / 1.2, 3, rng) - 0.5) * w * 0.6
     flow_y = (fbm(w, h, w / 1.2, 3, rng) - 0.5) * w * 0.3
@@ -99,7 +99,7 @@ def foe(w: int, h: int, seed: int) -> np.ndarray:
     ys = np.linspace(0, 1, h)[:, None]
     xs = np.linspace(0, 1, w)[None, :]
     billow = np.exp(-(((xs - 0.5) / 0.42) ** 2 + ((ys - 0.35) / 0.38) ** 2))
-    lum = 0.13 + 0.42 * billow * (0.55 + 0.6 * smoke) + 0.06 * strands * billow
+    lum = 0.30 + 0.36 * billow * (0.55 + 0.6 * smoke) + 0.06 * strands * billow
     return np.clip(lum, 0, 1)
 
 

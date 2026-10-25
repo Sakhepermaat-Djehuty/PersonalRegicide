@@ -137,7 +137,8 @@ def face_pips(card: Card) -> List[str]:
 
 
 def sleeve_color(card: Card) -> str:
-    """The sleeve a card sits in: purple when corrupted, green when restored, none otherwise."""
+    """The sleeve a card sits in: dark and cracked when corrupted, grey with a pale line inside
+    when restored, none otherwise."""
     if card.has("corrupted"):
         return T.CORRUPTED
     if card.has("restored"):
@@ -359,7 +360,6 @@ def draw_card_ground(w: float, h: float, r: float, edge=None, seed="card", veil_
         ui.set_color((0.03, 0.03, 0.03, veil_alpha))
         ui.Path.rect(0, 0, w, h).fill()
         veil.scratches(8, 8, w - 16, h - 16, seed, 4, T.SCAR, 0.7)
-    veil.inset_frame(0, 0, w, h, 6.0, T.CARD_FRAME, 1.0, max(2.0, r - 6))
     rim = ui.Path.rounded_rect(1.5, 1.5, w - 3, h - 3, r)
     rim.line_width = 1.5
     ui.set_color(T.RIM)
@@ -381,9 +381,10 @@ class CardView(ui.View):
         self.order = 0                # selection order shown top right (0: none)
         self.shaded = False           # greyed out (a mercenary still in the box), coins stay bright
         self.coins = 0                # a mercenary's cost, drawn as coins down the right side
-        self.warn = False             # its class power clashes with the enemy's immunity: red edge and "!"
+        self.warn = False             # its class power clashes with the enemy's immunity: jagged white edge and "!"
         self.force_kind = ""          # "royal": the classic royal face whatever the setting (the enemy)
         self.center_icons = None      # a royal: these class icons under the letter instead of its value
+        self.struck_icons = None      # the enemy: classes whose immunity a Jester cancelled (struck through)
         self.background_color = None  # drawn in draw()
 
     def coin_room(self) -> float:
@@ -396,16 +397,16 @@ class CardView(ui.View):
     def draw(self) -> None:
         self._draw_face()
         if self.dimmed and self.face_up and not self.shaded:
-            # a dark veil over a card that can't be played: it sinks back
-            W, H = self.width, self.height
+            # a dark veil over a card that can't be played: it sinks back (its face only: a
+            # sleeve keeps its grey, so restored and corrupted stay apart)
             ui.set_color(T.CARD_VEIL)
-            ui.Path.rounded_rect(1, 1, W - 2, H - 2, card_radius(W, H)).fill()
+            self._face_path().fill()
         if self.shaded and self.face_up:
-            # a shade over the whole card; the coins are drawn after it, so they stay bright
+            # a shade over the card's face; the coins are drawn after it, so they stay bright
             W, H = self.width, self.height
             r = card_radius(W, H)
             ui.set_color(T.SHADE)
-            ui.Path.rounded_rect(1, 1, W - 2, H - 2, r).fill()
+            self._face_path().fill()
             if self.selected:
                 # the white selection border stays bright on a shaded card
                 border = ui.Path.rounded_rect(1.5, 1.5, W - 3, H - 3, r)
@@ -422,6 +423,13 @@ class CardView(ui.View):
             W, H = self.width, self.height
             d = max(15.0, min(26.0, min(W, H) * (0.3 if self.small else 0.26)))
             veil.number_tile(W - d - 2.5, 2.5, d, str(self.order), True)
+
+    def _face_path(self):
+        """The card's face: all of it, or inside its sleeve."""
+        W, H = self.width, self.height
+        r = card_radius(W, H)
+        sw = max(2.5, min(W, H) * 0.08) if sleeve_color(self.card) else 0.0
+        return ui.Path.rounded_rect(1 + sw, 1 + sw, W - 2 - 2 * sw, H - 2 - 2 * sw, max(2.0, r - sw * 0.6))
 
     def _draw_face(self) -> None:
         W, H = self.width, self.height
@@ -621,7 +629,7 @@ class CardView(ui.View):
             ui.draw_string(rank, (x, y + (h - panel_h) * 0.47 - size * 0.62, w, size * 1.3), (T.FONT_BOLD, size), ink,
                            ui.ALIGN_CENTER)
             # its rank and class, small and upright in the corner
-            rs = w * 0.17
+            rs = max(w * 0.17, 13.0)
             pad = max(3.0, w * 0.05)
             ui.draw_string(rank, (x + pad, y + pad * 0.6, rs * 1.4, rs * 1.3), (T.FONT_BOLD, rs), ink, ui.ALIGN_CENTER)
             for i, s_ in enumerate(face_pips(c)[:3]):
@@ -630,10 +638,17 @@ class CardView(ui.View):
             # the torn panel and what the enemy is immune to on it
             veil.torn_panel(x, y + h - panel_h, w, panel_h + 1, ("foe", c.id), T.FOE_PANEL, T.FOE_RIM, 3.5)
             icons = list(self.center_icons or [])
-            if icons:
-                isz = min(panel_h * 0.42, w / float(len(icons)) * 0.7)
-                for i, s_ in enumerate(icons):
-                    draw_symbol(s_, x + w * (i + 0.5) / len(icons), y + h - panel_h * 0.45, isz, T.TEXT)
+            struck = [s_ for s_ in (self.struck_icons or []) if s_ not in icons]
+            shown = [(s_, False) for s_ in icons] + [(s_, True) for s_ in struck]
+            if shown:
+                # the classes it is immune to; a cancelled immunity (a Jester) muted and struck through
+                isz = min(panel_h * 0.42, w / float(len(shown)) * 0.7)
+                for i, (s_, off) in enumerate(shown):
+                    cx_, cy_ = x + w * (i + 0.5) / len(shown), y + h - panel_h * 0.45
+                    draw_symbol(s_, cx_, cy_, isz, T.MUTED if off else T.TEXT)
+                    if off:
+                        veil.polyline([(cx_ - isz * 0.55, cy_ + isz * 0.45), (cx_ + isz * 0.55, cy_ - isz * 0.45)],
+                                      T.TEXT, 1.5)
             if c.has("corrupted"):
                 veil.cracks(x, y + h - panel_h, w, panel_h, (c.id, "crack"), T.CORRUPTED_CRACK, 2, 1.0)
         rim = ui.Path.rounded_rect(1.5, 1.5, W - 3, H - 3, r)
@@ -643,7 +658,7 @@ class CardView(ui.View):
 
     def _draw_wild(self, c: Card, ox: float, oy: float, w: float, h: float, rank: str) -> None:
         """A Wild Animal (any one class, declared when it enters play): one class icon in
-        each corner, each in its own colour, set apart from a multi-class card's row of
+        each corner, in ink, set apart from a multi-class card's row of
         icons; the rank sits large in the middle."""
         band = (max(9.0, h * 0.24) if self.small else max(12.0, h * 0.13)) if self.badge else 0.0
         size = h * (0.2 if self.small else 0.16)
@@ -662,7 +677,7 @@ class CardView(ui.View):
 
     @staticmethod
     def _pips(pips, x: float, y: float, width: float, size: float, align) -> None:
-        """Class symbols in a row, each in its own colour, shrunk to fit ``width``; the
+        """Class symbols in a row, in ink, shrunk to fit ``width``; the
         restoration pip is drawn as a small geometric tree."""
         if not pips:
             return
@@ -863,6 +878,8 @@ class TickBox(ui.View):
         pass
 
     def touch_ended(self, touch) -> None:
+        if getattr(touch, "phase", "ended") == "cancelled":
+            return                                  # a scroll took the touch
         x, y = touch.location
         if not self.enabled or not (0 <= x <= self.width and 0 <= y <= self.height):
             return
@@ -894,6 +911,8 @@ class Toggle(ui.View):
         pass
 
     def touch_ended(self, touch) -> None:
+        if getattr(touch, "phase", "ended") == "cancelled":
+            return                                  # a scroll took the touch
         x, y = touch.location
         if not self.enabled or not (0 <= x <= self.width and 0 <= y <= self.height):
             return
@@ -962,13 +981,16 @@ class Segments(ui.View):
             return
         gap = 4.0
         w = (self.width - gap * (n - 1)) / n
+        if w <= 0:
+            return                                  # (not laid out yet)
         for i, b in enumerate(self.subviews):
             b.frame = (i * (w + gap), 0, w, self.height)
             fit_title(b, 14)
 
 
 class RelicCard(ui.View):
-    """A relic as a small card: its symbol in its colour on a card face, "relic" below.
+    """A relic as a small card: its symbol in ink on a black card face, "relic" below (the
+    corrupt Mother's tile cracked, the restored one's with a pale line inside).
     A tap reports through ``on_tap`` (the deck list opens the relic's card)."""
 
     def __init__(self, relic_id: str, on_tap: Optional[Callable[["RelicCard"], None]] = None, **kw) -> None:
@@ -990,10 +1012,9 @@ class RelicCard(ui.View):
         rad = card_radius(w, h)
         ui.set_color(T.CARD_FACE)
         ui.Path.rounded_rect(1, 1, w - 2, h - 2, rad).fill()
-        veil.inset_frame(0, 0, w, h, 4.0, T.CARD_FRAME, 0.75, max(1.5, rad - 4))
         edge = ui.Path.rounded_rect(1.5, 1.5, w - 3, h - 3, rad)
-        edge.line_width = 1.5
-        ui.set_color(T.RIM)
+        edge.line_width = 1
+        ui.set_color(T.CARD_RIM)
         edge.stroke()
         size = h * 0.42
         if self.relic_id == "mother":
@@ -1019,6 +1040,7 @@ class PlayingCardFace(ui.View):
         super().__init__(**kw)
         self.edge = edge or T.CARD_BORDER
         self.corner = list(corner or [])
+        self.panel_y = 0.0            # where the text's torn panel starts (0: none)
         self.background_color = None
 
     # A tap on the card (its labels pass their touches up to it) stops here: on the phone
@@ -1031,8 +1053,13 @@ class PlayingCardFace(ui.View):
 
     def draw(self) -> None:
         w, h = self.width, self.height
-        r = 18.0
-        draw_card_ground(w, h, r, self.edge, seed=("face",) + tuple(t for t, _ in self.corner))
+        r = max(3.0, min(w, h) * 0.035)
+        seed = ("face",) + tuple(t for t, _ in self.corner[:1])
+        draw_card_ground(w, h, r, self.edge, seed=seed, veil_alpha=0.38)
+        if self.panel_y:
+            veil.torn_panel(6, self.panel_y, w - 12, h - self.panel_y - 6, seed, T.TORN_PANEL, T.RIM, 3.0,
+                            bottom_radius=max(0.0, r - 3))
+            veil.hatching(10, self.panel_y + 8, w - 20, h - self.panel_y - 16, seed + ("h",), T.SCAR, 9, 0.6)
         if not self.corner:
             return
         size = 17.0
@@ -1050,7 +1077,7 @@ class InfoCardFace(ui.View):
     that; a rule in the card's colour; a brief breakdown (``lines``); and, for a damage card,
     a big number in the middle (``middle``, with ``middle_caption`` under it). When the
     enemy is immune (``immune``) the card is greyed a little and IMMUNITY is stamped across
-    it: bold, red and diagonal. A strength that does nothing (``number_muted``: a Druid's or
+    it: bold, white and diagonal. A strength that does nothing (``number_muted``: a Druid's or
     a Chanter's) is drawn muted and struck through. The breakdown's type shrinks until every
     line fits on one line and every line fits on the card."""
 
@@ -1080,7 +1107,7 @@ class InfoCardFace(ui.View):
 
     def draw(self) -> None:
         w, h = float(self.width), float(self.height)
-        r = 16.0
+        r = max(3.0, min(w, h) * 0.035)
         draw_card_ground(w, h, r, self.edge, seed=("info", self.title), veil_alpha=0.38)
         ink = T.CARD_INK_MUTED if self.immune else T.CARD_INK
         pad = 16.0
@@ -1150,8 +1177,6 @@ class InfoCardFace(ui.View):
             size = self.body_size(w - 2 * pad, h - y - pad, 15)
             ui.draw_string(body, (pad, y, w - 2 * pad, h - y - pad), (T.FONT, size), ink, ui.ALIGN_LEFT)
         if self.immune:
-            ui.set_color((0.0, 0.0, 0.0, 0.35))      # the card sinks, the stamp stands on it
-            ui.Path.rounded_rect(1, 1, w - 2, h - 2, r).fill()
             self.draw_stamp(w, h)
 
     def body_size(self, width: float, height: float, largest: float) -> float:
@@ -1169,7 +1194,7 @@ class InfoCardFace(ui.View):
     def draw_stamp(w: float, h: float) -> None:
         """IMMUNITY across the card: bold capitals in a stamp's double frame, turned up to
         the right; white, as the only bright thing on the greyed card."""
-        red = T.BRIGHT
+        ink = T.BRIGHT
         size = max(26.0, min(48.0, w / 7.5))
         tw = text_size("IMMUNITY", 0, size, True)[0] + size * 1.0
         th = size * 1.75
@@ -1183,9 +1208,9 @@ class InfoCardFace(ui.View):
                 for px, py in ((x1, y0), (x1, y1), (x0, y1), (x0, y0)):
                     box.line_to(px, py)
                 box.line_width = width
-                ui.set_color(red)
+                ui.set_color(ink)
                 box.stroke()
-            ui.draw_string("IMMUNITY", (-tw / 2, -size * 0.66, tw, size * 1.3), (T.FONT_BOLD, size), red,
+            ui.draw_string("IMMUNITY", (-tw / 2, -size * 0.66, tw, size * 1.3), (T.FONT_BOLD, size), ink,
                            ui.ALIGN_CENTER)
 
 
@@ -1199,7 +1224,7 @@ class TableHeader(ui.View):
     letter, the classes it is immune to, a corrupted sleeve), the attack it will deal on
     the left and its health on the right, in big numbers. While cards are selected the
     numbers show what the attack would do (``projection``, a ``Game.preview_play``) and a
-    clash with the enemy's immunity puts a red edge on the card (``warn``). While damage is
+    clash with the enemy's immunity puts a jagged white edge on the card (``warn``). While damage is
     paid (``paying``: selected, needed) the attack side shows what is left to pay. A tap
     left of the card calls ``on_attack``, anywhere else ``on_enemy``."""
 
@@ -1243,11 +1268,13 @@ class TableHeader(ui.View):
             v = CardView(g.card(g.enemy.card_id), frame=self.card_frame())
             v.force_kind = "royal"
             v.touch_enabled = False
-            icons = list(g.rules.immune_suits(g) or ()) if not g.immunity_cancelled else []
+            immune = list(g.rules.immune_suits(g) or ())
+            icons = immune if not g.immunity_cancelled else []
             if g.extra.get("jester_attack"):
                 # a claimed Jester's attack ignores immunity (all but a fixed one, Myla's)
                 icons = [s_ for s_ in icons if g.rules.fixed_immunity(g, s_)]
             v.center_icons = icons
+            v.struck_icons = [s_ for s_ in immune if s_ not in icons]     # cancelled: shown struck through
             v.warn = self.warn
             self.add_subview(v)
             self.card_view = v
@@ -1257,7 +1284,12 @@ class TableHeader(ui.View):
         g = self.game
         w, h = self.width, self.height
         if g is None or g.enemy is None:
-            ui.draw_string("No enemy", (0, h / 2 - 12, w, 24), (T.FONT_BOLD, 18), T.MUTED, ui.ALIGN_CENTER)
+            # the enemy's place, empty
+            fx, fy, fw, fh = self.card_frame()
+            slot = ui.Path.rounded_rect(fx + 0.5, fy + 0.5, fw - 1, fh - 1, card_radius(fw, fh))
+            slot.line_width = 1
+            ui.set_color(T.RIM)
+            slot.stroke()
             return
         e = g.enemy
         cx, cy, cw, ch = self.card_frame()
@@ -1283,8 +1315,6 @@ class TableHeader(ui.View):
                 y += 16
             if note:
                 ui.draw_string(note, (x, y + 1, side, 22), (T.FONT_BOLD, 15), note_color, ui.ALIGN_CENTER)
-            if plate:
-                veil.polyline(veil.torn_edge(x + side * 0.12, x + side * 0.88, y + 26, 2.0, "suffer"), T.BRIGHT, 1.5)
 
         # A "?" marks what depends on a card still face down (the forecast never tells it), or
         # follows from a value the player declares later (the forecast assumes one).
@@ -1446,7 +1476,8 @@ class PileView(ui.View):
             edge.line_width = 1
             ui.set_color(T.FRAME_QUIET)
             edge.stroke()
-            ui.draw_string("0", (x, y + h / 2.0 - 11, w, 22), (T.FONT_BOLD, 16), T.MUTED, ui.ALIGN_CENTER)
+            s_ = min(24.0, w * 0.5)
+            veil.number_tile(x + (w - s_) / 2.0, y + (h - s_) / 2.0, s_, "0", False, ink=T.MUTED)
         else:
             step = 2.0
             cw, ch = w - step * (n - 1), h - step * (n - 1)
@@ -1508,7 +1539,7 @@ class HandGrid(ui.View):
         self.on_change: Optional[Callable[[], None]] = None
         self.on_card_tap: Optional[Callable[[bool], None]] = None   # a tap selected (True) or dropped a card
         self.selectable: Callable[[Card], bool] = lambda c: True
-        self.warned: set = set()      # selected cards whose class power the enemy blocks (red edge)
+        self.warned: set = set()      # selected cards whose class power the enemy blocks (jagged white edge)
         self.badges: Dict[str, str] = {}
         self.background_color = None
         self.columns = 4
@@ -1687,7 +1718,7 @@ class TableStrip(ui.View):
         cw, ch = self.card_size()
         y = self.top() + 2
         if self.label:
-            ui.draw_string(self.label, (0, 0, self.width, self.label_h), (T.FONT, min(11.0, self.label_h - 2)), T.MUTED)
+            ui.draw_string(self.label, (0, 0, self.width, self.label_h), (T.FONT, min(11.0, self.label_h - 2)), T.OK)
         if not self.cards:
             slot = ui.Path.rounded_rect(1, y + 1, cw - 2, ch - 2, card_radius(cw, ch))
             slot.line_width = 1
