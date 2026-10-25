@@ -10,6 +10,10 @@ except ImportError:  # pragma: no cover
     PILImage = ImageDraw = ImageFont = None  # type: ignore
 
 ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT = 0, 1, 2
+CONTENT_SCALE_TO_FILL, CONTENT_SCALE_ASPECT_FIT, CONTENT_SCALE_ASPECT_FILL = 0, 1, 2
+LINE_CAP_BUTT, LINE_CAP_ROUND, LINE_CAP_SQUARE = 0, 1, 2
+LINE_JOIN_MITER, LINE_JOIN_ROUND, LINE_JOIN_BEVEL = 0, 1, 2
+BLEND_NORMAL, BLEND_MULTIPLY, BLEND_SCREEN = 0, 1, 2
 LB_WORD_WRAP, LB_CHAR_WRAP, LB_CLIP, LB_TRUNCATE_HEAD, LB_TRUNCATE_TAIL, LB_TRUNCATE_MIDDLE = 0, 1, 2, 3, 4, 5
 
 _screen = [390.0, 844.0]   # iPhone 14 logical points
@@ -141,20 +145,98 @@ def _font_file(bold: bool) -> Optional[str]:
     return None
 
 
+# A serif font name on the phone (Iowan Old Style, Baskerville...) is drawn here with the
+# nearest serif at hand, Charter first (Iowan's cousin), then Liberation and DejaVu Serif.
+_SERIF_HINTS = ("iowan", "baskerville", "palatino", "georgia", "times", "charter", "didot", "bodoni",
+                "cochin", "hoefler", "athelas", "garamond", "serif", "copperplate", "optima")
+_SERIF_FILES = {
+    (False, False): ("/usr/share/fonts/X11/Type1/c0648bt_.pfb",
+                     "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+                     "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"),
+    (True, False): ("/usr/share/fonts/X11/Type1/c0632bt_.pfb",
+                    "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"),
+    (False, True): ("/usr/share/fonts/X11/Type1/c0649bt_.pfb",
+                    "/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf"),
+    (True, True): ("/usr/share/fonts/X11/Type1/c0633bt_.pfb",
+                   "/usr/share/fonts/truetype/liberation/LiberationSerif-BoldItalic.ttf"),
+}
+
+
+class _Chain:
+    """A font with a fallback for the characters it lacks (a serif has no card suits:
+    the phone takes them from another font, and so does this, from DejaVu Sans). It
+    answers the few PIL font calls this module makes."""
+
+    def __init__(self, main, fallback) -> None:
+        self.main, self.fallback = main, fallback
+        self._has = {}
+
+    def _font_for(self, ch: str):
+        if ch not in self._has:
+            self._has[ch] = ch.isspace() or self.main.getmask(ch).getbbox() is not None
+        return self.main if self._has[ch] else self.fallback
+
+    def runs(self, text: str):
+        out = []
+        for ch in text:
+            f = self._font_for(ch)
+            if out and out[-1][0] is f:
+                out[-1][1] += ch
+            else:
+                out.append([f, ch])
+        return out
+
+    def getlength(self, text: str) -> float:
+        return sum(f.getlength(t) for f, t in self.runs(text))
+
+    def getbbox(self, text: str):
+        top, bottom = 0, 0
+        for f, t in self.runs(text):
+            b = f.getbbox(t)
+            top, bottom = min(top, b[1]), max(bottom, b[3])
+        return (0, top, int(round(self.getlength(text))), bottom)
+
+    def getmetrics(self):
+        return self.main.getmetrics()
+
+    def text(self, d, xy, text: str, fill) -> None:
+        """Draw ``text`` with its top-left at ``xy``, every run on the main font's baseline."""
+        x, y = xy
+        base = y + self.main.getmetrics()[0]
+        for f, t in self.runs(text):
+            d.text((x, base), t, font=f, fill=fill, anchor="ls")
+            x += f.getlength(t)
+
+
 _font_cache = {}
 
 
 def _pil_font(font: Any):
     name, size = ("<system>", 17.0) if not font else (font[0], float(font[1]))
-    bold = "bold" in str(name).lower() or "black" in str(name).lower() or "heavy" in str(name).lower()
-    key = (bold, int(round(size * SCALE)))
+    low = str(name).lower()
+    bold = any(k in low for k in ("bold", "black", "heavy", "semibold", "demi"))
+    italic = "italic" in low or "oblique" in low
+    serif = any(k in low for k in _SERIF_HINTS)
+    key = (serif, bold, italic, int(round(size * SCALE)))
     if key not in _font_cache:
         path = _font_file(bold)
-        if path and ImageFont is not None:
-            _font_cache[key] = ImageFont.truetype(path, key[1])
-        else:  # pragma: no cover
-            _font_cache[key] = ImageFont.load_default()
+        sans = ImageFont.truetype(path, key[3]) if (path and ImageFont is not None) else ImageFont.load_default()
+        main = None
+        if serif and ImageFont is not None:
+            for p in _SERIF_FILES.get((bold, italic), ()) + _SERIF_FILES[(bold, False)]:
+                if os.path.exists(p):
+                    main = _Chain(ImageFont.truetype(p, key[3]), sans)
+                    break
+        _font_cache[key] = main or sans
     return _font_cache[key]
+
+
+def _text(d, xy, text: str, f, fill) -> None:
+    if isinstance(f, _Chain):
+        f.text(d, xy, text, fill)
+    else:
+        d.text(xy, text, font=f, fill=fill)
 
 
 def measure_string(text: str, max_width: float = 0, font: Any = None, alignment: int = ALIGN_LEFT,
@@ -213,7 +295,17 @@ class _Ctx:
         self.clip = clip
         self.color = (0, 0, 0, 255)
         self.ctm = Transform()      # the view's user space -> its own coordinates (concat_ctm)
-        self.saved: List[tuple] = []  # GState: (transform, colour)
+        self.mask = None            # Path.add_clip: an "L" image, 255 where drawing shows
+        self.saved: List[tuple] = []  # GState: (transform, colour, clip)
+
+
+def _composite(c: "_Ctx", layer, dest=(0, 0)) -> None:
+    """Lay ``layer`` (the size of the image) over the image, through the clip if one is set."""
+    if c.mask is not None and dest == (0, 0):
+        a = layer.getchannel("A")
+        from PIL import ImageChops
+        layer.putalpha(ImageChops.multiply(a, c.mask))
+    c.img.alpha_composite(layer, dest=dest)
 
 
 _ctx_stack: List[_Ctx] = []
@@ -291,16 +383,26 @@ def _overlay_rect(c: _Ctx, box, color, radius: float = 0, outline=None, width: i
         d.rounded_rectangle(box, radius=radius, fill=color if color[3] else None, outline=outline, width=width)
     else:
         d.rectangle(box, fill=color if color[3] else None, outline=outline, width=width)
-    c.img.alpha_composite(layer)
+    _composite(c, layer)
 
 
 class Path:
+    """Pythonista's ``ui.Path``: rects, rounded rects, ovals and polygons with curves and
+    arcs (flattened to lines). Each ``move_to`` starts a subpath."""
+
     def __init__(self) -> None:
         self.kind = "poly"
-        self.points: List[Tuple[float, float]] = []
+        self.subpaths: List[List[Tuple[float, float]]] = []
         self.box = None
         self.radius = 0.0
         self.line_width = 1.0
+        self.line_cap_style = LINE_CAP_BUTT
+        self.line_join_style = LINE_JOIN_MITER
+        self.eo_fill_rule = False
+
+    @property
+    def points(self) -> List[Tuple[float, float]]:
+        return [p for sp in self.subpaths for p in sp]
 
     @staticmethod
     def rect(x, y, w, h) -> "Path":
@@ -314,9 +416,75 @@ class Path:
     def oval(x, y, w, h) -> "Path":
         p = Path(); p.kind = "oval"; p.box = (x, y, w, h); return p
 
-    def move_to(self, x, y): self.points.append((x, y))
-    def line_to(self, x, y): self.points.append((x, y))
-    def close(self): pass
+    def _last(self) -> Tuple[float, float]:
+        return self.subpaths[-1][-1] if self.subpaths and self.subpaths[-1] else (0.0, 0.0)
+
+    def move_to(self, x, y):
+        self.subpaths.append([(float(x), float(y))])
+
+    def line_to(self, x, y):
+        if not self.subpaths:
+            self.subpaths.append([])
+        self.subpaths[-1].append((float(x), float(y)))
+
+    def close(self):
+        pass
+
+    def add_quad_curve(self, x, y, cx, cy):
+        x0, y0 = self._last()
+        for i in range(1, 13):
+            t = i / 12.0
+            u = 1 - t
+            self.line_to(u * u * x0 + 2 * u * t * cx + t * t * x, u * u * y0 + 2 * u * t * cy + t * t * y)
+
+    def add_curve(self, x, y, c1x, c1y, c2x, c2y):
+        x0, y0 = self._last()
+        for i in range(1, 17):
+            t = i / 16.0
+            u = 1 - t
+            self.line_to(u ** 3 * x0 + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t ** 3 * x,
+                         u ** 3 * y0 + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t ** 3 * y)
+
+    def add_arc(self, cx, cy, r, start, end, clockwise=True):
+        import math
+        if clockwise and end < start:
+            end += 2 * math.pi
+        if not clockwise and end > start:
+            end -= 2 * math.pi
+        n = max(4, int(abs(end - start) / (math.pi / 24)))
+        for i in range(n + 1):
+            a = start + (end - start) * i / float(n)
+            self.line_to(cx + r * math.cos(a), cy + r * math.sin(a))
+
+    def append(self, other: "Path"):
+        if other.kind != "poly":
+            x, y, w, h = other.box
+            other = Path._outline(other)
+        self.subpaths.extend([list(sp) for sp in other.subpaths])
+
+    @staticmethod
+    def _outline(p: "Path") -> "Path":
+        """A rect, rounded rect or oval as a polygon (for append and clipping)."""
+        import math
+        x, y, w, h = p.box
+        q = Path()
+        if p.kind == "oval":
+            q.move_to(x + w, y + h / 2.0)
+            for i in range(1, 49):
+                a = 2 * math.pi * i / 48.0
+                q.line_to(x + w / 2.0 + w / 2.0 * math.cos(a), y + h / 2.0 + h / 2.0 * math.sin(a))
+            return q
+        r = min(p.radius, w / 2.0, h / 2.0) if p.kind == "rrect" else 0.0
+        q.move_to(x + r, y)
+        for cx, cy, a0 in ((x + w - r, y + r, -math.pi / 2), (x + w - r, y + h - r, 0.0),
+                           (x + r, y + h - r, math.pi / 2), (x + r, y + r, math.pi)):
+            for i in range(7):
+                a = a0 + (math.pi / 2) * i / 6.0
+                q.line_to(cx + r * math.cos(a), cy + r * math.sin(a))
+        return q
+
+    def set_line_dash(self, sequence, phase=0.0):
+        pass
 
     def _pil_box(self):
         x, y, w, h = self.box
@@ -325,6 +493,14 @@ class Path:
         x1, y1 = max(p[0] for p in pts), max(p[1] for p in pts)
         return (x0, y0, max(x0, x1 - 1), max(y0, y1 - 1))
 
+    def _mask_layer(self, c, fill):
+        layer = PILImage.new("RGBA", c.img.size, (0, 0, 0, 0))
+        dr = ImageDraw.Draw(layer)
+        for sp in self.subpaths:
+            if len(sp) >= 3:
+                dr.polygon([_pt(*p) for p in sp], fill=fill)
+        return layer
+
     def fill(self) -> None:
         c = _ctx()
         if self.kind in ("rect", "rrect"):
@@ -332,11 +508,9 @@ class Path:
         elif self.kind == "oval":
             layer = PILImage.new("RGBA", c.img.size, (0, 0, 0, 0))
             ImageDraw.Draw(layer).ellipse(self._pil_box(), fill=c.color)
-            c.img.alpha_composite(layer)
-        elif len(self.points) >= 3:
-            layer = PILImage.new("RGBA", c.img.size, (0, 0, 0, 0))
-            ImageDraw.Draw(layer).polygon([_pt(*p) for p in self.points], fill=c.color)
-            c.img.alpha_composite(layer)
+            _composite(c, layer)
+        elif any(len(sp) >= 3 for sp in self.subpaths):
+            _composite(c, self._mask_layer(c, c.color))
 
     def stroke(self) -> None:
         c = _ctx()
@@ -346,11 +520,39 @@ class Path:
         elif self.kind == "oval":
             layer = PILImage.new("RGBA", c.img.size, (0, 0, 0, 0))
             ImageDraw.Draw(layer).ellipse(self._pil_box(), outline=c.color, width=w)
-            c.img.alpha_composite(layer)
-        elif len(self.points) >= 2:
+            _composite(c, layer)
+        else:
             layer = PILImage.new("RGBA", c.img.size, (0, 0, 0, 0))
-            ImageDraw.Draw(layer).line([_pt(*p) for p in self.points], fill=c.color, width=w)
-            c.img.alpha_composite(layer)
+            dr = ImageDraw.Draw(layer)
+            drawn = False
+            for sp in self.subpaths:
+                if len(sp) >= 2:
+                    pts = [_pt(*p) for p in sp]
+                    dr.line(pts, fill=c.color, width=w, joint="curve" if self.line_join_style == LINE_JOIN_ROUND else None)
+                    if self.line_cap_style == LINE_CAP_ROUND and w > 2:
+                        for (px, py) in (pts[0], pts[-1]):
+                            dr.ellipse((px - w / 2.0, py - w / 2.0, px + w / 2.0, py + w / 2.0), fill=c.color)
+                    drawn = True
+            if drawn:
+                _composite(c, layer)
+
+    def add_clip(self) -> None:
+        """Limit later drawing (until the GState ends) to the inside of this path."""
+        c = _ctx()
+        shape = self if self.kind == "poly" else Path._outline(self)
+        m = PILImage.new("L", c.img.size, 0)
+        dr = ImageDraw.Draw(m)
+        for sp in shape.subpaths:
+            if len(sp) >= 3:
+                dr.polygon([_pt(*p) for p in sp], fill=255)
+        if c.mask is not None:
+            from PIL import ImageChops
+            m = ImageChops.multiply(m, c.mask)
+        c.mask = m
+
+
+def set_blend_mode(mode) -> None:
+    pass
 
 
 def draw_string(text: str, rect=(0, 0, 0, 0), font=None, color="black", alignment=ALIGN_LEFT,
@@ -386,7 +588,7 @@ def _draw_string_turned(c, text, rect, font, color, alignment, line_break_mode) 
     cx, cy = _pt(x + w / 2.0, y + h / 2.0)
     layer = PILImage.new("RGBA", c.img.size, (0, 0, 0, 0))
     layer.paste(turned, (int(round(cx - turned.size[0] / 2.0)), int(round(cy - turned.size[1] / 2.0))), turned)
-    c.img.alpha_composite(layer)
+    _composite(c, layer)
 
 
 def _draw_string_plain(c, text, rect, font, color, alignment, line_break_mode) -> None:
@@ -406,9 +608,9 @@ def _draw_string_plain(c, text, rect, font, color, alignment, line_break_mode) -
             tx = _pt(x, y)[0] + (w * SCALE - tw)
         else:
             tx = _pt(x, y)[0]
-        d.text((tx, cy), ln, font=f, fill=col)
+        _text(d, (tx, cy), ln, f, col)
         cy += lh
-    c.img.alpha_composite(layer)
+    _composite(c, layer)
 
 
 class GState:
@@ -416,15 +618,15 @@ class GState:
 
     def __enter__(self):
         c = _ctx()
-        c.saved.append((c.ctm, c.color))
+        c.saved.append((c.ctm, c.color, c.mask))
         return self
 
     def __exit__(self, *a):
         c = _ctx()
         if c.saved:
-            c.ctm, c.color = c.saved.pop()
+            c.ctm, c.color, c.mask = c.saved.pop()
         else:
-            c.ctm = Transform()
+            c.ctm, c.mask = Transform(), None
         return False
 
 
@@ -607,6 +809,7 @@ class Button(View):
 class ImageView(View):
     def __init__(self, *args, **kwargs) -> None:
         self.image = kwargs.pop("image", None)
+        self.content_mode = kwargs.pop("content_mode", CONTENT_SCALE_TO_FILL)
         super().__init__(*args, **kwargs)
         self.touch_enabled = False
 
@@ -654,12 +857,47 @@ class TextField(View):
     def end_editing(self): pass
 
 
-class Image:  # icons: unused in rendering
+class Image:
+    """Pythonista's ``ui.Image``: ``named`` takes a file path (a missing file gives an empty
+    image, as an unknown name does on the phone); ``draw`` paints it into a view's draw()."""
+
+    def __init__(self, pil=None) -> None:
+        self._pil = pil
+
     @staticmethod
     def named(name: str) -> "Image":
+        if PILImage is not None and name and os.path.exists(str(name)):
+            try:
+                return Image(PILImage.open(str(name)).convert("RGBA"))
+            except Exception:
+                pass
         return Image()
 
-    def draw(self, x=0, y=0, w=0, h=0): pass
+    @property
+    def size(self) -> Tuple[float, float]:
+        return (float(self._pil.size[0]), float(self._pil.size[1])) if self._pil is not None else (0.0, 0.0)
+
+    def draw(self, x=0, y=0, w=None, h=None) -> None:
+        if self._pil is None:
+            return
+        c = _ctx()
+        w = self.size[0] if w is None else w
+        h = self.size[1] if h is None else h
+        x0, y0 = _pt(x, y)
+        x1, y1 = _pt(x + w, y + h)
+        _paste_image(c, self._pil, min(x0, x1), min(y0, y1), abs(x1 - x0), abs(y1 - y0))
+
+
+def _paste_image(c: "_Ctx", pil, x: float, y: float, w: float, h: float, alpha: float = 1.0) -> None:
+    W, H = int(round(w)), int(round(h))
+    if W <= 0 or H <= 0:
+        return
+    im = pil.resize((W, H), PILImage.BILINEAR)
+    if alpha < 1:
+        im.putalpha(im.getchannel("A").point(lambda v: int(v * alpha)))
+    layer = PILImage.new("RGBA", c.img.size, (0, 0, 0, 0))
+    layer.paste(im, (int(round(x)), int(round(y))), im)
+    _composite(c, layer)
 
 
 def animate(fn: Callable, duration: float = 0.25, delay: float = 0.0, completion: Optional[Callable] = None) -> None:
@@ -754,6 +992,24 @@ def _render_view(v: View, ox: float, oy: float) -> None:
                               col, radius=6 * SCALE, outline=(0, 122, 255, 255), width=SCALE)
                 draw_string(seg, (i * sw, (v.height - 20) / 2, sw, 20), ("<system>", 14),
                             "white" if i == v.selected_index else "#007aff", ALIGN_CENTER)
+        elif isinstance(v, ImageView) and getattr(v.image, "_pil", None) is not None:
+            pil = v.image._pil
+            iw, ih = pil.size
+            bw, bh = v.width * SCALE, v.height * SCALE
+            mode = getattr(v, "content_mode", CONTENT_SCALE_TO_FILL)
+            if mode == CONTENT_SCALE_TO_FILL:
+                _paste_image(c, pil, box[0], box[1], bw, bh, v.alpha)
+            else:
+                k = (max if mode == CONTENT_SCALE_ASPECT_FILL else min)(bw / iw, bh / ih)
+                dw, dh = iw * k, ih * k
+                if mode == CONTENT_SCALE_ASPECT_FILL:
+                    # the overflow is cut, as clips_to_bounds does on the phone
+                    crop = pil.resize((int(round(dw)), int(round(dh))), PILImage.BILINEAR)
+                    l, t = int(round((dw - bw) / 2.0)), int(round((dh - bh) / 2.0))
+                    crop = crop.crop((l, t, l + int(round(bw)), t + int(round(bh))))
+                    _paste_image(c, crop, box[0], box[1], bw, bh, v.alpha)
+                else:
+                    _paste_image(c, pil, box[0] + (bw - dw) / 2.0, box[1] + (bh - dh) / 2.0, dw, dh, v.alpha)
         elif isinstance(v, TextField):
             _overlay_rect(c, box, (255, 255, 255, 255), radius=5 * SCALE, outline=(180, 180, 180, 255), width=SCALE)
             draw_string(v.text or v.placeholder, (8, (v.height - 20) / 2, v.width - 16, 20), v.font,
